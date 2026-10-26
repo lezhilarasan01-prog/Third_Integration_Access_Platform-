@@ -12,8 +12,7 @@ import {
   AlertTriangle,
   ArrowRight,
   FileText,
-  CheckCircle2,
-  UploadCloud
+  CheckCircle2
 } from 'lucide-react';
 import KpiCard from './KpiCard';
 import ThroughputVelocityChart from './ThroughputVelocityChart';
@@ -272,25 +271,6 @@ export default function OverviewPage({ onNavigateToJobs, onNavigateToKafkaStudio
         </div>
 
         <div className="overview-hero-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-          {onOpenTestUpload && (
-            <button
-              className="hero-btn hero-btn-secondary"
-              onClick={onOpenTestUpload}
-              title="Test File Ingestion Hub - CSV, XML, JSON, Excel, EDI"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                color: '#34d399',
-                border: '1px solid rgba(16, 185, 129, 0.4)'
-              }}
-            >
-              <UploadCloud size={14} />
-              <span>Test Upload</span>
-            </button>
-          )}
-
           <button
             className="hero-btn hero-btn-secondary"
             onClick={handleManualRefresh}
