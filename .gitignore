@@ -1,0 +1,16 @@
+target/
+*.log
+.idea/
+.vscode/
+*.iml
+.settings/
+.classpath
+.project
+.factorypath
+
+frontend/node_modules/
+frontend/dist/
+frontend/.cache/
+
+.env
+*.pem

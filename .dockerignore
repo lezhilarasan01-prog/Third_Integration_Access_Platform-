@@ -1,0 +1,15 @@
+target/
+*.class
+*.log
+.git
+.gitignore
+.idea
+.vscode
+.settings
+.metadata
+.classpath
+.project
+.factorypath
+frontend/node_modules/
+frontend/dist/
+frontend/.cache/
