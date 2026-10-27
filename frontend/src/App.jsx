@@ -7,7 +7,6 @@ import PlaceholderPage from './components/common/PlaceholderPage';
 import LoginPage from './components/auth/LoginPage';
 import KafkaStudioPage from './components/studio/KafkaStudioPage';
 import S3ActivityPage from './components/s3/S3ActivityPage';
-import KafkaDlqTrackerPage from './components/dlq/KafkaDlqTrackerPage';
 import SettingsPage from './components/settings/SettingsPage';
 import TestUploadModal from './components/common/TestUploadModal';
 import JsonBeautifierModal from './components/common/JsonBeautifierModal';
