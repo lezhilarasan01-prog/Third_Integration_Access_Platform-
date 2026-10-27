@@ -191,6 +191,21 @@ public class ErpFileConsumerService {
         return defaultValue;
     }
 
+//    private String calculateFingerprint(String erpSource, String docType, byte[] payload) {
+//        try {
+//            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+//            digest.update(erpSource.getBytes(StandardCharsets.UTF_8));
+//            digest.update((docType != null ? docType : "PO").getBytes(StandardCharsets.UTF_8));
+//            byte[] hash = digest.digest(payload);
+//            StringBuilder sb = new StringBuilder();
+//            for (byte b : hash) {
+//                sb.append(String.format("%02x", b));
+//            }
+//            return sb.toString();
+//        } catch (Exception e) {
+//            return erpSource + "_" + docType + "_" + payload.length;
+//        }
+//    }
 
     private boolean isClaimCheckStub(byte[] value) {
         if (value == null || value.length == 0 || value.length > 512)
