@@ -1,5 +1,6 @@
 package com.platform.erp.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -17,7 +18,9 @@ public class CanonicalEnvelope {
     private String facilityId;
     private String documentType;
     private String originalFilename;
-    private int totalRecords;
+
+    @JsonIgnore
+    private Integer totalRecords;
     private Instant convertedAt;
     private String sourceFormat;
     private List<Map<String, Object>> records;
@@ -28,7 +31,7 @@ public class CanonicalEnvelope {
     public CanonicalEnvelope() {}
 
     public CanonicalEnvelope(String trackingId, String erpSource, String documentType,
-                             String originalFilename, int totalRecords, Instant convertedAt,
+                             String originalFilename, Integer totalRecords, Instant convertedAt,
                              List<Map<String, Object>> records) {
         this.trackingId = trackingId;
         this.erpSource = erpSource;
@@ -54,8 +57,9 @@ public class CanonicalEnvelope {
     public String getOriginalFilename() { return originalFilename; }
     public void setOriginalFilename(String originalFilename) { this.originalFilename = originalFilename; }
 
-    public int getTotalRecords() { return totalRecords; }
-    public void setTotalRecords(int totalRecords) { this.totalRecords = totalRecords; }
+    @JsonIgnore
+    public Integer getTotalRecords() { return totalRecords != null ? totalRecords : 0; }
+    public void setTotalRecords(Integer totalRecords) { this.totalRecords = totalRecords; }
 
     public Instant getConvertedAt() { return convertedAt; }
     public void setConvertedAt(Instant convertedAt) { this.convertedAt = convertedAt; }

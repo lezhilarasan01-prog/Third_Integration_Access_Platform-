@@ -1,6 +1,6 @@
 package com.platform.erp.transformer;
 
-import com.fasterxml.jackson.databind.JsonNode;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.platform.erp.model.hm.*;
 import org.slf4j.Logger;
@@ -82,8 +82,8 @@ public class HmAsnToMawmMapper {
         }
         putMandatory(asnMap, "AsnOriginTypeId", originType);
 
-        // BusinessUnitId (omitted if blank)
-        putOptional(asnMap, "BusinessUnitId", properties.getBusinessUnitId());
+        // BusinessUnitId: schema mandatory, but no mapping from input -> kept as null
+        putMandatory(asnMap, "BusinessUnitId", properties.getBusinessUnitId());
 
         // ASN Level Extended
         Map<String, Object> asnExtended = new LinkedHashMap<>();
@@ -138,7 +138,8 @@ public class HmAsnToMawmMapper {
                     detail.put("Extended", detailExtended);
                 }
 
-                detail.put("QuantityUomId", properties.getQuantityUomId());
+                // QuantityUomId: schema mandatory, kept null if no mapping from input
+                putMandatory(detail, "QuantityUomId", properties.getQuantityUomId());
                 putOptional(detail, "InventoryTypeId", packing.getPackingMode());
                 putOptional(detail, "ItemId", line.getSku());
                 putOptional(detail, "InventoryAttribute1", line.getHmOrderNumber());

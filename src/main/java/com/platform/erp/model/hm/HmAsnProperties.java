@@ -10,15 +10,15 @@ import java.util.Map;
 @ConfigurationProperties(prefix = "asn")
 public class HmAsnProperties {
 
-    private String businessUnitId = "CID001683";
-    private String destinationFacilityId = "IN_5180";
+    private String businessUnitId = null;
+    private String destinationFacilityId = null;
     private Map<String, String> originTypeMap = new HashMap<>();
-    private String lpnTypeId = "ILPN";
-    private String asnLevelId = "LPN";
-    private String quantityUomId = "Units";
+    private String lpnTypeId = null;
+    private String asnLevelId = null;
+    private String quantityUomId = null;
 
     public HmAsnProperties() {
-        originTypeMap.put("InboundSupplier", "P");
+        // No hardcoding: fields default to null unless explicitly configured
     }
 
     public String getBusinessUnitId() {

@@ -1,7 +1,9 @@
 package com.platform.erp.controller;
 
+import com.platform.erp.model.CanonicalEnvelope;
 import com.platform.erp.model.IngestionAckResponse;
 import com.platform.erp.producer.ErpFileProducerService;
+import com.platform.erp.transformer.FileToJsonTransformer;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +18,7 @@ import org.springframework.web.multipart.MultipartResolver;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Universal Ingestion Controller for ERP Integration.
@@ -34,12 +37,60 @@ public class ErpIngestionController {
     private static final Logger log = LoggerFactory.getLogger(ErpIngestionController.class);
 
     private final ErpFileProducerService producerService;
-
     private final MultipartResolver multipartResolver;
+    private final FileToJsonTransformer transformer;
 
-    public ErpIngestionController(ErpFileProducerService producerService, MultipartResolver multipartResolver) {
+    public ErpIngestionController(ErpFileProducerService producerService,
+                                  MultipartResolver multipartResolver,
+                                  FileToJsonTransformer transformer) {
         this.producerService = producerService;
         this.multipartResolver = multipartResolver;
+        this.transformer = transformer;
+    }
+
+    /**
+     * Synchronous Interactive Transformation Testing Endpoint.
+     * Takes any raw payload or multipart file (e.g., H&M ASN JSON) and immediately returns the converted MAWM Canonical JSON.
+     */
+    @PostMapping(value = "/transform", consumes = MediaType.ALL_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> testTransformSynchronously(
+            @RequestParam(value = "file", required = false) MultipartFile file,
+            @RequestBody(required = false) byte[] rawBody,
+            @RequestParam(value = "erpSource", defaultValue = "HM") String erpSource,
+            @RequestParam(value = "docType", defaultValue = "ASN") String docType,
+            @RequestParam(value = "filename", required = false) String filename,
+            HttpServletRequest request) {
+        try {
+            byte[] payload = null;
+            String resolvedFilename = filename;
+
+            if (file != null && !file.isEmpty()) {
+                payload = file.getBytes();
+                if (resolvedFilename == null || resolvedFilename.isBlank()) {
+                    resolvedFilename = file.getOriginalFilename();
+                }
+            } else if (rawBody != null && rawBody.length > 0) {
+                payload = rawBody;
+            } else {
+                payload = request.getInputStream().readAllBytes();
+            }
+
+            if (resolvedFilename == null || resolvedFilename.isBlank()) {
+                resolvedFilename = "hm_asn.json";
+            }
+
+            if (payload == null || payload.length == 0) {
+                return ResponseEntity.badRequest().body(Map.of("error", "EMPTY_PAYLOAD", "message", "Request body or file cannot be empty"));
+            }
+            CanonicalEnvelope envelope = transformer.transform(payload, erpSource, docType, "TEST-" + UUID.randomUUID(), resolvedFilename);
+            return ResponseEntity.ok(envelope.toMawmPayload());
+        } catch (Exception e) {
+            log.error("Synchronous transformation failed: {}", e.getMessage(), e);
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "TRANSFORMATION_FAILED",
+                    "message", e.getMessage() != null ? e.getMessage() : e.toString()
+            ));
+        }
     }
 
     /**

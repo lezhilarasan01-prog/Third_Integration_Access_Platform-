@@ -641,5 +641,47 @@ class FileToJsonTransformerTest {
         assertNotNull(jsonOutput);
         assertTrue(jsonOutput.contains("\"format\" : \"PARQUET\"") || jsonOutput.contains("\"format\":\"PARQUET\""));
     }
+
+    @Test
+    @DisplayName("Transforms H&M Inbound Delivery ASN to MAWM LPN-Level Canonical JSON")
+    void shouldTransformHmInboundDeliveryJsonToMawmLpnLevelAsn() throws Exception {
+        byte[] inputBytes;
+        try (var is = getClass().getResourceAsStream("/hm_asn_input.json")) {
+            assertNotNull(is, "hm_asn_input.json must exist in test resources");
+            inputBytes = is.readAllBytes();
+        }
+
+        CanonicalEnvelope envelope = transformer.transform(
+                inputBytes,
+                "HM",
+                "ASN",
+                "TRACK-HM-ASN-01",
+                "hm_inbound_delivery.json"
+        );
+
+        assertNotNull(envelope);
+        assertEquals("JSON", envelope.getSourceFormat());
+        assertNotNull(envelope.getData());
+        assertEquals(1, envelope.getData().size());
+
+        Map<String, Object> asnMap = envelope.getData().get(0);
+        assertNull(asnMap.get("AsnOriginTypeId"));
+        assertNull(asnMap.get("BusinessUnitId"));
+        assertTrue(asnMap.containsKey("Extended"));
+        assertTrue(asnMap.containsKey("Lpn"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> lpns = (List<Map<String, Object>>) asnMap.get("Lpn");
+        assertNotNull(lpns);
+        assertEquals(7, lpns.size(), "Should produce 7 distinct LPN cartons");
+
+        // Verify JSON output matches MAWM expected schema
+        ObjectMapper mapper = new ObjectMapper();
+        String mawmJson = envelope.toMawmJson(mapper);
+        assertNotNull(mawmJson);
+        assertTrue(mawmJson.contains("\"AsnOriginTypeId\" : null"));
+        assertTrue(mawmJson.contains("\"BusinessUnitId\" : null"));
+        assertTrue(mawmJson.contains("\"00173217306660655741\""));
+    }
 }
 

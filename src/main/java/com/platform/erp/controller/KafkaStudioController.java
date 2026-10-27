@@ -4,6 +4,7 @@ import com.platform.erp.config.KafkaTopicProperties;
 import org.apache.kafka.clients.admin.*;
 import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.header.Header;
@@ -277,7 +278,7 @@ public class KafkaStudioController {
     public ResponseEntity<?> getTopicPartitions(@PathVariable("topic") String topic) {
         List<Map<String, Object>> partitionStats = new ArrayList<>();
         try (Consumer<String, byte[]> consumer = createConsumer()) {
-            var partitionInfos = consumer.partitionsFor(topic);
+            List<PartitionInfo> partitionInfos = consumer.partitionsFor(topic);
             if (partitionInfos != null) {
                 List<TopicPartition> topicPartitions = partitionInfos.stream()
                         .map(p -> new TopicPartition(p.topic(), p.partition()))
@@ -330,13 +331,13 @@ public class KafkaStudioController {
         // 1. Try reading real messages directly from Kafka broker
         try {
             try (Consumer<String, byte[]> consumer = createConsumer()) {
-                var partitionInfos = consumer.partitionsFor(topic);
+                List<PartitionInfo> partitionInfos = consumer.partitionsFor(topic);
                 if (partitionInfos != null && !partitionInfos.isEmpty()) {
                     List<TopicPartition> partitionsToPoll = new ArrayList<>();
                     if (targetPartition != null) {
                         partitionsToPoll.add(new TopicPartition(topic, targetPartition));
                     } else {
-                        for (var pi : partitionInfos) {
+                        for (PartitionInfo pi : partitionInfos) {
                             partitionsToPoll.add(new TopicPartition(topic, pi.partition()));
                         }
                     }
