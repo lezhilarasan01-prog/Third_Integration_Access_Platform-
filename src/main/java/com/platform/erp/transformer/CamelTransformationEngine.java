@@ -74,6 +74,16 @@ public class CamelTransformationEngine {
     }
 
     /**
+     * Dedicated Apache Camel route for H&M Inbound Delivery to MAWM LPN-Level ASN.
+     */
+    public String transformHmAsnToMawm(byte[] payload) {
+        if (payload == null || payload.length == 0) {
+            return "{\"Data\":[]}";
+        }
+        return producerTemplate.requestBody(TransformationRoutes.DIRECT_HM_ASN_TO_MAWM, payload, String.class);
+    }
+
+    /**
      * Auto-converts any incoming file format directly to JSON via Apache Camel.
      */
     public String autoConvertToJson(byte[] payload, String filename) {

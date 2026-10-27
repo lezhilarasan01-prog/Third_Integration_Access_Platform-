@@ -1,0 +1,379 @@
+{
+  "transactionType": "I1116",
+  "version": "1.0",
+  "uniqueTransactionId": "0000008073977405",
+  "transactionDateTime": "2026-10-22T08:35:23Z",
+  "warehouseId": "WMS533IN",
+  "inboundDelivery": {
+    "actionType": "A",
+    "inboundDeliveryNumber": "1064389422",
+    "inboundDeliveryType": "InboundSupplier",
+    "siteID": "W533",
+    "customsClearance": false,
+    "deliveryLine": [
+      {
+        "lineNumber": "000010",
+        "advisedQuantity": 52,
+        "hmOrderNumber": "722286",
+        "countryOfOrigin": "MA",
+        "inShopDate": "2026-11-02",
+        "inboundControlCode": "WAITING",
+        "sku": "1370811001264006",
+        "skuAttributes": {
+          "articleTypeCode": "NormalItem",
+          "corporateBrandID": "0",
+          "brandName": "H&M",
+          "productName": "RILLE RIB LS TOP",
+          "productTypeName": "Top",
+          "colourDescription": "Grey",
+          "sizeName": "92",
+          "variantDescription": "Top Grey Melange, 92",
+          "indexGroupCode": "4",
+          "indexGroupName": "Baby/Children",
+          "indexCode": "H",
+          "indexDescription": "Children Sizes 92-140",
+          "subIndexCode": "H10",
+          "subIndexDescription": "Girl 92-140 H&M Kids",
+          "prices": [
+            {
+              "channelName": "Store",
+              "priceValue": 999.0,
+              "currencyISOCode": "INR"
+            }
+          ],
+          "variantImage": {
+            "path": "https://image.hm.com/assets/hm/0d/da/0dda3972bc2b536501a672d218afe8680350575e.jpg?ver=2"
+          },
+          "length": 180,
+          "width": 180,
+          "height": 18,
+          "volume": 583,
+          "netweight": 0.1,
+          "dimensionStatus": "M",
+          "fragileIndicator": "",
+          "semibulky": false,
+          "globalTradeItemNumber": "07300250680254",
+          "hazardousGoods": "0"
+        },
+        "packing": [
+          {
+            "packingMaterialNumber": "A49",
+            "length": 58,
+            "width": 40,
+            "height": 40,
+            "piecesPerCarton": 52,
+            "huIdentifier": "00173217306660655802",
+            "packingMode": "F"
+          }
+        ]
+      },
+      {
+        "lineNumber": "000020",
+        "advisedQuantity": 80,
+        "hmOrderNumber": "722286",
+        "countryOfOrigin": "MA",
+        "inShopDate": "2026-11-02",
+        "inboundControlCode": "WAITING",
+        "sku": "1370811001264007",
+        "skuAttributes": {
+          "articleTypeCode": "NormalItem",
+          "corporateBrandID": "0",
+          "brandName": "H&M",
+          "productName": "RILLE RIB LS TOP",
+          "productTypeName": "Top",
+          "colourDescription": "Grey",
+          "sizeName": "98/104",
+          "variantDescription": "Top Grey Melange, 98/104",
+          "indexGroupCode": "4",
+          "indexGroupName": "Baby/Children",
+          "indexCode": "H",
+          "indexDescription": "Children Sizes 92-140",
+          "subIndexCode": "H10",
+          "subIndexDescription": "Girl 92-140 H&M Kids",
+          "prices": [
+            {
+              "channelName": "Store",
+              "priceValue": 999.0,
+              "currencyISOCode": "INR"
+            }
+          ],
+          "variantImage": {
+            "path": "https://image.hm.com/assets/hm/0d/da/0dda3972bc2b536501a672d218afe8680350575e.jpg?ver=2"
+          },
+          "length": 180,
+          "width": 180,
+          "height": 18,
+          "volume": 583,
+          "netweight": 0.1,
+          "dimensionStatus": "M",
+          "fragileIndicator": "",
+          "semibulky": false,
+          "globalTradeItemNumber": "07300250680810",
+          "hazardousGoods": "0"
+        },
+        "packing": [
+          {
+            "packingMaterialNumber": "A49",
+            "length": 58,
+            "width": 40,
+            "height": 40,
+            "piecesPerCarton": 80,
+            "huIdentifier": "00173217306660655758",
+            "packingMode": "F"
+          }
+        ]
+      },
+      {
+        "lineNumber": "000030",
+        "advisedQuantity": 89,
+        "hmOrderNumber": "722286",
+        "countryOfOrigin": "MA",
+        "inShopDate": "2026-11-02",
+        "inboundControlCode": "WAITING",
+        "sku": "1370811001264008",
+        "skuAttributes": {
+          "articleTypeCode": "NormalItem",
+          "corporateBrandID": "0",
+          "brandName": "H&M",
+          "productName": "RILLE RIB LS TOP",
+          "productTypeName": "Top",
+          "colourDescription": "Grey",
+          "sizeName": "110/116",
+          "variantDescription": "Top Grey Melange, 110/116",
+          "indexGroupCode": "4",
+          "indexGroupName": "Baby/Children",
+          "indexCode": "H",
+          "indexDescription": "Children Sizes 92-140",
+          "subIndexCode": "H10",
+          "subIndexDescription": "Girl 92-140 H&M Kids",
+          "prices": [
+            {
+              "channelName": "Store",
+              "priceValue": 999.0,
+              "currencyISOCode": "INR"
+            }
+          ],
+          "variantImage": {
+            "path": "https://image.hm.com/assets/hm/0d/da/0dda3972bc2b536501a672d218afe8680350575e.jpg?ver=2"
+          },
+          "length": 210,
+          "width": 180,
+          "height": 18,
+          "volume": 680,
+          "netweight": 0.1,
+          "dimensionStatus": "M",
+          "fragileIndicator": "",
+          "semibulky": false,
+          "globalTradeItemNumber": "07300250680827",
+          "hazardousGoods": "0"
+        },
+        "packing": [
+          {
+            "packingMaterialNumber": "A49",
+            "length": 58,
+            "width": 40,
+            "height": 40,
+            "piecesPerCarton": 75,
+            "huIdentifier": "00173217306660655765",
+            "packingMode": "F"
+          },
+          {
+            "packingMaterialNumber": "A49",
+            "length": 58,
+            "width": 40,
+            "height": 40,
+            "piecesPerCarton": 14,
+            "huIdentifier": "00173217306660655796",
+            "packingMode": "F"
+          }
+        ]
+      },
+      {
+        "lineNumber": "000040",
+        "advisedQuantity": 80,
+        "hmOrderNumber": "722286",
+        "countryOfOrigin": "MA",
+        "inShopDate": "2026-11-02",
+        "inboundControlCode": "WAITING",
+        "sku": "1370811001264009",
+        "skuAttributes": {
+          "articleTypeCode": "NormalItem",
+          "corporateBrandID": "0",
+          "brandName": "H&M",
+          "productName": "RILLE RIB LS TOP",
+          "productTypeName": "Top",
+          "colourDescription": "Grey",
+          "sizeName": "122/128",
+          "variantDescription": "Top Grey Melange, 122/128",
+          "indexGroupCode": "4",
+          "indexGroupName": "Baby/Children",
+          "indexCode": "H",
+          "indexDescription": "Children Sizes 92-140",
+          "subIndexCode": "H10",
+          "subIndexDescription": "Girl 92-140 H&M Kids",
+          "prices": [
+            {
+              "channelName": "Store",
+              "priceValue": 999.0,
+              "currencyISOCode": "INR"
+            }
+          ],
+          "variantImage": {
+            "path": "https://image.hm.com/assets/hm/0d/da/0dda3972bc2b536501a672d218afe8680350575e.jpg?ver=2"
+          },
+          "length": 220,
+          "width": 190,
+          "height": 18,
+          "volume": 752,
+          "netweight": 0.13,
+          "dimensionStatus": "M",
+          "fragileIndicator": "",
+          "semibulky": false,
+          "globalTradeItemNumber": "07300250680834",
+          "hazardousGoods": "0"
+        },
+        "packing": [
+          {
+            "packingMaterialNumber": "A49",
+            "length": 58,
+            "width": 40,
+            "height": 40,
+            "piecesPerCarton": 70,
+            "huIdentifier": "00173217306660655772",
+            "packingMode": "F"
+          },
+          {
+            "packingMaterialNumber": "A49",
+            "length": 58,
+            "width": 40,
+            "height": 40,
+            "piecesPerCarton": 10,
+            "huIdentifier": "00173217306660655796",
+            "packingMode": "F"
+          }
+        ]
+      },
+      {
+        "lineNumber": "000050",
+        "advisedQuantity": 86,
+        "hmOrderNumber": "722286",
+        "countryOfOrigin": "MA",
+        "inShopDate": "2026-11-02",
+        "inboundControlCode": "WAITING",
+        "sku": "1370811001264010",
+        "skuAttributes": {
+          "articleTypeCode": "NormalItem",
+          "corporateBrandID": "0",
+          "brandName": "H&M",
+          "productName": "RILLE RIB LS TOP",
+          "productTypeName": "Top",
+          "colourDescription": "Grey",
+          "sizeName": "134/140",
+          "variantDescription": "Top Grey Melange, 134/140",
+          "indexGroupCode": "4",
+          "indexGroupName": "Baby/Children",
+          "indexCode": "H",
+          "indexDescription": "Children Sizes 92-140",
+          "subIndexCode": "H10",
+          "subIndexDescription": "Girl 92-140 H&M Kids",
+          "prices": [
+            {
+              "channelName": "Store",
+              "priceValue": 999.0,
+              "currencyISOCode": "INR"
+            }
+          ],
+          "variantImage": {
+            "path": "https://image.hm.com/assets/hm/0d/da/0dda3972bc2b536501a672d218afe8680350575e.jpg?ver=2"
+          },
+          "length": 240,
+          "width": 180,
+          "height": 20,
+          "volume": 864,
+          "netweight": 0.16,
+          "dimensionStatus": "M",
+          "fragileIndicator": "",
+          "semibulky": false,
+          "globalTradeItemNumber": "07300250680841",
+          "hazardousGoods": "0"
+        },
+        "packing": [
+          {
+            "packingMaterialNumber": "A49",
+            "length": 58,
+            "width": 40,
+            "height": 40,
+            "piecesPerCarton": 65,
+            "huIdentifier": "00173217306660655789",
+            "packingMode": "F"
+          },
+          {
+            "packingMaterialNumber": "A49",
+            "length": 58,
+            "width": 40,
+            "height": 40,
+            "piecesPerCarton": 21,
+            "huIdentifier": "00173217306660655796",
+            "packingMode": "F"
+          }
+        ]
+      },
+      {
+        "lineNumber": "000060",
+        "advisedQuantity": 29,
+        "hmOrderNumber": "722286",
+        "countryOfOrigin": "MA",
+        "inShopDate": "2026-11-02",
+        "inboundControlCode": "WAITING",
+        "sku": "1370811001264A03",
+        "skuAttributes": {
+          "articleTypeCode": "RatioPack",
+          "corporateBrandID": "0",
+          "brandName": "H&M",
+          "productName": "RILLE RIB LS TOP",
+          "productTypeName": "Top",
+          "colourDescription": "Grey",
+          "sizeName": "",
+          "variantDescription": "RP Top Grey",
+          "indexGroupCode": "4",
+          "indexGroupName": "Baby/Children",
+          "indexCode": "H",
+          "indexDescription": "Children Sizes 92-140",
+          "subIndexCode": "H10",
+          "subIndexDescription": "Girl 92-140 H&M Kids",
+          "prices": [
+            {
+              "channelName": "Store",
+              "priceValue": 999.0,
+              "currencyISOCode": "INR"
+            }
+          ],
+          "variantImage": {
+            "path": "https://image.hm.com/assets/hm/0d/da/0dda3972bc2b536501a672d218afe8680350575e.jpg?ver=2"
+          },
+          "length": 260,
+          "width": 220,
+          "height": 45,
+          "volume": 2574,
+          "netweight": 0.374,
+          "dimensionStatus": "P",
+          "fragileIndicator": "",
+          "semibulky": false,
+          "globalTradeItemNumber": "",
+          "hazardousGoods": "0"
+        },
+        "packing": [
+          {
+            "packingMaterialNumber": "A49",
+            "length": 58,
+            "width": 40,
+            "height": 40,
+            "piecesPerCarton": 29,
+            "huIdentifier": "00173217306660655741",
+            "packingMode": "F"
+          }
+        ]
+      }
+    ]
+  }
+}

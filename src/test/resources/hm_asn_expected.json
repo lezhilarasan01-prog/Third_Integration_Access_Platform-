@@ -1,0 +1,301 @@
+{
+  "Data": [
+    {
+      "AsnOriginTypeId": "P",
+      "BusinessUnitId": "CID001683",
+      "Extended": {
+        "DhlCustRef2": "W533",
+        "DhlCustRef3": "InboundSupplier",
+        "DhlCustRef1": "false",
+        "DhlCustRef4": "A"
+      },
+      "Lpn": [
+        {
+          "Actions": {
+            "LpnDetail": "RESET"
+          },
+          "LpnId": "00173217306660655741",
+          "Extended": {
+            "DhlCustRefTtext1": "WAITING",
+            "DhlCustRef2": "40",
+            "DhlCustRef3": "40",
+            "DhlCustRef1": "58"
+          },
+          "LpnDetail": [
+            {
+              "RetailPrice": "999",
+              "CountryOfOrigin": "MA",
+              "Extended": {
+                "DhlExtAsnLineNbr": "000060",
+                "DhlCustRef2": "H&M",
+                "DhlCustRef3": "Baby/Children",
+                "DhlCustRef1": "2026-11-02",
+                "DhlCustRef4": "Children Sizes 92-140",
+                "DhlCustRef5": "Girl 92-140 H&M Kids"
+              },
+              "QuantityUomId": "Units",
+              "InventoryTypeId": "F",
+              "ItemId": "1370811001264A03",
+              "InventoryAttribute1": "722286",
+              "LpnId": "00173217306660655741",
+              "ShippedQuantity": "29",
+              "ProductStatusId": "W533"
+            }
+          ],
+          "LpnSizeTypeId": "A49",
+          "AsnId": "1064389422"
+        },
+        {
+          "Actions": {
+            "LpnDetail": "RESET"
+          },
+          "LpnId": "00173217306660655758",
+          "Extended": {
+            "DhlCustRefTtext1": "WAITING",
+            "DhlCustRef2": "40",
+            "DhlCustRef3": "40",
+            "DhlCustRef1": "58"
+          },
+          "LpnDetail": [
+            {
+              "RetailPrice": "999",
+              "CountryOfOrigin": "MA",
+              "Extended": {
+                "DhlExtAsnLineNbr": "000020",
+                "DhlCustRef2": "H&M",
+                "DhlCustRef3": "Baby/Children",
+                "DhlCustRef1": "2026-11-02",
+                "DhlCustRef4": "Children Sizes 92-140",
+                "DhlCustRef5": "Girl 92-140 H&M Kids"
+              },
+              "QuantityUomId": "Units",
+              "InventoryTypeId": "F",
+              "ItemId": "1370811001264007",
+              "InventoryAttribute1": "722286",
+              "LpnId": "00173217306660655758",
+              "ShippedQuantity": "80",
+              "ProductStatusId": "W533"
+            }
+          ],
+          "LpnSizeTypeId": "A49",
+          "AsnId": "1064389422"
+        },
+        {
+          "Actions": {
+            "LpnDetail": "RESET"
+          },
+          "LpnId": "00173217306660655765",
+          "Extended": {
+            "DhlCustRefTtext1": "WAITING",
+            "DhlCustRef2": "40",
+            "DhlCustRef3": "40",
+            "DhlCustRef1": "58"
+          },
+          "LpnDetail": [
+            {
+              "RetailPrice": "999",
+              "CountryOfOrigin": "MA",
+              "Extended": {
+                "DhlExtAsnLineNbr": "000030",
+                "DhlCustRef2": "H&M",
+                "DhlCustRef3": "Baby/Children",
+                "DhlCustRef1": "2026-11-02",
+                "DhlCustRef4": "Children Sizes 92-140",
+                "DhlCustRef5": "Girl 92-140 H&M Kids"
+              },
+              "QuantityUomId": "Units",
+              "InventoryTypeId": "F",
+              "ItemId": "1370811001264008",
+              "InventoryAttribute1": "722286",
+              "LpnId": "00173217306660655765",
+              "ShippedQuantity": "75",
+              "ProductStatusId": "W533"
+            }
+          ],
+          "LpnSizeTypeId": "A49",
+          "AsnId": "1064389422"
+        },
+        {
+          "Actions": {
+            "LpnDetail": "RESET"
+          },
+          "LpnId": "00173217306660655772",
+          "Extended": {
+            "DhlCustRefTtext1": "WAITING",
+            "DhlCustRef2": "40",
+            "DhlCustRef3": "40",
+            "DhlCustRef1": "58"
+          },
+          "LpnDetail": [
+            {
+              "RetailPrice": "999",
+              "CountryOfOrigin": "MA",
+              "Extended": {
+                "DhlExtAsnLineNbr": "000040",
+                "DhlCustRef2": "H&M",
+                "DhlCustRef3": "Baby/Children",
+                "DhlCustRef1": "2026-11-02",
+                "DhlCustRef4": "Children Sizes 92-140",
+                "DhlCustRef5": "Girl 92-140 H&M Kids"
+              },
+              "QuantityUomId": "Units",
+              "InventoryTypeId": "F",
+              "ItemId": "1370811001264009",
+              "InventoryAttribute1": "722286",
+              "LpnId": "00173217306660655772",
+              "ShippedQuantity": "70",
+              "ProductStatusId": "W533"
+            }
+          ],
+          "LpnSizeTypeId": "A49",
+          "AsnId": "1064389422"
+        },
+        {
+          "Actions": {
+            "LpnDetail": "RESET"
+          },
+          "LpnId": "00173217306660655789",
+          "Extended": {
+            "DhlCustRefTtext1": "WAITING",
+            "DhlCustRef2": "40",
+            "DhlCustRef3": "40",
+            "DhlCustRef1": "58"
+          },
+          "LpnDetail": [
+            {
+              "RetailPrice": "999",
+              "CountryOfOrigin": "MA",
+              "Extended": {
+                "DhlExtAsnLineNbr": "000050",
+                "DhlCustRef2": "H&M",
+                "DhlCustRef3": "Baby/Children",
+                "DhlCustRef1": "2026-11-02",
+                "DhlCustRef4": "Children Sizes 92-140",
+                "DhlCustRef5": "Girl 92-140 H&M Kids"
+              },
+              "QuantityUomId": "Units",
+              "InventoryTypeId": "F",
+              "ItemId": "1370811001264010",
+              "InventoryAttribute1": "722286",
+              "LpnId": "00173217306660655789",
+              "ShippedQuantity": "65",
+              "ProductStatusId": "W533"
+            }
+          ],
+          "LpnSizeTypeId": "A49",
+          "AsnId": "1064389422"
+        },
+        {
+          "Actions": {
+            "LpnDetail": "RESET"
+          },
+          "LpnId": "00173217306660655796",
+          "Extended": {
+            "DhlCustRefTtext1": "WAITING",
+            "DhlCustRef2": "40",
+            "DhlCustRef3": "40",
+            "DhlCustRef1": "58"
+          },
+          "LpnDetail": [
+            {
+              "RetailPrice": "999",
+              "CountryOfOrigin": "MA",
+              "Extended": {
+                "DhlExtAsnLineNbr": "000030",
+                "DhlCustRef2": "H&M",
+                "DhlCustRef3": "Baby/Children",
+                "DhlCustRef1": "2026-11-02",
+                "DhlCustRef4": "Children Sizes 92-140",
+                "DhlCustRef5": "Girl 92-140 H&M Kids"
+              },
+              "QuantityUomId": "Units",
+              "InventoryTypeId": "F",
+              "ItemId": "1370811001264008",
+              "InventoryAttribute1": "722286",
+              "LpnId": "00173217306660655796",
+              "ShippedQuantity": "14",
+              "ProductStatusId": "W533"
+            },
+            {
+              "RetailPrice": "999",
+              "CountryOfOrigin": "MA",
+              "Extended": {
+                "DhlExtAsnLineNbr": "000040",
+                "DhlCustRef2": "H&M",
+                "DhlCustRef3": "Baby/Children",
+                "DhlCustRef1": "2026-11-02",
+                "DhlCustRef4": "Children Sizes 92-140",
+                "DhlCustRef5": "Girl 92-140 H&M Kids"
+              },
+              "QuantityUomId": "Units",
+              "InventoryTypeId": "F",
+              "ItemId": "1370811001264009",
+              "InventoryAttribute1": "722286",
+              "LpnId": "00173217306660655796",
+              "ShippedQuantity": "10",
+              "ProductStatusId": "W533"
+            },
+            {
+              "RetailPrice": "999",
+              "CountryOfOrigin": "MA",
+              "Extended": {
+                "DhlExtAsnLineNbr": "000050",
+                "DhlCustRef2": "H&M",
+                "DhlCustRef3": "Baby/Children",
+                "DhlCustRef1": "2026-11-02",
+                "DhlCustRef4": "Children Sizes 92-140",
+                "DhlCustRef5": "Girl 92-140 H&M Kids"
+              },
+              "QuantityUomId": "Units",
+              "InventoryTypeId": "F",
+              "ItemId": "1370811001264010",
+              "InventoryAttribute1": "722286",
+              "LpnId": "00173217306660655796",
+              "ShippedQuantity": "21",
+              "ProductStatusId": "W533"
+            }
+          ],
+          "LpnSizeTypeId": "A49",
+          "AsnId": "1064389422"
+        },
+        {
+          "Actions": {
+            "LpnDetail": "RESET"
+          },
+          "LpnId": "00173217306660655802",
+          "Extended": {
+            "DhlCustRefTtext1": "WAITING",
+            "DhlCustRef2": "40",
+            "DhlCustRef3": "40",
+            "DhlCustRef1": "58"
+          },
+          "LpnDetail": [
+            {
+              "RetailPrice": "999",
+              "CountryOfOrigin": "MA",
+              "Extended": {
+                "DhlExtAsnLineNbr": "000010",
+                "DhlCustRef2": "H&M",
+                "DhlCustRef3": "Baby/Children",
+                "DhlCustRef1": "2026-11-02",
+                "DhlCustRef4": "Children Sizes 92-140",
+                "DhlCustRef5": "Girl 92-140 H&M Kids"
+              },
+              "QuantityUomId": "Units",
+              "InventoryTypeId": "F",
+              "ItemId": "1370811001264006",
+              "InventoryAttribute1": "722286",
+              "LpnId": "00173217306660655802",
+              "ShippedQuantity": "52",
+              "ProductStatusId": "W533"
+            }
+          ],
+          "LpnSizeTypeId": "A49",
+          "AsnId": "1064389422"
+        }
+      ],
+      "AsnId": "1064389422",
+      "DestinationFacilityId": "IN_5180"
+    }
+  ]
+}
