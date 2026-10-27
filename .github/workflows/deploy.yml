@@ -28,7 +28,7 @@ jobs:
       - name: Build Frontend
         working-directory: ./frontend
         run: |
-          npm ci --prefer-offline --no-audit
+          npm ci --prefer-offline --no-audit || npm install
           npm run build
 
       - name: Build Spring Boot Application
@@ -38,7 +38,7 @@ jobs:
     name: Deploy to AWS EC2 via SSH
     needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && secrets.EC2_HOST != ''
     steps:
       - name: Execute Remote Deployment via SSH
         uses: appleboy/ssh-action@v1.0.3
