@@ -328,79 +328,87 @@ public class KafkaStudioController {
         List<Map<String, Object>> messages = new ArrayList<>();
 
         // 1. Try reading real messages directly from Kafka broker
-        try (Consumer<String, byte[]> consumer = createConsumer()) {
-            var partitionInfos = consumer.partitionsFor(topic);
-            if (partitionInfos != null && !partitionInfos.isEmpty()) {
-                List<TopicPartition> partitionsToPoll = new ArrayList<>();
-                if (targetPartition != null) {
-                    partitionsToPoll.add(new TopicPartition(topic, targetPartition));
-                } else {
-                    for (var pi : partitionInfos) {
-                        partitionsToPoll.add(new TopicPartition(topic, pi.partition()));
+        try {
+            try (Consumer<String, byte[]> consumer = createConsumer()) {
+                var partitionInfos = consumer.partitionsFor(topic);
+                if (partitionInfos != null && !partitionInfos.isEmpty()) {
+                    List<TopicPartition> partitionsToPoll = new ArrayList<>();
+                    if (targetPartition != null) {
+                        partitionsToPoll.add(new TopicPartition(topic, targetPartition));
+                    } else {
+                        for (var pi : partitionInfos) {
+                            partitionsToPoll.add(new TopicPartition(topic, pi.partition()));
+                        }
                     }
-                }
 
-                consumer.assign(partitionsToPoll);
-                Map<TopicPartition, Long> endOffsets = consumer.endOffsets(partitionsToPoll);
-                Map<TopicPartition, Long> beginOffsets = consumer.beginningOffsets(partitionsToPoll);
+                    consumer.assign(partitionsToPoll);
+                    Map<TopicPartition, Long> endOffsets = consumer.endOffsets(partitionsToPoll);
+                    Map<TopicPartition, Long> beginOffsets = consumer.beginningOffsets(partitionsToPoll);
 
-                int perPartitionLimit = Math.max(5, limit / Math.max(1, partitionsToPoll.size()));
+                    int perPartitionLimit = Math.max(5, limit / Math.max(1, partitionsToPoll.size()));
 
-                for (TopicPartition tp : partitionsToPoll) {
-                    long end = endOffsets.getOrDefault(tp, 0L);
-                    long start = beginOffsets.getOrDefault(tp, 0L);
-                    long targetSeek = Math.max(start, end - perPartitionLimit);
-                    consumer.seek(tp, targetSeek);
-                }
+                    for (TopicPartition tp : partitionsToPoll) {
+                        long end = endOffsets.getOrDefault(tp, 0L);
+                        long start = beginOffsets.getOrDefault(tp, 0L);
+                        long targetSeek = Math.max(start, end - perPartitionLimit);
+                        consumer.seek(tp, targetSeek);
+                    }
 
-                ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofMillis(1200));
-                for (ConsumerRecord<String, byte[]> r : records) {
-                    Map<String, Object> msg = new LinkedHashMap<>();
-                    msg.put("topic", r.topic());
-                    msg.put("partition", r.partition());
-                    msg.put("offset", r.offset());
-                    msg.put("key", r.key() != null ? r.key() : "NULL");
-                    msg.put("timestamp", r.timestamp());
-                    msg.put("payloadSizeBytes", r.value() != null ? r.value().length : 0);
+                    ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofMillis(1200));
+                    for (ConsumerRecord<String, byte[]> r : records) {
+                        Map<String, Object> msg = new LinkedHashMap<>();
+                        msg.put("topic", r.topic());
+                        msg.put("partition", r.partition());
+                        msg.put("offset", r.offset());
+                        msg.put("key", r.key() != null ? r.key() : "NULL");
+                        msg.put("timestamp", r.timestamp());
+                        msg.put("payloadSizeBytes", r.value() != null ? r.value().length : 0);
 
-                    // Extract Kafka Headers
-                    Map<String, String> headers = new HashMap<>();
-                    String trackingId = null;
-                    if (r.headers() != null) {
-                        for (Header h : r.headers()) {
-                            if (h.value() != null) {
-                                String val = new String(h.value(), StandardCharsets.UTF_8);
-                                headers.put(h.key(), val);
-                                if ("X-Tracking-Id".equalsIgnoreCase(h.key())) {
-                                    trackingId = val;
+                        // Extract Kafka Headers
+                        Map<String, String> headers = new HashMap<>();
+                        String trackingId = null;
+                        if (r.headers() != null) {
+                            for (Header h : r.headers()) {
+                                if (h.value() != null) {
+                                    String val = new String(h.value(), StandardCharsets.UTF_8);
+                                    headers.put(h.key(), val);
+                                    if ("X-Tracking-Id".equalsIgnoreCase(h.key())) {
+                                        trackingId = val;
+                                    }
                                 }
                             }
                         }
-                    }
-                    msg.put("headers", headers);
-                    msg.put("trackingId", trackingId != null ? trackingId : "N/A");
+                        msg.put("headers", headers);
+                        msg.put("trackingId", trackingId != null ? trackingId : "N/A");
 
-                    // Payload preview (first 400 chars)
-                    if (r.value() != null) {
-                        String rawStr = new String(r.value(), StandardCharsets.UTF_8);
-                        String preview = rawStr.length() > 400 ? rawStr.substring(0, 400) + "..." : rawStr;
-                        msg.put("payloadPreview", preview);
-                        msg.put("isClaimCheck", rawStr.contains("[CLAIM_CHECK:") || "true".equalsIgnoreCase(headers.get("X-Claim-Check")));
-                    } else {
-                        msg.put("payloadPreview", "(Empty Payload)");
-                        msg.put("isClaimCheck", false);
-                    }
+                        // Payload preview (first 400 chars)
+                        if (r.value() != null) {
+                            String rawStr = new String(r.value(), StandardCharsets.UTF_8);
+                            String preview = rawStr.length() > 400 ? rawStr.substring(0, 400) + "..." : rawStr;
+                            msg.put("payloadPreview", preview);
+                            msg.put("isClaimCheck", rawStr.contains("[CLAIM_CHECK:") || "true".equalsIgnoreCase(headers.get("X-Claim-Check")));
+                        } else {
+                            msg.put("payloadPreview", "(Empty Payload)");
+                            msg.put("isClaimCheck", false);
+                        }
 
-                    messages.add(msg);
+                        messages.add(msg);
+                    }
                 }
             }
-        } catch (Exception ex) {
+        } catch (Throwable ex) {
             log.warn("Direct Kafka poll failed or timed out for topic {}: {}. Pulling tracked jobs from DB.", topic, ex.getMessage());
         }
 
         // 2. Fallback / Merge with DB tracked coordinates so we always have complete history
         if (messages.isEmpty()) {
-            var tracked = trackerRepository.findByKafkaTopicOrderByReceivedAtDesc(topic, PageRequest.of(0, limit));
+            List<com.platform.erp.model.ErpFileIntakeTracker> tracked = new ArrayList<>(trackerRepository.findByKafkaTopicOrderByReceivedAtDesc(topic, PageRequest.of(0, limit)));
+            if (tracked.isEmpty() && (topic.contains("po") || topic.contains("asn"))) {
+                String expectedDoc = topic.contains("asn") ? "ASN" : "PO";
+                tracked = trackerRepository.findByOrderByReceivedAtDesc(PageRequest.of(0, limit)).stream()
+                        .filter(t -> expectedDoc.equalsIgnoreCase(t.getTransactionType()))
+                        .toList();
+            }
             for (var t : tracked) {
                 if (targetPartition != null && t.getKafkaPartition() != null && !t.getKafkaPartition().equals(targetPartition)) {
                     continue;

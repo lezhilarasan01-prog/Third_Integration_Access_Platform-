@@ -58,6 +58,7 @@ public class TransactionStore {
             tracker.setFileSizeBytes(sizeBytes);
             tracker.setFileChecksum(checksum);
             tracker.setReceivedAt(Instant.now());
+            tracker.setKafkaTopic(targetTopic);
             tracker.setIntakeStatus("RECEIVED");
             tracker.setDispatchStatus("PENDING");
             tracker.setUpdatedAt(Instant.now());
