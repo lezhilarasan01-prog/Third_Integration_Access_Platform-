@@ -38,9 +38,20 @@ jobs:
     name: Deploy to AWS EC2 via SSH
     needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && secrets.EC2_HOST != ''
+    if: github.ref == 'refs/heads/main'
     steps:
+      - name: Check Deployment Secrets
+        id: check-secrets
+        run: |
+          if [ -z "${{ secrets.EC2_HOST }}" ]; then
+            echo "::notice ::EC2_HOST secret not configured. Skipping remote SSH deployment."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Execute Remote Deployment via SSH
+        if: steps.check-secrets.outputs.skip != 'true'
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
