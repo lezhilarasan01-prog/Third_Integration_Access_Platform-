@@ -25,13 +25,6 @@ import {
   Cloud,
   Trash2
 } from 'lucide-react';
-import {
-  getJobById,
-  calculateDuration,
-  getSuggestedCorrection,
-  getJobTimeline
-} from '../../services/jobService';
-import { getTransactionsByJobId } from '../../services/transactionService';
 import { integrationApi } from '../../services/integrationApi';
 
 function formatSourceName(code) {
