@@ -204,6 +204,50 @@ export const integrationApi = {
     return res.json();
   },
 
+  // --- 2.1 Distinct Ingestion Options from Database ---
+  async getIngestionOptions() {
+    try {
+      const res = await fetch(`${BASE_URL}/api/v1/erp/transactions/options`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && (Array.isArray(data.sourceSystems) || Array.isArray(data.transactionTypes))) {
+          return {
+            sourceSystems: (data.sourceSystems || []).filter(s => s && !['files', 'ingest', 'raw'].includes(s.toLowerCase())),
+            transactionTypes: (data.transactionTypes || []).filter(Boolean)
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('Could not fetch distinct options from /api/v1/erp/transactions/options:', e);
+    }
+
+    // Dynamic Fallback: Derive from tracker database records
+    try {
+      const trackers = (await this.getTrackers()) || [];
+      const sources = [...new Set(
+        trackers
+          .map(t => (t.sourceSystem || '').trim())
+          .filter(s => s && !['files', 'ingest', 'raw'].includes(s.toLowerCase()))
+      )].sort();
+
+      const types = [...new Set(
+        trackers
+          .map(t => (t.transactionType || '').trim())
+          .filter(Boolean)
+      )].sort();
+
+      return {
+        sourceSystems: sources.length > 0 ? sources : ['CUSTOMER_A_ERP', 'CUSTOMER_B_ERP', 'CUSTOMER_C_ERP', 'CUSTOMER_D_ERP', 'HM', 'SAP_ERP', 'LOGISTICS_PARTNER', 'ORACLE_NETSUITE'],
+        transactionTypes: types.length > 0 ? types : ['ASN', 'PO']
+      };
+    } catch (err) {
+      return {
+        sourceSystems: ['CUSTOMER_A_ERP', 'CUSTOMER_B_ERP', 'CUSTOMER_C_ERP', 'CUSTOMER_D_ERP', 'HM', 'SAP_ERP', 'LOGISTICS_PARTNER', 'ORACLE_NETSUITE'],
+        transactionTypes: ['ASN', 'PO']
+      };
+    }
+  },
+
   // --- 3. PostgreSQL Tracker Activity (Cached & Deduplicated) ---
   async getTrackers(force = false, page = 0, size = 50) {
     const now = Date.now();

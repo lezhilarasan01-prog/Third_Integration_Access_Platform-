@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   UploadCloud,
   FileText,
@@ -18,6 +18,19 @@ import {
   Download
 } from 'lucide-react';
 import { integrationApi } from '../../services/integrationApi';
+
+const DEFAULT_ERP_SOURCES = [
+  'CUSTOMER_A_ERP',
+  'CUSTOMER_B_ERP',
+  'CUSTOMER_C_ERP',
+  'CUSTOMER_D_ERP',
+  'HM',
+  'SAP_ERP',
+  'LOGISTICS_PARTNER',
+  'ORACLE_NETSUITE'
+];
+
+const DEFAULT_DOC_TYPES = ['ASN', 'PO'];
 
 const PRESET_SAMPLES = [
   {
@@ -390,6 +403,9 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
   const [erpSource, setErpSource] = useState('CUSTOMER_A_ERP');
   const [customErp, setCustomErp] = useState('');
   const [docType, setDocType] = useState('ASN');
+  const [customDocType, setCustomDocType] = useState('');
+  const [dbSources, setDbSources] = useState([]);
+  const [dbDocTypes, setDbDocTypes] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [uploadResult, setUploadResult] = useState(null);
@@ -400,9 +416,52 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
 
   const fileInputRef = useRef(null);
 
+  // Dynamically fetch live distinct sources and document types from the database
+  useEffect(() => {
+    let isMounted = true;
+    const fetchOptions = async () => {
+      try {
+        const { sourceSystems, transactionTypes } = await integrationApi.getIngestionOptions();
+        if (isMounted) {
+          if (Array.isArray(sourceSystems) && sourceSystems.length > 0) {
+            setDbSources(sourceSystems);
+          }
+          if (Array.isArray(transactionTypes) && transactionTypes.length > 0) {
+            setDbDocTypes(transactionTypes);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load dynamic options from DB:', err);
+      }
+    };
+    if (isOpen) {
+      fetchOptions();
+    }
+    return () => { isMounted = false; };
+  }, [isOpen]);
+
+  const effectiveSources = useMemo(() => {
+    const base = dbSources.length > 0 ? dbSources : DEFAULT_ERP_SOURCES;
+    const list = [...base];
+    if (erpSource && erpSource !== 'CUSTOM' && !list.includes(erpSource)) {
+      list.unshift(erpSource);
+    }
+    return list;
+  }, [dbSources, erpSource]);
+
+  const effectiveDocTypes = useMemo(() => {
+    const base = dbDocTypes.length > 0 ? dbDocTypes : DEFAULT_DOC_TYPES;
+    const list = [...base];
+    if (docType && docType !== 'CUSTOM' && !list.includes(docType)) {
+      list.unshift(docType);
+    }
+    return list;
+  }, [dbDocTypes, docType]);
+
   if (!isOpen) return null;
 
   const activeErp = erpSource === 'CUSTOM' ? customErp.trim() || 'CUSTOM_ERP' : erpSource;
+  const activeDocType = docType === 'CUSTOM' ? (customDocType.trim().toUpperCase() || 'CUSTOM_DOC') : docType;
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -463,7 +522,7 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
     setConvertedJson(null);
 
     try {
-      const res = await integrationApi.uploadFile(activeErp, docType, selectedFile, null);
+      const res = await integrationApi.uploadFile(activeErp, activeDocType, selectedFile, null);
       setUploadResult(res);
 
       // Automatically fetch converted JSON after brief ingestion cycle
@@ -714,12 +773,11 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                 className="select-field"
                 style={{ width: '100%', padding: '0.45rem 0.65rem', borderRadius: '6px' }}
               >
-                <option value="CUSTOMER_A_ERP">CUSTOMER_A_ERP (H&amp;M Feed)</option>
-                <option value="CUSTOMER_B_ERP">CUSTOMER_B_ERP (Retail CSV)</option>
-                <option value="CUSTOMER_C_ERP">CUSTOMER_C_ERP (XML Supplier)</option>
-                <option value="CUSTOMER_D_ERP">CUSTOMER_D_ERP (MAWM JSON)</option>
-                <option value="SAP_ERP">SAP_ERP (Enterprise S/4)</option>
-                <option value="LOGISTICS_PARTNER">LOGISTICS_PARTNER (EDI Feed)</option>
+                {effectiveSources.map((src) => (
+                  <option key={src} value={src}>
+                    {src}
+                  </option>
+                ))}
                 <option value="CUSTOM">Custom System Name...</option>
               </select>
               {erpSource === 'CUSTOM' && (
@@ -745,10 +803,23 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                 className="select-field"
                 style={{ width: '100%', padding: '0.45rem 0.65rem', borderRadius: '6px' }}
               >
-                <option value="ASN">ASN (Advanced Shipping Notice)</option>
-                <option value="PO">PO (Purchase Order)</option>
-                <option value="CUSTOM">CUSTOM</option>
+                {effectiveDocTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+                <option value="CUSTOM">Custom Document Type...</option>
               </select>
+              {docType === 'CUSTOM' && (
+                <input
+                  type="text"
+                  placeholder="Enter custom Document Type (e.g. INVOICE)"
+                  value={customDocType}
+                  onChange={(e) => setCustomDocType(e.target.value)}
+                  className="input-field"
+                  style={{ width: '100%', marginTop: '0.4rem', padding: '0.4rem 0.6rem' }}
+                />
+              )}
             </div>
           </div>
 

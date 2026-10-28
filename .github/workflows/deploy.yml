@@ -62,12 +62,18 @@ jobs:
             set -e
             echo ">> Deploying latest release on EC2..."
             
-            # Navigate to project directory or clone if not present
-            if [ ! -d ~/erp-kafka-platform ]; then
-              git clone https://github.com/${{ github.repository }}.git ~/erp-kafka-platform
+            # Navigate to project directory (~/app or ~/erp-kafka-platform) or clone if not present
+            TARGET_DIR=""
+            if [ -d ~/app ]; then
+              TARGET_DIR=~/app
+            elif [ -d ~/erp-kafka-platform ]; then
+              TARGET_DIR=~/erp-kafka-platform
+            else
+              git clone https://github.com/${{ github.repository }}.git ~/app
+              TARGET_DIR=~/app
             fi
             
-            cd ~/erp-kafka-platform
+            cd "$TARGET_DIR"
             git fetch --all
             git reset --hard origin/main
             

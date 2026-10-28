@@ -99,8 +99,11 @@ public class ErpIngestionController {
 	 * MediaType (consumes = MediaType.ALL_VALUE)
 	 */
 	@PostMapping(value = { "/{erpSource}/files", "/{erpSource}/ingest", "/{erpSource}",
-			"/{erpSource}/raw" }, consumes = MediaType.ALL_VALUE)
-	public ResponseEntity<?> ingestPayload(@PathVariable("erpSource") String erpSource,
+			"/{erpSource}/raw", "/files", "/ingest", "/raw" }, consumes = MediaType.ALL_VALUE)
+	public ResponseEntity<?> ingestPayload(
+			@PathVariable(value = "erpSource", required = false) String erpSourcePath,
+			@RequestParam(value = "erpSource", required = false) String erpSourceParam,
+			@RequestHeader(value = "X-ERP-Source", required = false) String erpSourceHeader,
 			@RequestParam(value = "docType", required = false) String docTypeParam,
 			@RequestParam(value = "type", required = false) String typeParam,
 			@RequestParam(value = "topic", required = false) String customTopic,
@@ -110,6 +113,25 @@ public class ErpIngestionController {
 			@RequestHeader(value = "X-Kafka-Topic", required = false) String headerTopic,
 			@RequestHeader(value = "Content-Disposition", required = false) String contentDisposition,
 			HttpServletRequest request) {
+
+		// 0. Enforce Mandatory ERP Source Validation
+		String erpSource = (erpSourceParam != null && !erpSourceParam.isBlank())
+				? erpSourceParam.trim()
+				: (erpSourceHeader != null && !erpSourceHeader.isBlank())
+				? erpSourceHeader.trim()
+				: erpSourcePath;
+
+		// Guard: Reject if erpSource is missing or accidentally captured route keywords like "files", "ingest", or "raw"
+		if (erpSource == null || erpSource.isBlank()
+				|| "files".equalsIgnoreCase(erpSource)
+				|| "ingest".equalsIgnoreCase(erpSource)
+				|| "raw".equalsIgnoreCase(erpSource)) {
+			return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+					"error", "MISSING_HOST_SOURCE",
+					"message", "Host Source is mandatory. Please specify a valid host source system"
+			));
+		}
+		erpSource = erpSource.trim().toUpperCase();
 
 		try {
 			byte[] payload = null;

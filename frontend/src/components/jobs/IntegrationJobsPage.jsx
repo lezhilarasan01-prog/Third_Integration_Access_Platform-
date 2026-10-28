@@ -445,11 +445,13 @@ export default function IntegrationJobsPage({
               className="form-select-theme"
               title="Filter by live ERP source systems"
             >
-              <option value="ALL">All Source Systems ({effectiveJobs.length})</option>
-              {availableSources.map(({ source, count }) => (
-                <option key={source} value={source}>
-                  {source} ({count})
-                </option>
+              <option value="ALL">All Source Systems</option>
+              {availableSources
+                .filter(({ source }) => source && !['files', 'ingest', 'raw'].includes(source.toLowerCase()))
+                .map(({ source }) => (
+                  <option key={source} value={source}>
+                    {source}
+                  </option>
               ))}
             </select>
 
@@ -463,10 +465,10 @@ export default function IntegrationJobsPage({
               className="form-select-theme"
               title="Filter by live document transaction types"
             >
-              <option value="ALL">All Transaction Types ({effectiveJobs.length})</option>
-              {availableTypes.map(({ type, count }) => (
+              <option value="ALL">All Transaction Types</option>
+              {availableTypes.map(({ type }) => (
                 <option key={type} value={type}>
-                  {type} ({count})
+                  {type}
                 </option>
               ))}
             </select>

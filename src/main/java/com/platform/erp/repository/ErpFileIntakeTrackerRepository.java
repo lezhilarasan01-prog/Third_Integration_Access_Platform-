@@ -24,4 +24,15 @@ public interface ErpFileIntakeTrackerRepository extends JpaRepository<ErpFileInt
 
     @Query("SELECT t FROM ErpFileIntakeTracker t WHERE t.intakeStatus IN ('FAILED', 'DUPLICATE_SKIPPED') OR t.dispatchStatus = 'FAILED' OR (t.processingErrorMessage IS NOT NULL AND t.processingErrorMessage != '') ORDER BY t.receivedAt DESC")
     List<ErpFileIntakeTracker> findDlqExceptions();
+
+    @Query("SELECT DISTINCT t.sourceSystem FROM ErpFileIntakeTracker t WHERE t.sourceSystem IS NOT NULL AND TRIM(t.sourceSystem) != '' ORDER BY t.sourceSystem ASC")
+    List<String> findDistinctSourceSystems();
+
+    @Query("SELECT DISTINCT t.transactionType FROM ErpFileIntakeTracker t WHERE t.transactionType IS NOT NULL AND TRIM(t.transactionType) != '' ORDER BY t.transactionType ASC")
+    List<String> findDistinctTransactionTypes();
+
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @Query("DELETE FROM ErpFileIntakeTracker t WHERE LOWER(t.sourceSystem) IN ('files', 'ingest', 'raw')")
+    int cleanupInvalidSourceTrackers();
 }

@@ -37,6 +37,18 @@ public class TransactionStore {
         this.blobStorageService = blobStorageService;
     }
 
+    @jakarta.annotation.PostConstruct
+    public void init() {
+        try {
+            int deleted = trackerRepository.cleanupInvalidSourceTrackers();
+            if (deleted > 0) {
+                log.info("[DB Tracker] Purged {} legacy tracker records with invalid route source keywords.", deleted);
+            }
+        } catch (Exception e) {
+            log.debug("[DB Tracker] Route keyword cleanup skipped or table not initialized yet: {}", e.getMessage());
+        }
+    }
+
     /**
      * Stage 1: Receive
      * Records initial entry in erp_file_intake_tracker upon file intake.
@@ -297,6 +309,33 @@ public class TransactionStore {
 
     public List<ErpFileIntakeTracker> getDlqExceptions() {
         return trackerRepository.findDlqExceptions();
+    }
+
+    public List<String> getDistinctSourceSystems() {
+        try {
+            return trackerRepository.findDistinctSourceSystems().stream()
+                    .filter(s -> s != null && !s.isBlank())
+                    .map(String::trim)
+                    .filter(s -> !List.of("files", "ingest", "raw").contains(s.toLowerCase()))
+                    .distinct()
+                    .toList();
+        } catch (Exception e) {
+            log.warn("Could not query distinct source systems: {}", e.getMessage());
+            return List.of("CUSTOMER_A_ERP", "CUSTOMER_B_ERP", "CUSTOMER_C_ERP", "CUSTOMER_D_ERP", "HM", "SAP_ERP", "LOGISTICS_PARTNER", "ORACLE_NETSUITE");
+        }
+    }
+
+    public List<String> getDistinctTransactionTypes() {
+        try {
+            return trackerRepository.findDistinctTransactionTypes().stream()
+                    .filter(s -> s != null && !s.isBlank())
+                    .map(String::trim)
+                    .distinct()
+                    .toList();
+        } catch (Exception e) {
+            log.warn("Could not query distinct transaction types: {}", e.getMessage());
+            return List.of("ASN", "PO");
+        }
     }
 
     public Optional<ProcessedTransaction> getTransaction(String trackingId) {

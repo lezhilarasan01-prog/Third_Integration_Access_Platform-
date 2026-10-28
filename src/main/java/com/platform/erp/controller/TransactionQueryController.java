@@ -25,6 +25,18 @@ public class TransactionQueryController {
     }
 
     /**
+     * Get distinct ERP source systems and transaction types dynamically from database.
+     * Example: GET /api/v1/erp/transactions/options
+     */
+    @GetMapping("/options")
+    public ResponseEntity<java.util.Map<String, List<String>>> getIngestionOptions() {
+        return ResponseEntity.ok(java.util.Map.of(
+                "sourceSystems", transactionStore.getDistinctSourceSystems(),
+                "transactionTypes", transactionStore.getDistinctTransactionTypes()
+        ));
+    }
+
+    /**
      * Get transaction details and the converted Canonical JSON by trackingId.
      * Example: GET /api/v1/erp/transactions/c843858c-58fe-4773-a660-bb1bf02a0fa8
      */
