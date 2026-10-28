@@ -141,6 +141,79 @@ function formatMawmOutput(payload) {
   return JSON.stringify({ Data: [] }, null, 2);
 }
 
+function calculateDuration(start, end) {
+  if (!start || !end) return null;
+  const s = new Date(start).getTime();
+  const e = new Date(end).getTime();
+  if (isNaN(s) || isNaN(e) || e < s) return null;
+  const diff = e - s;
+  if (diff < 1000) return `${diff} ms`;
+  return `${(diff / 1000).toFixed(2)} s`;
+}
+
+function getJobTimeline(job) {
+  if (!job) return [];
+  const isFailed = job.status === 'FAILED';
+  const hasErrors = (job.errorRecords || 0) > 0 || (job.sampleErrors && job.sampleErrors.length > 0);
+  const createdAt = job.createdAt || job.receivedAt;
+  const updatedAt = job.updatedAt || job.processedAt || createdAt;
+
+  return [
+    {
+      id: 'stage-1-intake',
+      stageNumber: 1,
+      name: 'Intake & Buffer',
+      summary: `File received from ${job.erpSource || 'ERP'} and staged for Kafka ingestion`,
+      status: 'completed',
+      timestamp: createdAt
+    },
+    {
+      id: 'stage-2-queue',
+      stageNumber: 2,
+      name: 'Kafka Event Queuing',
+      summary: `Message published to topic ${job.targetTopic || 'erp_file_raw'} with partition key`,
+      status: 'completed',
+      timestamp: createdAt
+    },
+    {
+      id: 'stage-3-transformation',
+      stageNumber: 3,
+      name: 'Canonical Mapping',
+      summary: isFailed
+        ? 'Transformation pipeline encountered errors processing records'
+        : `Transformed to MAWM Canonical JSON (${job.mappingProfile || 'Universal Profile'})`,
+      status: isFailed ? 'failed' : 'completed',
+      timestamp: updatedAt
+    },
+    {
+      id: 'stage-4-validation',
+      stageNumber: 4,
+      name: 'Schema Validation',
+      summary: hasErrors
+        ? `${job.errorRecords || 1} validation anomalies detected`
+        : 'All records passed strict LPN & line validation rules',
+      status: isFailed ? 'failed' : hasErrors ? 'warning' : 'completed',
+      timestamp: updatedAt
+    },
+    {
+      id: 'stage-5-audit',
+      stageNumber: 5,
+      name: 'Database Tracker',
+      summary: 'Transaction state and audit metadata persisted in PostgreSQL',
+      status: 'completed',
+      timestamp: updatedAt
+    },
+    {
+      id: 'stage-6-outbound',
+      stageNumber: 6,
+      name: 'MAWM Cloud Dispatch',
+      summary: 'Outbound dispatch adapter to Manhattan Active WMS sandbox',
+      status: 'not_connected',
+      timestamp: null
+    }
+  ];
+}
+
 /**
  * Dedicated Integration Job Details & Error Inspection Page
  *
@@ -217,7 +290,7 @@ export default function JobDetailsPage({ jobId, onBack }) {
   const job = liveJob;
 
   // Retrieve child documents linked to this job
-  const jobTransactions = job ? getTransactionsByJobId(job.jobId) : [];
+  const jobTransactions = job?.transactions || [];
   const documents = (jobTransactions && jobTransactions.length > 0)
     ? jobTransactions
     : job
