@@ -4,6 +4,9 @@ package com.platform.erp.transformer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.platform.erp.model.hm.*;
 import com.platform.erp.model.hm.HmInboundDeliveryMessage.*;
+import com.platform.erp.validation.HmAsnSchemaValidator;
+import com.platform.erp.validation.SchemaValidationException;
+import com.platform.erp.validation.ValidationResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,45 +33,35 @@ public class HmAsnToMawmMapper {
 
     private final ObjectMapper objectMapper;
     private final HmAsnProperties properties;
+    private final HmAsnSchemaValidator validator;
 
     public HmAsnToMawmMapper() {
-        this(new ObjectMapper(), new HmAsnProperties());
+        this(new ObjectMapper(), new HmAsnProperties(), new HmAsnSchemaValidator());
+    }
+
+    public HmAsnToMawmMapper(ObjectMapper objectMapper, HmAsnProperties properties) {
+        this(objectMapper, properties, new HmAsnSchemaValidator());
     }
 
     @Autowired
-    public HmAsnToMawmMapper(ObjectMapper objectMapper, HmAsnProperties properties) {
+    public HmAsnToMawmMapper(ObjectMapper objectMapper, HmAsnProperties properties, HmAsnSchemaValidator validator) {
         this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
         this.properties = properties != null ? properties : new HmAsnProperties();
+        this.validator = validator != null ? validator : new HmAsnSchemaValidator();
     }
 
     /**
      * Entry point for Apache Camel or direct Java calls.
      */
     public Map<String, Object> transform(HmInboundDeliveryMessage message) {
-        if (message == null || message.inboundDelivery() == null) {
-            throw new IllegalArgumentException("H&M inbound delivery message payload is missing or invalid");
+        // 1. Generic Schema & Business Rule Validation
+        ValidationResult validationResult = validator.validate(message);
+        if (!validationResult.isValid()) {
+            throw new SchemaValidationException("H&M Inbound Delivery schema validation failed", validationResult);
         }
 
         HmInboundDelivery delivery = message.inboundDelivery();
         List<HmDeliveryLine> lines = delivery.deliveryLine() != null ? delivery.deliveryLine() : Collections.emptyList();
-
-        // 1. Validation: sum(piecesPerCarton) must equal advisedQuantity for every line
-        for (HmDeliveryLine line : lines) {
-            int advised = line.advisedQuantity() != null ? line.advisedQuantity() : 0;
-            int totalPieces = 0;
-            if (line.packing() != null) {
-                for (HmPacking p : line.packing()) {
-                    if (p.piecesPerCarton() != null) {
-                        totalPieces += p.piecesPerCarton();
-                    }
-                }
-            }
-            if (totalPieces != advised) {
-                throw new IllegalStateException(String.format(
-                        "Line validation failed for line %s (SKU %s): advisedQuantity=%d does not match sum of piecesPerCarton=%d",
-                        line.lineNumber(), line.sku(), advised, totalPieces));
-            }
-        }
 
         String asnId = delivery.inboundDeliveryNumber();
         String siteId = delivery.siteID();
@@ -152,16 +145,16 @@ public class HmAsnToMawmMapper {
             }
         }
 
-        // 4. Sort LPNs ascending by LpnId
+        // 4. Sort LPNs ascending by LpnId (null-safe lambda avoids Eclipse null-type-safety method reference warning)
         List<LpnAccumulator> sortedLpns = new ArrayList<>(lpnMap.values());
-        sortedLpns.sort(Comparator.comparing(LpnAccumulator::getHuId));
+        sortedLpns.sort(Comparator.comparing(acc -> acc.getHuId() != null ? acc.getHuId() : ""));
 
         List<Map<String, Object>> lpnList = new ArrayList<>();
         for (LpnAccumulator acc : sortedLpns) {
             Map<String, Object> lpnObj = new LinkedHashMap<>();
 
             Map<String, Object> actions = new LinkedHashMap<>();
-            actions.put("LpnDetail", "RESET");
+            actions.put("LpnDetail", properties.lpnDetailAction());
             lpnObj.put("Actions", actions);
 
             lpnObj.put("LpnId", acc.huId);

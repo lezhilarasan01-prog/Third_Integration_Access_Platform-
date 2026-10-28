@@ -1,0 +1,94 @@
+package com.platform.erp.validation;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.platform.erp.model.hm.HmInboundDeliveryMessage;
+import com.platform.erp.model.hm.HmInboundDeliveryMessage.HmDeliveryLine;
+import com.platform.erp.model.hm.HmInboundDeliveryMessage.HmInboundDelivery;
+import com.platform.erp.model.hm.HmInboundDeliveryMessage.HmPacking;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class HmAsnSchemaValidatorTest {
+
+    private HmAsnSchemaValidator validator;
+    private ObjectMapper objectMapper;
+
+    @BeforeEach
+    void setUp() {
+        validator = new HmAsnSchemaValidator();
+        objectMapper = new ObjectMapper();
+    }
+
+    @Test
+    @DisplayName("Valid Payload: Standard sample passes schema validation cleanly")
+    void testValidSamplePassesValidation() throws Exception {
+        String inputJson;
+        try (InputStream is = getClass().getResourceAsStream("/hm_asn_input.json")) {
+            assertNotNull(is, "hm_asn_input.json must exist in test resources");
+            inputJson = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        }
+
+        HmInboundDeliveryMessage message = objectMapper.readValue(inputJson, HmInboundDeliveryMessage.class);
+        ValidationResult result = validator.validate(message);
+
+        assertTrue(result.isValid(), "Sample payload should be valid");
+        assertTrue(result.errors().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Null / Empty Payload: Reports root error")
+    void testNullPayloadReportsError() {
+        ValidationResult result = validator.validate(null);
+        assertFalse(result.isValid());
+        assertEquals(1, result.errors().size());
+        assertEquals("root", result.errors().get(0).field());
+    }
+
+    @Test
+    @DisplayName("Missing Header Fields: Reports deliveryNumber and siteID errors")
+    void testMissingHeaderFields() {
+        HmInboundDelivery delivery = new HmInboundDelivery("A", null, "Type", "", true, List.of());
+        HmInboundDeliveryMessage msg = new HmInboundDeliveryMessage("ASN", "1.0", "TX-1", "2026-01-01", "W1", delivery);
+
+        ValidationResult result = validator.validate(msg);
+        assertFalse(result.isValid());
+        assertTrue(result.errors().stream().anyMatch(e -> e.field().contains("inboundDeliveryNumber")));
+        assertTrue(result.errors().stream().anyMatch(e -> e.field().contains("siteID")));
+        assertTrue(result.errors().stream().anyMatch(e -> e.field().contains("deliveryLine")));
+    }
+
+    @Test
+    @DisplayName("Quantity Mismatch: Captures line advised quantity vs carton sum mismatch")
+    void testQuantityMismatch() {
+        HmPacking packing = new HmPacking("MAT-1", 10, 10, 10, 20, "HU001", "BOX");
+        HmDeliveryLine line = new HmDeliveryLine("1", 50, "PO100", "US", "2026-01-01", "WAIT", "SKU123", null, List.of(packing));
+        HmInboundDelivery delivery = new HmInboundDelivery("A", "ASN100", "Type", "SITE1", true, List.of(line));
+        HmInboundDeliveryMessage msg = new HmInboundDeliveryMessage("ASN", "1.0", "TX-1", "2026-01-01", "W1", delivery);
+
+        ValidationResult result = validator.validate(msg);
+        assertFalse(result.isValid());
+        assertTrue(result.errors().stream().anyMatch(e -> e.field().contains("quantityBalance")));
+        assertTrue(result.getFormattedErrors().contains("advisedQuantity=50"));
+    }
+
+    @Test
+    @DisplayName("Multi-Error Accumulation: Collects all errors across lines at once instead of failing fast")
+    void testCollectsMultipleErrors() {
+        HmPacking badPacking = new HmPacking("MAT-1", 10, 10, 10, 0, "", "BOX");
+        HmDeliveryLine badLine = new HmDeliveryLine("", 0, "PO100", "US", "2026-01-01", "WAIT", "", null, List.of(badPacking));
+        HmInboundDelivery delivery = new HmInboundDelivery("A", "", "Type", "", true, List.of(badLine));
+        HmInboundDeliveryMessage msg = new HmInboundDeliveryMessage("ASN", "1.0", "TX-1", "2026-01-01", "W1", delivery);
+
+        ValidationResult result = validator.validate(msg);
+        assertFalse(result.isValid());
+        // Must contain header errors, line errors, and packing errors simultaneously
+        assertTrue(result.errors().size() >= 5, "Should aggregate multiple validation violations");
+    }
+}
