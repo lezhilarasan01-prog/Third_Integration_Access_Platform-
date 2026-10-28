@@ -376,12 +376,21 @@ public class TransactionStore {
     }
 
     private String inferFormat(String filename) {
-        if (filename == null) return "UNKNOWN";
-        String lower = filename.toLowerCase();
+        if (filename == null || !filename.contains(".")) return "UNKNOWN";
+        String cleanName = filename.replace("\\", "/");
+        if (cleanName.contains("/")) {
+            cleanName = cleanName.substring(cleanName.lastIndexOf('/') + 1).trim();
+        }
+        int dotIndex = cleanName.lastIndexOf('.');
+        if (dotIndex <= 0 || dotIndex == cleanName.length() - 1) return "UNKNOWN";
+        String lower = cleanName.toLowerCase();
         if (lower.endsWith(".csv")) return "CSV";
         if (lower.endsWith(".edi") || lower.endsWith(".x12")) return "EDI";
         if (lower.endsWith(".json")) return "JSON";
         if (lower.endsWith(".xml")) return "XML";
-        return "FLAT";
+        if (lower.endsWith(".yaml") || lower.endsWith(".yml")) return "YAML";
+        if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) return "EXCEL";
+        if (lower.endsWith(".tsv")) return "TSV";
+        return cleanName.substring(dotIndex + 1).toUpperCase();
     }
 }

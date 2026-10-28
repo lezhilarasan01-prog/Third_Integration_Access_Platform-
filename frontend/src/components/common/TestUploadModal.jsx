@@ -463,9 +463,22 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
   const activeErp = erpSource === 'CUSTOM' ? customErp.trim() || 'CUSTOM_ERP' : erpSource;
   const activeDocType = docType === 'CUSTOM' ? (customDocType.trim().toUpperCase() || 'CUSTOM_DOC') : docType;
 
+  const hasValidFileExtension = (name) => {
+    if (!name || typeof name !== 'string') return false;
+    const clean = name.replace(/\\/g, '/').split('/').pop().trim();
+    const dot = clean.lastIndexOf('.');
+    return dot > 0 && dot < clean.length - 1;
+  };
+
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
+      const file = e.target.files[0];
+      if (!hasValidFileExtension(file.name)) {
+        setUploadError(`File extension is mandatory. "${file.name}" does not have a valid extension (e.g. .csv, .json, .xml, .edi). Files without extensions are not supported.`);
+        setSelectedFile(null);
+        return;
+      }
+      setSelectedFile(file);
       setUploadError(null);
       setUploadResult(null);
       setConvertedJson(null);
@@ -499,7 +512,13 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
   const handleDrop = (e) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setSelectedFile(e.dataTransfer.files[0]);
+      const file = e.dataTransfer.files[0];
+      if (!hasValidFileExtension(file.name)) {
+        setUploadError(`File extension is mandatory. "${file.name}" does not have a valid extension (e.g. .csv, .json, .xml, .edi). Files without extensions are not supported.`);
+        setSelectedFile(null);
+        return;
+      }
+      setSelectedFile(file);
       setUploadError(null);
       setUploadResult(null);
       setConvertedJson(null);
@@ -513,6 +532,11 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
   const handleUpload = async () => {
     if (!selectedFile) {
       setUploadError('Please select or load a file first.');
+      return;
+    }
+
+    if (!hasValidFileExtension(selectedFile.name)) {
+      setUploadError(`File extension is mandatory. "${selectedFile.name}" does not have a valid extension (e.g. .csv, .json, .xml, .edi). Files without extensions are not supported.`);
       return;
     }
 

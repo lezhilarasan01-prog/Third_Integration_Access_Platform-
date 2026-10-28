@@ -173,7 +173,7 @@ public class ErpIngestionController {
 			}
 
 			// 4. Resolve Filename (Priority: Query Param > X-Filename Header >
-			// Content-Disposition > Multipart > Auto-detected)
+			// Content-Disposition > Multipart)
 			if (queryFilename != null && !queryFilename.isBlank()) {
 				resolvedFilename = queryFilename.trim();
 			} else if (headerFilename != null && !headerFilename.isBlank()) {
@@ -182,8 +182,15 @@ public class ErpIngestionController {
 				resolvedFilename = extractFilenameFromContentDisposition(contentDisposition);
 			}
 
-			if (resolvedFilename == null || resolvedFilename.isBlank()) {
-				resolvedFilename = autoDetectFilename(erpSource);
+			// Guard: Reject if filename is missing or lacks a valid extension (e.g., "payload", "inbound_data")
+			if (resolvedFilename == null || resolvedFilename.isBlank() || !hasValidExtension(resolvedFilename)) {
+				String givenName = (resolvedFilename != null && !resolvedFilename.isBlank()) ? resolvedFilename : "(none)";
+				log.warn("[Universal Ingestion] Rejected file from ERP '{}': Missing or invalid file extension '{}'",
+						erpSource, givenName);
+				return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+						"error", "MISSING_FILE_EXTENSION",
+						"message", "File extension is mandatory. Files without an extension (received: '" + givenName + "') are not supported. Please provide a file with a valid extension (e.g. .csv, .json, .xml, .edi, .tsv)."
+				));
 			}
 
 			// 5. Dynamic Document Type Resolution (Supports ANY document type: PO, ASN,
@@ -253,7 +260,19 @@ public class ErpIngestionController {
         return null;
     }
 
-    private String autoDetectFilename(String erpSource) {
-        return erpSource.toLowerCase() + "_feed_" + System.currentTimeMillis() + ".dat";
+    private boolean hasValidExtension(String filename) {
+        if (filename == null || filename.isBlank()) {
+            return false;
+        }
+        String cleanName = filename.replace("\\", "/");
+        if (cleanName.contains("/")) {
+            cleanName = cleanName.substring(cleanName.lastIndexOf('/') + 1).trim();
+        }
+        int dotIndex = cleanName.lastIndexOf('.');
+        if (dotIndex <= 0 || dotIndex == cleanName.length() - 1) {
+            return false;
+        }
+        String ext = cleanName.substring(dotIndex + 1).trim();
+        return !ext.isBlank();
     }
 }

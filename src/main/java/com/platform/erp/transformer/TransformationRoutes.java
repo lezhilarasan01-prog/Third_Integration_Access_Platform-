@@ -64,6 +64,19 @@ public class TransformationRoutes extends RouteBuilder {
         String filename = exchange.getMessage().getHeader("CamelFileName", String.class);
         byte[] payload = exchange.getMessage().getBody(byte[].class);
 
+        // Guard: Reject files without a valid extension
+        if (filename == null || filename.isBlank()) {
+            throw new IllegalArgumentException("File extension is mandatory. No filename was provided.");
+        }
+        String cleanFilename = filename.replace("\\", "/");
+        if (cleanFilename.contains("/")) {
+            cleanFilename = cleanFilename.substring(cleanFilename.lastIndexOf('/') + 1).trim();
+        }
+        int dotIdx = cleanFilename.lastIndexOf('.');
+        if (dotIdx <= 0 || dotIdx == cleanFilename.length() - 1) {
+            throw new IllegalArgumentException("File extension is mandatory. Files without an extension (received: '" + filename + "') are not supported.");
+        }
+
         CamelContext context = exchange.getContext();
         String mimeType = detectMimeType(filename, payload);
 
@@ -120,9 +133,19 @@ public class TransformationRoutes extends RouteBuilder {
 
     private String extractExtensionOrFallback(String filename) {
         if (filename != null && filename.contains(".")) {
-            return filename.substring(filename.lastIndexOf('.') + 1).trim().toUpperCase();
+            String cleanName = filename.replace("\\", "/");
+            if (cleanName.contains("/")) {
+                cleanName = cleanName.substring(cleanName.lastIndexOf('/') + 1).trim();
+            }
+            int dotIndex = cleanName.lastIndexOf('.');
+            if (dotIndex > 0 && dotIndex < cleanName.length() - 1) {
+                String ext = cleanName.substring(dotIndex + 1).trim().toUpperCase();
+                if (!ext.isBlank()) {
+                    return ext;
+                }
+            }
         }
-        return "DYNAMIC";
+        throw new IllegalArgumentException("File extension is mandatory. Files without an extension (received: '" + (filename != null ? filename : "none") + "') are not supported.");
     }
 
     private boolean isTextContent(byte[] bytes) {
