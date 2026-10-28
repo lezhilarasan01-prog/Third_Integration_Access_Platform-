@@ -3,6 +3,7 @@ package com.platform.erp.transformer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.platform.erp.model.hm.*;
+import com.platform.erp.model.hm.HmInboundDeliveryMessage.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;

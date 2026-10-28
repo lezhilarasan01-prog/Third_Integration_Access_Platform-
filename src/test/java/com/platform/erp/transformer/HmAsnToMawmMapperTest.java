@@ -92,9 +92,9 @@ class HmAsnToMawmMapperTest {
             inputJson = new String(is.readAllBytes(), StandardCharsets.UTF_8);
         }
 
-        HmInboundDeliveryMessage message = objectMapper.readValue(inputJson, HmInboundDeliveryMessage.class);
-        // Tamper with advised quantity of first line (52 -> 99)
-        message.getInboundDelivery().getDeliveryLine().get(0).setAdvisedQuantity(99);
+        // Tamper with advised quantity of first line (52 -> 99) in JSON
+        String tamperedJson = inputJson.replaceFirst("\"advisedQuantity\":\\s*52", "\"advisedQuantity\": 99");
+        HmInboundDeliveryMessage message = objectMapper.readValue(tamperedJson, HmInboundDeliveryMessage.class);
 
         IllegalStateException ex = assertThrows(IllegalStateException.class, () -> mapper.transform(message));
         assertTrue(ex.getMessage().contains("Line validation failed"));
@@ -108,10 +108,10 @@ class HmAsnToMawmMapperTest {
             inputJson = new String(is.readAllBytes(), StandardCharsets.UTF_8);
         }
 
-        HmInboundDeliveryMessage message = objectMapper.readValue(inputJson, HmInboundDeliveryMessage.class);
-        // Remove countryOfOrigin and prices from line 0
-        message.getInboundDelivery().getDeliveryLine().get(0).setCountryOfOrigin(null);
-        message.getInboundDelivery().getDeliveryLine().get(0).getSkuAttributes().setPrices(null);
+        // Remove countryOfOrigin and prices from line 0 in JSON
+        String tamperedJson = inputJson.replaceFirst("\"countryOfOrigin\":\\s*\"MA\"", "\"countryOfOrigin\": null")
+                .replaceFirst("\"prices\":\\s*\\[[\\s\\S]*?\\n\\s*\\],", "\"prices\": [],");
+        HmInboundDeliveryMessage message = objectMapper.readValue(tamperedJson, HmInboundDeliveryMessage.class);
 
         Map<String, Object> output = mapper.transform(message);
         String json = objectMapper.writeValueAsString(output);
