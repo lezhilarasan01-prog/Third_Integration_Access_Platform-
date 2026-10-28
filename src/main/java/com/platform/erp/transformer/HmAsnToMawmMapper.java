@@ -45,41 +45,41 @@ public class HmAsnToMawmMapper {
      * Entry point for Apache Camel or direct Java calls.
      */
     public Map<String, Object> transform(HmInboundDeliveryMessage message) {
-        if (message == null || message.getInboundDelivery() == null) {
+        if (message == null || message.inboundDelivery() == null) {
             throw new IllegalArgumentException("H&M inbound delivery message payload is missing or invalid");
         }
 
-        HmInboundDelivery delivery = message.getInboundDelivery();
-        List<HmDeliveryLine> lines = delivery.getDeliveryLine() != null ? delivery.getDeliveryLine() : Collections.emptyList();
+        HmInboundDelivery delivery = message.inboundDelivery();
+        List<HmDeliveryLine> lines = delivery.deliveryLine() != null ? delivery.deliveryLine() : Collections.emptyList();
 
         // 1. Validation: sum(piecesPerCarton) must equal advisedQuantity for every line
         for (HmDeliveryLine line : lines) {
-            int advised = line.getAdvisedQuantity() != null ? line.getAdvisedQuantity() : 0;
+            int advised = line.advisedQuantity() != null ? line.advisedQuantity() : 0;
             int totalPieces = 0;
-            if (line.getPacking() != null) {
-                for (HmPacking p : line.getPacking()) {
-                    if (p.getPiecesPerCarton() != null) {
-                        totalPieces += p.getPiecesPerCarton();
+            if (line.packing() != null) {
+                for (HmPacking p : line.packing()) {
+                    if (p.piecesPerCarton() != null) {
+                        totalPieces += p.piecesPerCarton();
                     }
                 }
             }
             if (totalPieces != advised) {
                 throw new IllegalStateException(String.format(
                         "Line validation failed for line %s (SKU %s): advisedQuantity=%d does not match sum of piecesPerCarton=%d",
-                        line.getLineNumber(), line.getSku(), advised, totalPieces));
+                        line.lineNumber(), line.sku(), advised, totalPieces));
             }
         }
 
-        String asnId = delivery.getInboundDeliveryNumber();
-        String siteId = delivery.getSiteID();
+        String asnId = delivery.inboundDeliveryNumber();
+        String siteId = delivery.siteID();
 
         // 2. Map ASN-level attributes
         Map<String, Object> asnMap = new LinkedHashMap<>();
 
         // AsnOriginTypeId from config
         String originType = null;
-        if (delivery.getInboundDeliveryType() != null && properties.getOriginTypeMap() != null) {
-            originType = properties.getOriginTypeMap().get(delivery.getInboundDeliveryType());
+        if (delivery.inboundDeliveryType() != null && properties.getOriginTypeMap() != null) {
+            originType = properties.getOriginTypeMap().get(delivery.inboundDeliveryType());
         }
         putMandatory(asnMap, "AsnOriginTypeId", originType);
 
@@ -88,12 +88,12 @@ public class HmAsnToMawmMapper {
 
         // ASN Level Extended
         Map<String, Object> asnExtended = new LinkedHashMap<>();
-        if (delivery.getCustomsClearance() != null) {
-            asnExtended.put("DhlCustRef1", String.valueOf(delivery.getCustomsClearance()));
+        if (delivery.customsClearance() != null) {
+            asnExtended.put("DhlCustRef1", String.valueOf(delivery.customsClearance()));
         }
-        putOptional(asnExtended, "DhlCustRef2", delivery.getSiteID());
-        putOptional(asnExtended, "DhlCustRef3", delivery.getInboundDeliveryType());
-        putOptional(asnExtended, "DhlCustRef4", delivery.getActionType());
+        putOptional(asnExtended, "DhlCustRef2", delivery.siteID());
+        putOptional(asnExtended, "DhlCustRef3", delivery.inboundDeliveryType());
+        putOptional(asnExtended, "DhlCustRef4", delivery.actionType());
 
         if (!asnExtended.isEmpty()) {
             asnMap.put("Extended", asnExtended);
@@ -104,10 +104,10 @@ public class HmAsnToMawmMapper {
         Map<String, LpnAccumulator> lpnMap = new LinkedHashMap<>();
 
         for (HmDeliveryLine line : lines) {
-            if (line.getPacking() == null) continue;
+            if (line.packing() == null) continue;
 
-            for (HmPacking packing : line.getPacking()) {
-                String huId = packing.getHuIdentifier();
+            for (HmPacking packing : line.packing()) {
+                String huId = packing.huIdentifier();
                 if (huId == null || huId.isBlank()) continue;
 
                 LpnAccumulator acc = lpnMap.computeIfAbsent(huId, id -> new LpnAccumulator(id, packing, line));
@@ -117,23 +117,23 @@ public class HmAsnToMawmMapper {
 
                 // Retail price: mandatory, null if missing, trailing zero stripped
                 String priceStr = null;
-                if (line.getSkuAttributes() != null && line.getSkuAttributes().getPrices() != null && !line.getSkuAttributes().getPrices().isEmpty()) {
-                    HmPrice price = line.getSkuAttributes().getPrices().get(0);
-                    priceStr = formatNumber(price.getPriceValue());
+                if (line.skuAttributes() != null && line.skuAttributes().prices() != null && !line.skuAttributes().prices().isEmpty()) {
+                    HmPrice price = line.skuAttributes().prices().get(0);
+                    priceStr = formatNumber(price.priceValue());
                 }
                 putMandatory(detail, "RetailPrice", priceStr);
 
-                putOptional(detail, "CountryOfOrigin", line.getCountryOfOrigin());
+                putOptional(detail, "CountryOfOrigin", line.countryOfOrigin());
 
                 // Detail Extended
                 Map<String, Object> detailExtended = new LinkedHashMap<>();
-                putOptional(detailExtended, "DhlExtAsnLineNbr", line.getLineNumber());
-                putOptional(detailExtended, "DhlCustRef1", line.getInShopDate());
-                if (line.getSkuAttributes() != null) {
-                    putOptional(detailExtended, "DhlCustRef2", line.getSkuAttributes().getBrandName());
-                    putOptional(detailExtended, "DhlCustRef3", line.getSkuAttributes().getIndexGroupName());
-                    putOptional(detailExtended, "DhlCustRef4", line.getSkuAttributes().getIndexDescription());
-                    putOptional(detailExtended, "DhlCustRef5", line.getSkuAttributes().getSubIndexDescription());
+                putOptional(detailExtended, "DhlExtAsnLineNbr", line.lineNumber());
+                putOptional(detailExtended, "DhlCustRef1", line.inShopDate());
+                if (line.skuAttributes() != null) {
+                    putOptional(detailExtended, "DhlCustRef2", line.skuAttributes().brandName());
+                    putOptional(detailExtended, "DhlCustRef3", line.skuAttributes().indexGroupName());
+                    putOptional(detailExtended, "DhlCustRef4", line.skuAttributes().indexDescription());
+                    putOptional(detailExtended, "DhlCustRef5", line.skuAttributes().subIndexDescription());
                 }
                 if (!detailExtended.isEmpty()) {
                     detail.put("Extended", detailExtended);
@@ -141,11 +141,11 @@ public class HmAsnToMawmMapper {
 
                 // QuantityUomId: schema mandatory, kept null if no mapping from input
                 putMandatory(detail, "QuantityUomId", properties.getQuantityUomId());
-                putOptional(detail, "InventoryTypeId", packing.getPackingMode());
-                putOptional(detail, "ItemId", line.getSku());
-                putOptional(detail, "InventoryAttribute1", line.getHmOrderNumber());
+                putOptional(detail, "InventoryTypeId", packing.packingMode());
+                putOptional(detail, "ItemId", line.sku());
+                putOptional(detail, "InventoryAttribute1", line.hmOrderNumber());
                 detail.put("LpnId", huId);
-                putOptional(detail, "ShippedQuantity", formatNumber(packing.getPiecesPerCarton()));
+                putOptional(detail, "ShippedQuantity", formatNumber(packing.piecesPerCarton()));
                 putOptional(detail, "ProductStatusId", siteId);
 
                 acc.details.add(detail);
@@ -168,17 +168,17 @@ public class HmAsnToMawmMapper {
 
             // LPN Extended
             Map<String, Object> lpnExtended = new LinkedHashMap<>();
-            putOptional(lpnExtended, "DhlCustRef1", formatNumber(acc.firstPacking.getLength()));
-            putOptional(lpnExtended, "DhlCustRef2", formatNumber(acc.firstPacking.getWidth()));
-            putOptional(lpnExtended, "DhlCustRef3", formatNumber(acc.firstPacking.getHeight()));
-            putOptional(lpnExtended, "DhlCustRefTtext1", acc.firstLine.getInboundControlCode());
+            putOptional(lpnExtended, "DhlCustRef1", formatNumber(acc.firstPacking.length()));
+            putOptional(lpnExtended, "DhlCustRef2", formatNumber(acc.firstPacking.width()));
+            putOptional(lpnExtended, "DhlCustRef3", formatNumber(acc.firstPacking.height()));
+            putOptional(lpnExtended, "DhlCustRefTtext1", acc.firstLine.inboundControlCode());
 
             if (!lpnExtended.isEmpty()) {
                 lpnObj.put("Extended", lpnExtended);
             }
 
             lpnObj.put("LpnDetail", acc.details);
-            putOptional(lpnObj, "LpnSizeTypeId", acc.firstPacking.getPackingMaterialNumber());
+            putOptional(lpnObj, "LpnSizeTypeId", acc.firstPacking.packingMaterialNumber());
             lpnObj.put("AsnId", asnId);
 
             lpnList.add(lpnObj);
