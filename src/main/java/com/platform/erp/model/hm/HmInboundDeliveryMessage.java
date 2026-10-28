@@ -7,6 +7,7 @@ import java.util.List;
  * Idiomatic Java 21 Record representing the H&M Inbound Delivery JSON message.
  * Completely eliminates boilerplate getters and setters.
  */
+
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record HmInboundDeliveryMessage(
         String transactionType,

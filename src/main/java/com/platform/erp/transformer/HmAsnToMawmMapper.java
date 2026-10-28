@@ -78,13 +78,13 @@ public class HmAsnToMawmMapper {
 
         // AsnOriginTypeId from config
         String originType = null;
-        if (delivery.inboundDeliveryType() != null && properties.getOriginTypeMap() != null) {
-            originType = properties.getOriginTypeMap().get(delivery.inboundDeliveryType());
+        if (delivery.inboundDeliveryType() != null && properties.originTypeMap() != null) {
+            originType = properties.originTypeMap().get(delivery.inboundDeliveryType());
         }
         putMandatory(asnMap, "AsnOriginTypeId", originType);
 
         // BusinessUnitId: schema mandatory, but no mapping from input -> kept as null
-        putMandatory(asnMap, "BusinessUnitId", properties.getBusinessUnitId());
+        putMandatory(asnMap, "BusinessUnitId", properties.businessUnitId());
 
         // ASN Level Extended
         Map<String, Object> asnExtended = new LinkedHashMap<>();
@@ -140,7 +140,7 @@ public class HmAsnToMawmMapper {
                 }
 
                 // QuantityUomId: schema mandatory, kept null if no mapping from input
-                putMandatory(detail, "QuantityUomId", properties.getQuantityUomId());
+                putMandatory(detail, "QuantityUomId", properties.quantityUomId());
                 putOptional(detail, "InventoryTypeId", packing.packingMode());
                 putOptional(detail, "ItemId", line.sku());
                 putOptional(detail, "InventoryAttribute1", line.hmOrderNumber());
@@ -186,7 +186,7 @@ public class HmAsnToMawmMapper {
 
         asnMap.put("Lpn", lpnList);
         asnMap.put("AsnId", asnId);
-        putMandatory(asnMap, "DestinationFacilityId", properties.getDestinationFacilityId());
+        putMandatory(asnMap, "DestinationFacilityId", properties.destinationFacilityId());
 
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("Data", List.of(asnMap));
