@@ -20,6 +20,7 @@ services:
       - KAFKA_SASL_MECHANISM=SCRAM-SHA-512
       - KAFKA_USER=${KAFKA_USER:-erp_user}
       - KAFKA_PASSWORD=${KAFKA_PASSWORD:-ErpKafkaSecure2026!}
+      - KAFKA_COMPRESSION_TYPE=lz4
       - AWS_S3_BUCKET=${AWS_S3_BUCKET:-erp-integration-blobs}
       - AWS_REGION=${AWS_REGION:-ap-south-1}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}

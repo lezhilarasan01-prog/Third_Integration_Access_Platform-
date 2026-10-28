@@ -39,8 +39,8 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 WORKDIR /app
 
-# Install curl for container health check
-RUN apk add --no-cache curl
+# Install curl for container health check and glibc compatibility for native libs (snappy/rocksdb)
+RUN apk add --no-cache curl libc6-compat gcompat
 
 # Copy fat JAR from build stage
 COPY --from=backend-builder /app/backend/target/erp-kafka-platform-1.0.0.jar app.jar
