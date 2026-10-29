@@ -38,3 +38,4 @@ public record ValidationResult(
                 .collect(Collectors.joining("; "));
     }
 }
+

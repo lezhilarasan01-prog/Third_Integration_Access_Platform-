@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.platform.erp.model.hm.*;
 import com.platform.erp.model.hm.HmInboundDeliveryMessage.*;
 import com.platform.erp.validation.HmAsnSchemaValidator;
-import com.platform.erp.validation.SchemaValidationException;
 import com.platform.erp.validation.ValidationResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,7 +56,7 @@ public class HmAsnToMawmMapper {
         // 1. Generic Schema & Business Rule Validation
         ValidationResult validationResult = validator.validate(message);
         if (!validationResult.isValid()) {
-            throw new SchemaValidationException("H&M Inbound Delivery schema validation failed", validationResult);
+        	throw new IllegalArgumentException("H&M Inbound Delivery schema validation failed: " + validationResult.getFormattedErrors());
         }
 
         HmInboundDelivery delivery = message.inboundDelivery();
@@ -154,7 +153,7 @@ public class HmAsnToMawmMapper {
             Map<String, Object> lpnObj = new LinkedHashMap<>();
 
             Map<String, Object> actions = new LinkedHashMap<>();
-            actions.put("LpnDetail", properties.lpnDetailAction());
+            actions.put("LpnDetail", "RESET");
             lpnObj.put("Actions", actions);
 
             lpnObj.put("LpnId", acc.huId);

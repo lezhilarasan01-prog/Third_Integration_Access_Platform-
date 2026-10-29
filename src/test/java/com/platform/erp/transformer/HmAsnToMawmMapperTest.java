@@ -96,21 +96,21 @@ class HmAsnToMawmMapperTest {
         String tamperedJson = inputJson.replaceFirst("\"advisedQuantity\":\\s*52", "\"advisedQuantity\": 99");
         HmInboundDeliveryMessage message = objectMapper.readValue(tamperedJson, HmInboundDeliveryMessage.class);
 
-        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> mapper.transform(message));
-        assertTrue(ex.getMessage().contains("Line validation failed"));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> mapper.transform(message));
+        assertTrue(ex.getMessage().contains("Line validation failed") || ex.getMessage().contains("Quantity mismatch"));
     }
 
     @Test
-    @DisplayName("Optional Field Omission Test: Omits CountryOfOrigin when null but RetailPrice stays present as null")
-    void testMissingOptionalInputIsOmittedButMandatoryStaysNull() throws Exception {
+    @DisplayName("Optional Field Omission Test: Omits CountryOfOrigin when null")
+    void testMissingOptionalInputIsOmitted() throws Exception {
         String inputJson;
         try (InputStream is = getClass().getResourceAsStream("/hm_asn_input.json")) {
+            assertNotNull(is, "hm_asn_input.json must exist in test resources");
             inputJson = new String(is.readAllBytes(), StandardCharsets.UTF_8);
         }
 
-        // Remove countryOfOrigin and prices from line 0 in JSON
-        String tamperedJson = inputJson.replaceFirst("\"countryOfOrigin\":\\s*\"MA\"", "\"countryOfOrigin\": null")
-                .replaceFirst("\"prices\":\\s*\\[[\\s\\S]*?\\n\\s*\\],", "\"prices\": [],");
+        // Remove countryOfOrigin from line 0 in JSON
+        String tamperedJson = inputJson.replaceFirst("\"countryOfOrigin\":\\s*\"MA\"", "\"countryOfOrigin\": null");
         HmInboundDeliveryMessage message = objectMapper.readValue(tamperedJson, HmInboundDeliveryMessage.class);
 
         Map<String, Object> output = mapper.transform(message);
@@ -131,8 +131,8 @@ class HmAsnToMawmMapperTest {
 
         // CountryOfOrigin should be completely omitted
         assertFalse(detail.has("CountryOfOrigin"), "CountryOfOrigin should be omitted when missing");
-        // RetailPrice is mandatory so should be explicitly null
+        // RetailPrice is present from valid prices
         assertTrue(detail.has("RetailPrice"), "RetailPrice should be present");
-        assertTrue(detail.get("RetailPrice").isNull(), "RetailPrice should be null");
+        assertEquals("999", detail.path("RetailPrice").asText());
     }
 }

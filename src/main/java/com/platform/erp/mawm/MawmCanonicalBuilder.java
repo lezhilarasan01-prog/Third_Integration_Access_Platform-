@@ -97,7 +97,8 @@ public class MawmCanonicalBuilder {
                         return data;
                     }
                 } catch (Exception e) {
-                    log.warn("[MAWM Dynamic Engine] H&M Inbound Delivery mapping failed, falling back to raw records: {}", e.getMessage(), e);
+                    log.error("[MAWM Dynamic Engine] H&M Inbound Delivery validation/mapping failed: {}", e.getMessage());
+                    throw new IllegalArgumentException("H&M Inbound Delivery validation failed: " + e.getMessage(), e);
                 }
             }
         }

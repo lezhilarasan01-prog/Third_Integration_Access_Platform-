@@ -12,3 +12,4 @@ public record ValidationError(
         this(field, message, null);
     }
 }
+

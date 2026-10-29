@@ -14,20 +14,16 @@ public record HmAsnProperties(
         Map<String, String> originTypeMap,
         String lpnTypeId,
         String asnLevelId,
-        String quantityUomId,
-        String lpnDetailAction
+        String quantityUomId
 ) {
     public HmAsnProperties {
         if (originTypeMap == null) {
             originTypeMap = Map.of();
         }
-        if (lpnDetailAction == null || lpnDetailAction.isBlank()) {
-            lpnDetailAction = "RESET";
-        }
     }
 
     public HmAsnProperties() {
-        this(null, null, Map.of(), null, null, null, "RESET");
+        this(null, null, Map.of(), null, null, null);
     }
 
     // Accessor aliases for backward compatibility
@@ -37,5 +33,4 @@ public record HmAsnProperties(
     public String getLpnTypeId() { return lpnTypeId(); }
     public String getAsnLevelId() { return asnLevelId(); }
     public String getQuantityUomId() { return quantityUomId(); }
-    public String getLpnDetailAction() { return lpnDetailAction(); }
 }

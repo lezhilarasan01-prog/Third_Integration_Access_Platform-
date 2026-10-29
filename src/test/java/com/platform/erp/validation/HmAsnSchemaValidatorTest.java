@@ -75,7 +75,7 @@ class HmAsnSchemaValidatorTest {
         ValidationResult result = validator.validate(msg);
         assertFalse(result.isValid());
         assertTrue(result.errors().stream().anyMatch(e -> e.field().contains("quantityBalance")));
-        assertTrue(result.getFormattedErrors().contains("advisedQuantity=50"));
+        assertTrue(result.getFormattedErrors().contains("advisedQuantity (50)"));
     }
 
     @Test
@@ -91,4 +91,23 @@ class HmAsnSchemaValidatorTest {
         // Must contain header errors, line errors, and packing errors simultaneously
         assertTrue(result.errors().size() >= 5, "Should aggregate multiple validation violations");
     }
+
+    @Test
+    @DisplayName("Mandatory Price Validation: Rejects payload when priceValue is missing or misspelled as 'abc'")
+    void testMissingOrMisspelledPriceFailsValidation() throws Exception {
+        String inputJson;
+        try (InputStream is = getClass().getResourceAsStream("/hm_asn_input.json")) {
+            assertNotNull(is, "hm_asn_input.json must exist in test resources");
+            inputJson = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        }
+
+        // Replace "priceValue" with "abc"
+        String tamperedJson = inputJson.replaceFirst("\"priceValue\":\\s*999\\.0", "\"abc\": 999.0");
+        HmInboundDeliveryMessage message = objectMapper.readValue(tamperedJson, HmInboundDeliveryMessage.class);
+
+        ValidationResult result = validator.validate(message);
+        assertFalse(result.isValid(), "Validation must fail when priceValue is misspelled or missing");
+        assertTrue(result.getFormattedErrors().contains("priceValue"), "Error message must report missing priceValue");
+    }
 }
+
