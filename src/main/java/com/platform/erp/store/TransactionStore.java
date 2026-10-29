@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -299,7 +300,7 @@ public class TransactionStore {
     }
 
     public List<ErpFileIntakeTracker> getAllTrackers() {
-        return getAllTrackers(0, 50);
+        return getAllTrackers(0, 500);
     }
 
     public List<com.platform.erp.model.TrackerSummaryProjection> getAllTrackerSummaries(int page, int size) {
@@ -312,7 +313,36 @@ public class TransactionStore {
     }
 
     public List<com.platform.erp.model.TrackerSummaryProjection> getAllTrackerSummaries() {
-        return getAllTrackerSummaries(0, 50);
+        return getAllTrackerSummaries(0, 500);
+    }
+
+    public Map<String, Object> getTransactionStats() {
+        long total = trackerRepository.count();
+        long completed = 0;
+        long failed = 0;
+        long processing = 0;
+        try {
+            List<Object[]> rows = trackerRepository.countGroupedByStatus();
+            for (Object[] r : rows) {
+                String status = r[0] != null ? r[0].toString().toUpperCase() : "";
+                long c = ((Number) r[1]).longValue();
+                if (status.equals("CONVERTED") || status.equals("COMPLETED")) {
+                    completed += c;
+                } else if (status.equals("FAILED")) {
+                    failed += c;
+                } else if (status.equals("PROCESSING") || status.equals("RECEIVED") || status.equals("IN_PROGRESS") || status.equals("QUEUED")) {
+                    processing += c;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not calculate status counts: {}", e.getMessage());
+        }
+        return Map.of(
+            "total", total,
+            "completed", completed,
+            "failed", failed,
+            "processing", processing
+        );
     }
 
     public List<ErpFileIntakeTracker> getDlqExceptions() {
@@ -351,7 +381,7 @@ public class TransactionStore {
     }
 
     public List<ProcessedTransaction> getAllTransactions() {
-        List<ErpFileIntakeTracker> trackers = getAllTrackers(0, 50);
+        List<ErpFileIntakeTracker> trackers = getAllTrackers(0, 500);
         List<ProcessedTransaction> result = new ArrayList<>();
         for (ErpFileIntakeTracker t : trackers) {
             result.add(mapToProcessedTransaction(t));

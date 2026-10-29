@@ -31,6 +31,9 @@ public interface ErpFileIntakeTrackerRepository extends JpaRepository<ErpFileInt
     @Query("SELECT DISTINCT t.transactionType FROM ErpFileIntakeTracker t WHERE t.transactionType IS NOT NULL AND TRIM(t.transactionType) != '' ORDER BY t.transactionType ASC")
     List<String> findDistinctTransactionTypes();
 
+    @Query("SELECT t.intakeStatus, COUNT(t) FROM ErpFileIntakeTracker t GROUP BY t.intakeStatus")
+    List<Object[]> countGroupedByStatus();
+
     @org.springframework.data.jpa.repository.Modifying
     @org.springframework.transaction.annotation.Transactional
     @Query("DELETE FROM ErpFileIntakeTracker t WHERE LOWER(t.sourceSystem) IN ('files', 'ingest', 'raw')")

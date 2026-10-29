@@ -249,7 +249,19 @@ export const integrationApi = {
   },
 
   // --- 3. PostgreSQL Tracker Activity (Cached & Deduplicated) ---
-  async getTrackers(force = false, page = 0, size = 50) {
+  async getStats(force = false) {
+    try {
+      const res = await fetch(`${BASE_URL}/api/v1/erp/transactions/stats`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn('Could not fetch stats:', e);
+    }
+    return null;
+  },
+
+  async getTrackers(force = false, page = 0, size = 500) {
     const now = Date.now();
     if (!force && trackerCache && (now - trackerCacheTime < TRACKER_CACHE_TTL)) {
       return trackerCache;
@@ -272,7 +284,7 @@ export const integrationApi = {
     return trackerInFlight;
   },
 
-  async getAllTrackers(force = false, page = 0, size = 50) {
+  async getAllTrackers(force = false, page = 0, size = 500) {
     return this.getTrackers(force, page, size);
   },
 

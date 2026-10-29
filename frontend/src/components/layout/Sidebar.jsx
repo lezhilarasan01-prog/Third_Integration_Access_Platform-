@@ -41,6 +41,11 @@ export default function Sidebar({
     let mounted = true;
     async function loadCount() {
       try {
+        const stats = await integrationApi.getStats();
+        if (mounted && stats && stats.total != null) {
+          setLiveJobCount(stats.total);
+          return;
+        }
         const rows = await integrationApi.getAllTrackers();
         if (mounted && Array.isArray(rows)) {
           setLiveJobCount(rows.length);

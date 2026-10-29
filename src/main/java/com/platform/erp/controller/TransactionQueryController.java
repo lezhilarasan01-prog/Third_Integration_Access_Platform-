@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Controller to inspect converted Canonical JSON and processing status.
@@ -69,13 +70,22 @@ public class TransactionQueryController {
 
     /**
      * List erp_file_intake_tracker database rows dynamically with pagination.
-     * Example: GET /api/v1/erp/transactions/tracker?page=0&size=50
+     * Example: GET /api/v1/erp/transactions/tracker?page=0&size=500
      */
     @GetMapping("/tracker")
     public ResponseEntity<List<com.platform.erp.model.TrackerSummaryProjection>> listTrackerRows(
             @RequestParam(name = "page", defaultValue = "0") int page,
-            @RequestParam(name = "size", defaultValue = "50") int size) {
-        return ResponseEntity.ok(transactionStore.getAllTrackerSummaries(page, size));
+            @RequestParam(name = "size", defaultValue = "500") int size) {
+        return ResponseEntity.ok(transactionStore.getAllTrackerSummaries(page, Math.min(Math.max(size, 1), 2000)));
+    }
+
+    /**
+     * Get aggregate transaction metrics & real-time counts from PostgreSQL.
+     * Example: GET /api/v1/erp/transactions/stats
+     */
+    @GetMapping("/stats")
+    public ResponseEntity<Map<String, Object>> getTransactionStats() {
+        return ResponseEntity.ok(transactionStore.getTransactionStats());
     }
 
     /**

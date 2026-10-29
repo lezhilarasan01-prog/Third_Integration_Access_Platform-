@@ -20,15 +20,17 @@ import { integrationApi } from '../../services/integrationApi';
 
 export default function OverviewPage({ onNavigateToJobs, onNavigateToKafkaStudio, onNavigateToS3, onNavigateToDlq, onOpenTestUpload }) {
   const [trackers, setTrackers] = useState(() => integrationApi.getCachedTrackers() || []);
+  const [stats, setStats] = useState(null);
   const [s3Summary, setS3Summary] = useState(() => integrationApi.getCachedS3Summary() || null);
   const [isLoading, setIsLoading] = useState(() => !integrationApi.getCachedTrackers());
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetchRealtimeData = async (force = false) => {
     try {
-      const [trackerRes, s3Res] = await Promise.allSettled([
+      const [trackerRes, s3Res, statsRes] = await Promise.allSettled([
         integrationApi.getAllTrackers(force),
-        integrationApi.getS3Summary(force)
+        integrationApi.getS3Summary(force),
+        integrationApi.getStats(force)
       ]);
 
       if (trackerRes.status === 'fulfilled' && Array.isArray(trackerRes.value)) {
@@ -36,6 +38,9 @@ export default function OverviewPage({ onNavigateToJobs, onNavigateToKafkaStudio
       }
       if (s3Res.status === 'fulfilled' && s3Res.value) {
         setS3Summary(s3Res.value);
+      }
+      if (statsRes.status === 'fulfilled' && statsRes.value) {
+        setStats(statsRes.value);
       }
     } catch (e) {
       console.warn('Realtime telemetry fetch error:', e);
@@ -57,16 +62,22 @@ export default function OverviewPage({ onNavigateToJobs, onNavigateToKafkaStudio
   };
 
   // 1. Dynamic KPI Metrics derived 100% from PostgreSQL erp_file_intake_tracker
-  const totalJobs = trackers.length;
-  const processingJobs = trackers.filter(
-    (t) => t.intakeStatus === 'PROCESSING' || t.intakeStatus === 'RECEIVED' || t.intakeStatus === 'IN_PROGRESS'
-  ).length;
-  const completedJobs = trackers.filter(
-    (t) => t.intakeStatus === 'CONVERTED' || t.intakeStatus === 'COMPLETED'
-  ).length;
-  const failedJobs = trackers.filter(
-    (t) => t.intakeStatus === 'FAILED' || (t.errorRecords > 0 && (!t.convertedRecords || t.convertedRecords === 0))
-  ).length;
+  const totalJobs = stats && stats.total != null ? stats.total : trackers.length;
+  const processingJobs = stats && stats.processing != null
+    ? stats.processing
+    : trackers.filter(
+        (t) => t.intakeStatus === 'PROCESSING' || t.intakeStatus === 'RECEIVED' || t.intakeStatus === 'IN_PROGRESS' || t.intakeStatus === 'QUEUED'
+      ).length;
+  const completedJobs = stats && stats.completed != null
+    ? stats.completed
+    : trackers.filter(
+        (t) => t.intakeStatus === 'CONVERTED' || t.intakeStatus === 'COMPLETED'
+      ).length;
+  const failedJobs = stats && stats.failed != null
+    ? stats.failed
+    : trackers.filter(
+        (t) => t.intakeStatus === 'FAILED' || (t.errorRecords > 0 && (!t.convertedRecords || t.convertedRecords === 0))
+      ).length;
   const completionRate = totalJobs > 0 ? Math.round((completedJobs / totalJobs) * 100) : 100;
 
   const realKpiCards = [
