@@ -435,6 +435,33 @@ function getStatusStyles(status) {
   }
 }
 
+function formatErrorOutput(rawError, targetDlq) {
+  if (!rawError) {
+    return JSON.stringify({
+      status: 'FAILED',
+      message: 'Schema validation failed. Check backend logs or DLQ for details.',
+      dlqTopic: targetDlq || 'erp_file_asn_dlq'
+    }, null, 2);
+  }
+  const trimmed = rawError.trim();
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (!parsed.dlqTopic && targetDlq) {
+        parsed.dlqTopic = targetDlq;
+      }
+      return JSON.stringify(parsed, null, 2);
+    } catch (e) {
+      // fallback
+    }
+  }
+  return JSON.stringify({
+    status: 'FAILED',
+    message: rawError,
+    dlqTopic: targetDlq || 'erp_file_asn_dlq'
+  }, null, 2);
+}
+
 export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [erpSource, setErpSource] = useState('CUSTOMER_A_ERP');
@@ -726,6 +753,8 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
   const statusMeta = getStatusStyles(currentStatus);
   const isFailed = currentStatus === 'FAILED';
   const isConverted = currentStatus === 'CONVERTED' || currentStatus === 'COMPLETED';
+  const resolvedDlqTopic = liveTracker?.errorFile 
+    || (liveTracker?.transactionType === 'ASN' || activeDocType === 'ASN' ? 'erp_file_asn_dlq' : 'erp_file_po_dlq');
 
   return (
     <div className="modal-backdrop" onClick={onClose} style={{ zIndex: 9999 }}>
@@ -1134,12 +1163,12 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#ef4444', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                       <AlertTriangle size={15} color="#ef4444" />
-                      <span>Schema &amp; Business Rule Validation Failure</span>
+                      <span>Schema &amp; Business Rule Validation Failure (JSON)</span>
                     </span>
                     <button
                       type="button"
                       onClick={() => {
-                        const errMsg = liveTracker?.processingErrorMessage || 'Validation failed. No error details recorded.';
+                        const errMsg = formatErrorOutput(liveTracker?.processingErrorMessage, resolvedDlqTopic);
                         navigator.clipboard.writeText(errMsg);
                         setCopiedError(true);
                         setTimeout(() => setCopiedError(false), 2000);
@@ -1156,10 +1185,10 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                         alignItems: 'center',
                         gap: '0.25rem'
                       }}
-                      title="Copy full error message"
+                      title="Copy full error JSON"
                     >
                       {copiedError ? <Check size={11} /> : <Copy size={11} />}
-                      <span>{copiedError ? 'Copied' : 'Copy Error Details'}</span>
+                      <span>{copiedError ? 'Copied Error JSON!' : 'Copy Error JSON'}</span>
                     </button>
                   </div>
 
@@ -1173,15 +1202,15 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                     borderRadius: '6px',
                     padding: '0.75rem',
                     fontFamily: 'monospace',
-                    fontSize: '0.75rem',
+                    fontSize: '0.74rem',
                     lineHeight: '1.45',
                     color: '#fca5a5',
-                    maxHeight: 200,
-                    overflowY: 'auto',
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-all'
+                    maxHeight: 220,
+                    overflowY: 'auto'
                   }}>
-                    {liveTracker?.processingErrorMessage || 'Schema validation failed. Check backend logs or DLQ for details.'}
+                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                      {formatErrorOutput(liveTracker?.processingErrorMessage, resolvedDlqTopic)}
+                    </pre>
                   </div>
 
                   <div style={{
@@ -1193,7 +1222,7 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                     alignItems: 'center',
                     paddingTop: '2px'
                   }}>
-                    <span>DLQ Topic: <strong style={{ color: '#f87171' }}>erp-dlq</strong></span>
+                    <span>DLQ Topic: <strong style={{ color: '#f87171' }}>{resolvedDlqTopic}</strong></span>
                     <span>No output JSON generated because record failed validation.</span>
                   </div>
                 </div>

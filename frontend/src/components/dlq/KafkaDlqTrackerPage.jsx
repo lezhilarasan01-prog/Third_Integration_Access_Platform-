@@ -315,7 +315,7 @@ export default function KafkaDlqTrackerPage({ embedded = false }) {
                 {filteredRecords.map((item) => {
                   const isFailed = item.intakeStatus === 'FAILED' || item.dispatchStatus === 'FAILED';
                   const isDuplicate = item.intakeStatus === 'DUPLICATE_SKIPPED';
-                  const targetDlq = item.transactionType === 'ASN' ? 'erp_file_asn_dlq' : 'erp_file_po_dlq';
+                  const targetDlq = item.errorFile || (item.transactionType === 'ASN' ? 'erp_file_asn_dlq' : 'erp_file_po_dlq');
 
                   return (
                     <tr

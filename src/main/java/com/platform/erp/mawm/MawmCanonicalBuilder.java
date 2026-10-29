@@ -96,9 +96,12 @@ public class MawmCanonicalBuilder {
                         log.info("[MAWM Dynamic Engine] Successfully mapped H&M Inbound Delivery to MAWM LPN-Level schema with {} ASN record(s)", data.size());
                         return data;
                     }
+                } catch (IllegalArgumentException e) {
+                    log.error("[MAWM Dynamic Engine] H&M Inbound Delivery validation failed: {}", e.getMessage());
+                    throw e;
                 } catch (Exception e) {
                     log.error("[MAWM Dynamic Engine] H&M Inbound Delivery validation/mapping failed: {}", e.getMessage());
-                    throw new IllegalArgumentException("H&M Inbound Delivery validation failed: " + e.getMessage(), e);
+                    throw new IllegalArgumentException("H&M Inbound Delivery mapping failed: " + e.getMessage(), e);
                 }
             }
         }

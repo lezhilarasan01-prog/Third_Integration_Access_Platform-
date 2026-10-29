@@ -19,8 +19,10 @@ import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -155,9 +157,80 @@ public class ErpFileConsumerService {
 
         } catch (Exception ex) {
             log.error("Conversion failed for TrackingId: {}, routing to DLQ: {}", trackingId, dlqTopic, ex);
-            transactionStore.recordFailure(trackingId, erpSource, docType, ex.getMessage());
-            sendToDlq(dlqTopic, record, trackingId, erpSource, docType, ex.getMessage());
+            String errorJson = buildErrorJson(ex, dlqTopic);
+            transactionStore.recordFailure(trackingId, erpSource, docType, dlqTopic, errorJson);
+            sendToDlq(dlqTopic, record, trackingId, erpSource, docType, errorJson);
             ack.acknowledge();
+        }
+    }
+
+    private String buildErrorJson(Exception ex, String dlqTopic) {
+        try {
+            String msg = ex.getMessage();
+            if (msg != null && msg.trim().startsWith("{") && msg.trim().endsWith("}")) {
+                try {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> map = objectMapper.readValue(msg.trim(), Map.class);
+                    map.putIfAbsent("status", "FAILED");
+                    map.put("dlqTopic", dlqTopic);
+                    return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(map);
+                } catch (Exception ignored) {
+                }
+            }
+
+            Map<String, Object> errMap = new LinkedHashMap<>();
+            errMap.put("status", "FAILED");
+
+            String mainMessage = (msg != null && !msg.isBlank()) ? msg : "Conversion failed";
+            if (mainMessage.contains(": [")) {
+                mainMessage = mainMessage.substring(0, mainMessage.indexOf(": [")).trim();
+            }
+            if (mainMessage.startsWith("H&M Inbound Delivery validation failed: H&M Inbound Delivery schema validation failed")) {
+                mainMessage = "H&M Inbound Delivery schema validation failed";
+            }
+
+            errMap.put("message", mainMessage);
+            errMap.put("dlqTopic", dlqTopic);
+            errMap.put("errorType", ex.getClass().getSimpleName());
+
+            // Extract structured validation errors if message contains formatted errors
+            if (msg != null && msg.contains("[") && msg.contains("]:")) {
+                List<Map<String, Object>> errorList = new ArrayList<>();
+                String errorsPart = msg.substring(msg.indexOf("["));
+                String[] errorTokens = errorsPart.split(";\\s*(?=\\[)");
+                for (String token : errorTokens) {
+                    token = token.trim();
+                    if (token.startsWith("[") && token.contains("]:")) {
+                        int closeBracket = token.indexOf("]:");
+                        String field = token.substring(1, closeBracket).trim();
+                        String rest = token.substring(closeBracket + 2).trim();
+
+                        String reason = rest;
+                        String rejectedVal = null;
+                        if (rest.contains("(value: '") && rest.endsWith("')")) {
+                            int valIdx = rest.lastIndexOf("(value: '");
+                            reason = rest.substring(0, valIdx).trim();
+                            rejectedVal = rest.substring(valIdx + 9, rest.length() - 2);
+                        }
+
+                        Map<String, Object> errItem = new LinkedHashMap<>();
+                        errItem.put("field", field);
+                        errItem.put("message", reason);
+                        if (rejectedVal != null) {
+                            errItem.put("rejectedValue", rejectedVal);
+                        }
+                        errorList.add(errItem);
+                    }
+                }
+                if (!errorList.isEmpty()) {
+                    errMap.put("errors", errorList);
+                }
+            }
+
+            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(errMap);
+        } catch (Exception e) {
+            String escaped = ex.getMessage() != null ? ex.getMessage().replace("\"", "\\\"").replace("\n", " ") : "Error";
+            return "{\n  \"status\": \"FAILED\",\n  \"message\": \"" + escaped + "\",\n  \"dlqTopic\": \"" + dlqTopic + "\"\n}";
         }
     }
 

@@ -201,7 +201,7 @@ public class TransactionStore {
      * Stage 2: Convert Failed (Sent to DLQ)
      */
     @Transactional
-    public void recordFailure(String trackingId, String erpSource, String docType, String error) {
+    public void recordFailure(String trackingId, String erpSource, String docType, String dlqTopic, String error) {
         ErpFileIntakeTracker tracker = trackerRepository.findByJobId(trackingId)
                 .orElseGet(() -> {
                     ErpFileIntakeTracker t = new ErpFileIntakeTracker();
@@ -214,13 +214,21 @@ public class TransactionStore {
 
         tracker.setIntakeStatus("FAILED");
         tracker.setProcessingErrorMessage(error);
+        if (dlqTopic != null && !dlqTopic.isBlank()) {
+            tracker.setErrorFile(dlqTopic);
+        }
         tracker.setErrorRecords(1);
         tracker.setProcessingCompletedAt(Instant.now());
         tracker.setDispatchStatus("FAILED");
         tracker.setUpdatedAt(Instant.now());
 
         trackerRepository.save(tracker);
-        log.warn("[DB Tracker] Updated FAILED state in PostgreSQL for jobId: {}", trackingId);
+        log.warn("[DB Tracker] Updated FAILED state in PostgreSQL for jobId: {}, DLQ: {}", trackingId, dlqTopic);
+    }
+
+    @Transactional
+    public void recordFailure(String trackingId, String erpSource, String docType, String error) {
+        recordFailure(trackingId, erpSource, docType, null, error);
     }
 
     /**
