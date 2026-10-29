@@ -38,4 +38,25 @@ public interface ErpFileIntakeTrackerRepository extends JpaRepository<ErpFileInt
     @org.springframework.transaction.annotation.Transactional
     @Query("DELETE FROM ErpFileIntakeTracker t WHERE LOWER(t.sourceSystem) IN ('files', 'ingest', 'raw')")
     int cleanupInvalidSourceTrackers();
+
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @Query("UPDATE ErpFileIntakeTracker t SET t.kafkaTopic = :topic, t.kafkaPartition = :partition, t.kafkaOffset = :offset, t.updatedAt = :now WHERE t.jobId = :jobId")
+    int updateKafkaCoordinates(
+            @org.springframework.data.repository.query.Param("jobId") String jobId,
+            @org.springframework.data.repository.query.Param("topic") String topic,
+            @org.springframework.data.repository.query.Param("partition") int partition,
+            @org.springframework.data.repository.query.Param("offset") long offset,
+            @org.springframework.data.repository.query.Param("now") java.time.Instant now
+    );
+
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @Query("UPDATE ErpFileIntakeTracker t SET t.intakeStatus = 'FAILED', t.processingErrorMessage = :error, t.errorFile = :dlqTopic, t.errorRecords = 1, t.processingCompletedAt = :now, t.dispatchStatus = 'FAILED', t.updatedAt = :now WHERE t.jobId = :jobId")
+    int updateFailureStatus(
+            @org.springframework.data.repository.query.Param("jobId") String jobId,
+            @org.springframework.data.repository.query.Param("error") String error,
+            @org.springframework.data.repository.query.Param("dlqTopic") String dlqTopic,
+            @org.springframework.data.repository.query.Param("now") java.time.Instant now
+    );
 }

@@ -114,18 +114,26 @@ public class TransactionStore {
 
     /**
      * Record Kafka Coordinates (Topic, Partition, Offset) from Producer or Consumer
+     * Uses targeted atomic SQL update to prevent overwriting concurrent status changes.
      */
     @Transactional
     public void recordKafkaCoordinates(String trackingId, String topic, int partition, long offset) {
-        trackerRepository.findByJobId(trackingId).ifPresent(tracker -> {
-            tracker.setKafkaTopic(topic);
-            tracker.setKafkaPartition(partition);
-            tracker.setKafkaOffset(offset);
-            tracker.setUpdatedAt(Instant.now());
-            trackerRepository.save(tracker);
+        try {
+            int updated = trackerRepository.updateKafkaCoordinates(trackingId, topic, partition, offset, Instant.now());
+            if (updated == 0) {
+                trackerRepository.findByJobId(trackingId).ifPresent(tracker -> {
+                    tracker.setKafkaTopic(topic);
+                    tracker.setKafkaPartition(partition);
+                    tracker.setKafkaOffset(offset);
+                    tracker.setUpdatedAt(Instant.now());
+                    trackerRepository.save(tracker);
+                });
+            }
             log.info("[DB Tracker] Recorded Kafka coordinates for jobId: {} -> Topic: {}, Partition: {}, Offset: {}",
                     trackingId, topic, partition, offset);
-        });
+        } catch (Exception e) {
+            log.warn("[DB Tracker] Error recording Kafka coordinates for jobId {}: {}", trackingId, e.getMessage());
+        }
     }
 
     /**
