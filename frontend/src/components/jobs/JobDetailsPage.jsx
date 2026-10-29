@@ -26,6 +26,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { integrationApi } from '../../services/integrationApi';
+import ConfirmDialogModal from '../common/ConfirmDialogModal';
 
 function formatSourceName(code) {
   return code || 'Unknown Source';
@@ -228,6 +229,7 @@ export default function JobDetailsPage({ jobId, onBack }) {
   const [liveJob, setLiveJob] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState('documents');
 
   useEffect(() => {
@@ -414,18 +416,14 @@ export default function JobDetailsPage({ jobId, onBack }) {
     }
   };
 
-  const handleDeleteJob = async () => {
-    const displayName = job.originalFilename || job.jobId;
-    if (!window.confirm(`Are you sure you want to permanently delete transaction "${displayName}" (${job.jobId}) from database?`)) {
-      return;
-    }
+  const handleConfirmDelete = async () => {
     setIsDeleting(true);
     try {
       await integrationApi.deleteTracker(job.jobId);
+      setShowDeleteConfirm(false);
       onBack();
     } catch (err) {
       console.error('Failed to delete transaction:', err);
-      alert('Failed to delete transaction: ' + (err.message || 'Server error'));
       setIsDeleting(false);
     }
   };
@@ -479,7 +477,7 @@ export default function JobDetailsPage({ jobId, onBack }) {
               background: 'rgba(239, 68, 68, 0.1)',
               cursor: 'pointer'
             }}
-            onClick={handleDeleteJob}
+            onClick={() => setShowDeleteConfirm(true)}
             disabled={isDeleting}
             title="Permanently delete this transaction record from PostgreSQL database"
           >
@@ -1572,6 +1570,25 @@ export default function JobDetailsPage({ jobId, onBack }) {
           )}
         </div>
       </section>
+
+      {/* Confirmation Modal (Bootbox replacement) */}
+      <ConfirmDialogModal
+        isOpen={showDeleteConfirm}
+        title="Delete Transaction Record"
+        recordName={job.originalFilename || job.jobId}
+        recordId={job.jobId}
+        details={[
+          { label: 'ERP Source', value: job.sourceSystem || '—' },
+          { label: 'Document Type', value: job.transactionType || '—' },
+          { label: 'Status', value: job.status || '—' },
+          { label: 'Input Format', value: job.inputFormat || '—' }
+        ]}
+        warningText="This will permanently purge this transaction and all associated Kafka coordinates, payload history, and converted MAWM data from PostgreSQL table erp_file_intake_tracker. This action cannot be undone."
+        confirmText="Delete Transaction"
+        isLoading={isDeleting}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 }

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { integrationApi } from '../../services/integrationApi';
 import { KAFKA_CONFIG } from '../../config/kafkaConfig';
+import ConfirmDialogModal from '../common/ConfirmDialogModal';
 
 export default function KafkaDlqTrackerPage({ embedded = false }) {
   const [records, setRecords] = useState([]);
@@ -29,6 +30,7 @@ export default function KafkaDlqTrackerPage({ embedded = false }) {
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [dlqDeleteTarget, setDlqDeleteTarget] = useState(null);
 
   const resolveCustomerRawFilename = (item) => {
     if (!item) return 'customer_upload.csv';
@@ -78,13 +80,15 @@ export default function KafkaDlqTrackerPage({ embedded = false }) {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleDeleteRecord = async (jobId) => {
-    if (!window.confirm(`Permanently dismiss and delete DLQ record ${jobId.slice(0, 8)}?`)) return;
+  const handleConfirmDelete = async () => {
+    if (!dlqDeleteTarget) return;
+    const jobId = dlqDeleteTarget.jobId || dlqDeleteTarget;
     setIsDeleting(true);
     try {
       await fetch(`/api/v1/erp/transactions/tracker/${jobId}`, { method: 'DELETE' });
       setRecords((prev) => prev.filter((r) => r.jobId !== jobId));
       if (selectedRecord?.jobId === jobId) setSelectedRecord(null);
+      setDlqDeleteTarget(null);
     } catch (e) {
       console.error('Failed to delete DLQ record:', e);
     } finally {
@@ -404,7 +408,7 @@ export default function KafkaDlqTrackerPage({ embedded = false }) {
                             Inspect
                           </button>
                           <button
-                            onClick={() => handleDeleteRecord(item.jobId)}
+                            onClick={() => setDlqDeleteTarget(item)}
                             style={{
                               backgroundColor: 'transparent',
                               border: '1px solid var(--border-default)',
@@ -573,6 +577,25 @@ export default function KafkaDlqTrackerPage({ embedded = false }) {
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal (Bootbox replacement) */}
+      <ConfirmDialogModal
+        isOpen={Boolean(dlqDeleteTarget)}
+        title="Dismiss DLQ Record"
+        recordName={dlqDeleteTarget?.originalFilename || (dlqDeleteTarget?.jobId ? `DLQ Exception (${dlqDeleteTarget.jobId.slice(0, 8)})` : 'DLQ Record')}
+        recordId={dlqDeleteTarget?.jobId}
+        details={dlqDeleteTarget ? [
+          { label: 'ERP Source', value: dlqDeleteTarget.sourceSystem || '—' },
+          { label: 'Document Type', value: dlqDeleteTarget.transactionType || '—' },
+          { label: 'Status', value: dlqDeleteTarget.intakeStatus || 'FAILED' },
+          { label: 'DLQ Topic', value: dlqDeleteTarget.errorFile || 'DLQ' }
+        ] : []}
+        warningText="This will dismiss and purge this Dead-Letter Queue failure entry from the database. This action cannot be undone."
+        confirmText="Dismiss DLQ Record"
+        isLoading={isDeleting}
+        onClose={() => setDlqDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 }

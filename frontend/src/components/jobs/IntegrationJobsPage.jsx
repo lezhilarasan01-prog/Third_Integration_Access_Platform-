@@ -26,6 +26,7 @@ import {
   UploadCloud
 } from 'lucide-react';
 import JobDetailsPage from './JobDetailsPage';
+import ConfirmDialogModal from '../common/ConfirmDialogModal';
 import { integrationApi } from '../../services/integrationApi';
 
 const mapTrackerRow = (r) => ({
@@ -77,20 +78,18 @@ export default function IntegrationJobsPage({
   const [internalJobId, setInternalJobId] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
-  const handleDeleteJob = async (jobId, originalFilename, e) => {
-    e.stopPropagation();
-    const displayName = originalFilename || (jobId ? jobId.slice(0, 12) : 'Record');
-    if (!window.confirm(`Are you sure you want to permanently delete transaction record "${displayName}" (${jobId}) from the database?`)) {
-      return;
-    }
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    const jobId = deleteTarget.jobId;
     setDeletingId(jobId);
     try {
       await integrationApi.deleteTracker(jobId);
       setLiveJobs((prev) => prev.filter((j) => j.jobId !== jobId));
+      setDeleteTarget(null);
     } catch (err) {
       console.error('Failed to delete transaction:', err);
-      alert('Failed to delete transaction: ' + (err.message || 'Server error'));
     } finally {
       setDeletingId(null);
     }
@@ -818,7 +817,10 @@ export default function IntegrationJobsPage({
                               gap: '0.25rem',
                               cursor: 'pointer'
                             }}
-                            onClick={(e) => handleDeleteJob(job.jobId, job.originalFilename, e)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteTarget(job);
+                            }}
                             disabled={deletingId === job.jobId}
                             title={`Permanently delete transaction ${job.jobId} from database`}
                           >
@@ -906,6 +908,25 @@ export default function IntegrationJobsPage({
           </div>
         </div>
       </section>
+
+      {/* Confirmation Modal (Bootbox replacement) */}
+      <ConfirmDialogModal
+        isOpen={Boolean(deleteTarget)}
+        title="Delete Transaction Record"
+        recordName={deleteTarget?.originalFilename || deleteTarget?.jobId}
+        recordId={deleteTarget?.jobId}
+        details={deleteTarget ? [
+          { label: 'ERP Source', value: deleteTarget.sourceSystem || '—' },
+          { label: 'Document Type', value: deleteTarget.transactionType || '—' },
+          { label: 'Status', value: deleteTarget.status || '—' },
+          { label: 'Format', value: deleteTarget.inputFormat || '—' }
+        ] : []}
+        warningText="This will permanently delete this transaction from PostgreSQL database and purge all converted MAWM outputs. This action cannot be undone."
+        confirmText="Delete Record"
+        isLoading={Boolean(deletingId)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 }
