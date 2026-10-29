@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { integrationApi } from '../../services/integrationApi';
 import ConfirmDialogModal from '../common/ConfirmDialogModal';
+import { copyToClipboard } from '../../utils/clipboard';
 
 function formatSourceName(code) {
   return code || 'Unknown Source';
@@ -225,6 +226,8 @@ export default function JobDetailsPage({ jobId, onBack }) {
   const [copiedId, setCopiedId] = useState(false);
   const [copiedInput, setCopiedInput] = useState(false);
   const [copiedOutput, setCopiedOutput] = useState(false);
+  const [copiedDocSource, setCopiedDocSource] = useState(false);
+  const [copiedDocNormalized, setCopiedDocNormalized] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [liveJob, setLiveJob] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -392,27 +395,33 @@ export default function JobDetailsPage({ jobId, onBack }) {
   const totalRecs = job.totalRecords || 1;
   const validPct = Math.round(((job.convertedRecords || 0) / totalRecs) * 100);
 
-  const handleCopyId = () => {
-    if (job.jobId) {
-      navigator.clipboard.writeText(job.jobId);
-      setCopiedId(true);
-      setTimeout(() => setCopiedId(false), 2000);
+  const handleCopyId = async () => {
+    if (job?.jobId) {
+      const ok = await copyToClipboard(job.jobId);
+      if (ok) {
+        setCopiedId(true);
+        setTimeout(() => setCopiedId(false), 2000);
+      }
     }
   };
 
-  const handleCopyInput = () => {
-    if (job.sampleInput) {
-      navigator.clipboard.writeText(formatPayload(job.sampleInput));
-      setCopiedInput(true);
-      setTimeout(() => setCopiedInput(false), 2000);
+  const handleCopyInput = async () => {
+    if (job?.sampleInput) {
+      const ok = await copyToClipboard(formatPayload(job.sampleInput));
+      if (ok) {
+        setCopiedInput(true);
+        setTimeout(() => setCopiedInput(false), 2000);
+      }
     }
   };
 
-  const handleCopyOutput = () => {
-    if (job.sampleOutput) {
-      navigator.clipboard.writeText(formatMawmOutput(job.sampleOutput));
-      setCopiedOutput(true);
-      setTimeout(() => setCopiedOutput(false), 2000);
+  const handleCopyOutput = async () => {
+    if (job?.sampleOutput) {
+      const ok = await copyToClipboard(formatMawmOutput(job.sampleOutput));
+      if (ok) {
+        setCopiedOutput(true);
+        setTimeout(() => setCopiedOutput(false), 2000);
+      }
     }
   };
 
@@ -1167,14 +1176,28 @@ export default function JobDetailsPage({ jobId, onBack }) {
                         </span>
                         {selectedDoc.sourcePayload && (
                           <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(formatPayload(selectedDoc.sourcePayload));
+                            onClick={async () => {
+                              const ok = await copyToClipboard(formatPayload(selectedDoc.sourcePayload));
+                              if (ok) {
+                                setCopiedDocSource(true);
+                                setTimeout(() => setCopiedDocSource(false), 2000);
+                              }
                             }}
                             className="btn-secondary"
-                            style={{ padding: '0.2rem 0.5rem', fontSize: '0.68rem' }}
+                            style={{
+                              padding: '0.2rem 0.5rem',
+                              fontSize: '0.68rem',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              color: copiedDocSource ? '#10b981' : undefined,
+                              borderColor: copiedDocSource ? 'rgba(16, 185, 129, 0.4)' : undefined,
+                              backgroundColor: copiedDocSource ? 'rgba(16, 185, 129, 0.1)' : undefined
+                            }}
+                            title="Copy Inbound Record"
                           >
-                            <Copy size={11} />
-                            <span>Copy</span>
+                            {copiedDocSource ? <Check size={11} color="#10b981" /> : <Copy size={11} />}
+                            <span>{copiedDocSource ? 'Copied!' : 'Copy'}</span>
                           </button>
                         )}
                       </div>
@@ -1193,14 +1216,28 @@ export default function JobDetailsPage({ jobId, onBack }) {
                         </span>
                         {selectedDoc.normalizedPayload && (
                           <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(formatPayload(selectedDoc.normalizedPayload));
+                            onClick={async () => {
+                              const ok = await copyToClipboard(formatMawmOutput(selectedDoc.normalizedPayload));
+                              if (ok) {
+                                setCopiedDocNormalized(true);
+                                setTimeout(() => setCopiedDocNormalized(false), 2000);
+                              }
                             }}
                             className="btn-secondary"
-                            style={{ padding: '0.2rem 0.5rem', fontSize: '0.68rem' }}
+                            style={{
+                              padding: '0.2rem 0.5rem',
+                              fontSize: '0.68rem',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              color: copiedDocNormalized ? '#10b981' : undefined,
+                              borderColor: copiedDocNormalized ? 'rgba(16, 185, 129, 0.4)' : undefined,
+                              backgroundColor: copiedDocNormalized ? 'rgba(16, 185, 129, 0.1)' : undefined
+                            }}
+                            title="Copy Canonical MAWM Envelope"
                           >
-                            <Copy size={11} />
-                            <span>Copy</span>
+                            {copiedDocNormalized ? <Check size={11} color="#10b981" /> : <Copy size={11} />}
+                            <span>{copiedDocNormalized ? 'Copied!' : 'Copy'}</span>
                           </button>
                         )}
                       </div>

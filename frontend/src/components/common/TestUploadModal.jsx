@@ -18,6 +18,7 @@ import {
   Download
 } from 'lucide-react';
 import { integrationApi } from '../../services/integrationApi';
+import { copyToClipboard } from '../../utils/clipboard';
 
 const DEFAULT_ERP_SOURCES = [
   'CUSTOMER_A_ERP',
@@ -763,18 +764,22 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
     }
   };
 
-  const handleCopyJson = () => {
+  const handleCopyJson = async () => {
     if (!convertedJson) return;
-    navigator.clipboard.writeText(formatMawmOutput(convertedJson));
-    setCopiedJson(true);
-    setTimeout(() => setCopiedJson(false), 2000);
+    const ok = await copyToClipboard(formatMawmOutput(convertedJson));
+    if (ok) {
+      setCopiedJson(true);
+      setTimeout(() => setCopiedJson(false), 2000);
+    }
   };
 
-  const handleCopyJobId = () => {
+  const handleCopyJobId = async () => {
     if (!uploadResult?.trackingId) return;
-    navigator.clipboard.writeText(uploadResult.trackingId);
-    setCopiedJobId(true);
-    setTimeout(() => setCopiedJobId(false), 2000);
+    const ok = await copyToClipboard(uploadResult.trackingId);
+    if (ok) {
+      setCopiedJobId(true);
+      setTimeout(() => setCopiedJobId(false), 2000);
+    }
   };
 
   const currentStatus = (liveTracker?.intakeStatus || uploadResult?.status || 'QUEUED').toUpperCase();

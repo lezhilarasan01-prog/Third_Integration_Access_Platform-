@@ -14,6 +14,7 @@ import {
   SplitSquareVertical,
   ExternalLink
 } from 'lucide-react';
+import { copyToClipboard } from '../../utils/clipboard';
 
 function formatMawmOutput(payload) {
   if (!payload) return '// No output produced';
@@ -81,25 +82,33 @@ export default function JobInspectionModal({ job, onClose }) {
 
   if (!job) return null;
 
-  const handleCopyId = () => {
-    navigator.clipboard?.writeText(job.jobId);
-    setCopiedId(true);
-    setTimeout(() => setCopiedId(false), 2000);
-  };
-
-  const handleCopyInput = () => {
-    if (job.sampleInput) {
-      navigator.clipboard?.writeText(job.sampleInput);
-      setCopiedInput(true);
-      setTimeout(() => setCopiedInput(false), 2000);
+  const handleCopyId = async () => {
+    if (job?.jobId) {
+      const ok = await copyToClipboard(job.jobId);
+      if (ok) {
+        setCopiedId(true);
+        setTimeout(() => setCopiedId(false), 2000);
+      }
     }
   };
 
-  const handleCopyOutput = () => {
-    if (job.sampleOutput) {
-      navigator.clipboard?.writeText(formatMawmOutput(job.sampleOutput));
-      setCopiedJson(true);
-      setTimeout(() => setCopiedJson(false), 2000);
+  const handleCopyInput = async () => {
+    if (job?.sampleInput) {
+      const ok = await copyToClipboard(job.sampleInput);
+      if (ok) {
+        setCopiedInput(true);
+        setTimeout(() => setCopiedInput(false), 2000);
+      }
+    }
+  };
+
+  const handleCopyOutput = async () => {
+    if (job?.sampleOutput) {
+      const ok = await copyToClipboard(formatMawmOutput(job.sampleOutput));
+      if (ok) {
+        setCopiedJson(true);
+        setTimeout(() => setCopiedJson(false), 2000);
+      }
     }
   };
 
