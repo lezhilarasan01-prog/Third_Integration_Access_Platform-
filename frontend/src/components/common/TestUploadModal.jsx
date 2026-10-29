@@ -49,71 +49,13 @@ const PRESET_SAMPLES = [
 1064389422,CID001683,H&M,IN_5180,00173217306660655743,1370811001264009,120,Units,1299,IN`
   },
   {
-    id: '02-mawm-native-json',
-    format: 'JSON',
-    label: '2. MAWM Native ASN (JSON)',
-    desc: 'Hierarchical { Data: [ { AsnId, Lpn: [ { LpnDetail: [...] } ] } ] }',
-    erp: 'CUSTOMER_D_ERP',
-    docType: 'ASN',
-    filename: '02_mawm_native_asn.json',
-    mime: 'application/json',
-    content: JSON.stringify({
-      Data: [
-        {
-          AsnId: "1064389422",
-          AsnOriginTypeId: "P",
-          BusinessUnitId: "CID001683",
-          DestinationFacilityId: "IN_5180",
-          Extended: {
-            DhlCustRef1: "false",
-            DhlCustRef2: "W533",
-            DhlCustRef3: "InboundSupplier",
-            DhlCustRef4: "A"
-          },
-          Lpn: [
-            {
-              LpnId: "00173217306660655741",
-              Actions: { LpnDetail: "RESET" },
-              LpnSizeTypeId: "A49",
-              Extended: {
-                DhlCustRefTtext1: "WAITING",
-                DhlCustRef1: "58",
-                DhlCustRef2: "40"
-              },
-              LpnDetail: [
-                {
-                  ItemId: "1370811001264A03",
-                  ShippedQuantity: "29",
-                  QuantityUomId: "Units",
-                  InventoryTypeId: "F",
-                  ProductStatusId: "W533",
-                  RetailPrice: "999",
-                  CountryOfOrigin: "MA"
-                },
-                {
-                  ItemId: "1370811001264007",
-                  ShippedQuantity: "80",
-                  QuantityUomId: "Units",
-                  InventoryTypeId: "F",
-                  ProductStatusId: "W533",
-                  RetailPrice: "999",
-                  CountryOfOrigin: "MA"
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    }, null, 2)
-  },
-  {
-    id: '03-sap-orders-xml',
+    id: '02-sap-orders-xml',
     format: 'XML',
-    label: '3. SAP Purchase Orders (XML)',
+    label: '2. SAP Purchase Orders (XML)',
     desc: 'Nested XML with <orders><order><poNumber>...</poNumber></order>',
     erp: 'CUSTOMER_C_ERP',
     docType: 'PO',
-    filename: '03_sap_purchase_orders.xml',
+    filename: '02_sap_purchase_orders.xml',
     mime: 'application/xml',
     content: `<?xml version="1.0" encoding="UTF-8"?>
 <orders>
@@ -153,13 +95,13 @@ const PRESET_SAMPLES = [
 </orders>`
   },
   {
-    id: '04-oracle-po-csv',
+    id: '03-oracle-po-csv',
     format: 'CSV',
-    label: '4. Oracle NetSuite PO (CSV)',
+    label: '3. Oracle NetSuite PO (CSV)',
     desc: 'Multi-line PO feed with VENDOR, ITEM_CODE, ORDER_QTY, UNIT_COST',
     erp: 'ORACLE_NETSUITE',
     docType: 'PO',
-    filename: '04_oracle_po_feed.csv',
+    filename: '03_oracle_po_feed.csv',
     mime: 'text/csv',
     content: `PO_HEADER,LINE_NUM,VENDOR_ID,VENDOR_NAME,FACILITY_CODE,ITEM_CODE,DESCRIPTION,ORDER_QTY,UOM,UNIT_COST
 PO-ORA-5510,1,VEND-882,GLOBAL_TEXTILES,IN_5180,TX-COTTON-01,Organic Cotton T-Shirt,500,EA,12.50
@@ -168,13 +110,13 @@ PO-ORA-5511,1,VEND-904,MODERN_FOOTWEAR,IN_5180,SH-SNEAKER-09,Runner Sneaker Blac
 PO-ORA-5512,1,VEND-102,PACIFIC_ACCESSORIES,WH_CENTRAL,AC-CAP-BASEBALL,Cotton Baseball Cap,400,EA,8.00`
   },
   {
-    id: '05-edi-856-asn',
+    id: '04-edi-856-asn',
     format: 'EDI',
-    label: '5. EDI X12 856 Ship Notice (EDI)',
+    label: '4. EDI X12 856 Ship Notice (EDI)',
     desc: 'Standard ANSI ASC X12 Ship Notice / Manifest transaction set',
     erp: 'CUSTOMER_A_ERP',
     docType: 'ASN',
-    filename: '05_edi_856_ship_notice.edi',
+    filename: '04_edi_856_ship_notice.edi',
     mime: 'application/edi-x12',
     content: `ISA*00*          *00*          *ZZ*CUSTOMER_A     *ZZ*MAWM_PLATFORM  *261023*1900*U*00401*000000856*0*P*>~
 GS*SH*CUSTOMER_A*MAWM_PLATFORM*20261023*1900*856001*X*004010~
@@ -201,13 +143,13 @@ GE*1*856001~
 IEA*1*000000856~`
   },
   {
-    id: '06-edi-850-po',
+    id: '05-edi-850-po',
     format: 'X12',
-    label: '6. EDI X12 850 Purchase Order (X12)',
+    label: '5. EDI X12 850 Purchase Order (X12)',
     desc: 'Standard ANSI ASC X12 850 Electronic Purchase Order',
     erp: 'CUSTOMER_B_ERP',
     docType: 'PO',
-    filename: '06_edi_850_purchase_order.x12',
+    filename: '05_edi_850_purchase_order.x12',
     mime: 'application/edi-x12',
     content: `ISA*00*          *00*          *ZZ*RETAIL_HQ      *ZZ*MAWM_LOGISTICS *261023*1915*U*00401*000000850*0*P*>~
 GS*PO*RETAIL_HQ*MAWM_LOGISTICS*20261023*1915*850001*X*004010~
@@ -230,13 +172,13 @@ GE*1*850001~
 IEA*1*000000850~`
   },
   {
-    id: '07-logistics-yaml',
+    id: '06-logistics-yaml',
     format: 'YAML',
-    label: '7. Logistics Manifest (YAML)',
+    label: '6. Logistics Manifest (YAML)',
     desc: 'Hierarchical YAML manifest with shipments, pallets, and SKU items',
     erp: 'LOGISTICS_PARTNER',
     docType: 'ASN',
-    filename: '07_logistics_manifest.yaml',
+    filename: '06_logistics_manifest.yaml',
     mime: 'text/yaml',
     content: `manifestId: MAN-2026-9901
 carrier: DHL_EXPRESS
@@ -270,13 +212,13 @@ shipments:
         uom: Units`
   },
   {
-    id: '08-warehouse-tsv',
+    id: '07-warehouse-tsv',
     format: 'TSV',
-    label: '8. Warehouse Receiving (TSV)',
+    label: '7. Warehouse Receiving (TSV)',
     desc: 'Tab-delimited warehouse feed with RECEIPT_NBR, LOT, EXPIRATION',
     erp: 'CUSTOMER_D_ERP',
     docType: 'PO',
-    filename: '08_warehouse_inbound.tsv',
+    filename: '07_warehouse_inbound.tsv',
     mime: 'text/tab-separated-values',
     content: `RECEIPT_NBR\tWAREHOUSE_ID\tCARRIER_CODE\tCONTAINER_ID\tITEM_ID\tLOT_NUMBER\tRECEIVED_QTY\tUOM\tEXPIRATION_DATE
 RC-2026-101\tIN_5180\tDHL\tCONT-99101\tSKU-PHARMA-101\tLOT-2026A\t1000\tEA\t2028-12-31
@@ -285,13 +227,13 @@ RC-2026-102\tIN_5180\tFEDEX\tCONT-99205\tSKU-COSMETIC-01\tLOT-9911X\t450\tBOX\t2
 RC-2026-103\tIN_5180\tUPS\tCONT-99312\tSKU-COSMETIC-02\tLOT-9912Y\t300\tBOX\t2027-07-31`
   },
   {
-    id: '09-pipe-txt',
+    id: '08-pipe-txt',
     format: 'TXT',
-    label: '9. Customer Flat File (Pipe TXT)',
+    label: '8. Customer Flat File (Pipe TXT)',
     desc: 'Pipe-delimited flat file (ASN_ID|SUPPLIER|SKU|SHIPPED_QTY)',
     erp: 'CUSTOMER_B_ERP',
     docType: 'ASN',
-    filename: '09_customer_b_pipe_delimited.txt',
+    filename: '08_customer_b_pipe_delimited.txt',
     mime: 'text/plain',
     content: `ASN_ID|SUPPLIER_NAME|DESTINATION_DC|LPN_NUMBER|SKU_NUMBER|SHIPPED_QTY|UNIT_OF_MEASURE|ITEM_STATUS
 ASN-B-9901|CUSTOMER_B_LOGISTICS|IN_5180|LPN-B-001091|SKU-B-8801|140|UNITS|AVAILABLE
@@ -300,13 +242,13 @@ ASN-B-9902|CUSTOMER_B_LOGISTICS|IN_5180|LPN-B-001093|SKU-B-9901|85|UNITS|INSPECT
 ASN-B-9902|CUSTOMER_B_LOGISTICS|IN_5180|LPN-B-001094|SKU-B-9902|160|UNITS|AVAILABLE`
   },
   {
-    id: '10-ecom-orders-json',
+    id: '09-ecom-orders-json',
     format: 'JSON',
-    label: '10. E-Commerce Multi-Item Orders (JSON)',
+    label: '9. E-Commerce Multi-Item Orders (JSON)',
     desc: 'Multi-order array with orderId, shippingSpeed, and nested items[]',
     erp: 'CUSTOMER_A_ERP',
     docType: 'PO',
-    filename: '10_ecommerce_fulfillment_orders.json',
+    filename: '09_ecommerce_fulfillment_orders.json',
     mime: 'application/json',
     content: JSON.stringify([
       {
@@ -905,7 +847,7 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <Sparkles size={14} color="#0284c7" />
                 <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                  Quick Test File Samples (10 Presets)
+                  Quick Test File Samples ({PRESET_SAMPLES.length} Presets)
                 </span>
               </div>
               <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
@@ -938,7 +880,6 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                       flexDirection: 'column',
                       justifyContent: 'space-between'
                     }}
-                    title={sample.desc}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
                       <span style={{
