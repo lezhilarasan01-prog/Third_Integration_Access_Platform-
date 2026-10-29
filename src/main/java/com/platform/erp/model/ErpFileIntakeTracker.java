@@ -276,6 +276,20 @@ public class ErpFileIntakeTracker {
         return processingErrorMessage;
     }
 
+    @com.fasterxml.jackson.annotation.JsonProperty("errorDetails")
+    public Object getErrorDetails() {
+        if (processingErrorMessage == null || processingErrorMessage.isBlank()) return null;
+        String trimmed = processingErrorMessage.trim();
+        if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || 
+            (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+            try {
+                return new com.fasterxml.jackson.databind.ObjectMapper().readTree(trimmed);
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
+    }
+
     public void setProcessingErrorMessage(String processingErrorMessage) {
         this.processingErrorMessage = processingErrorMessage;
     }

@@ -173,7 +173,7 @@ public class ErpFileConsumerService {
                     Map<String, Object> map = objectMapper.readValue(msg.trim(), Map.class);
                     map.putIfAbsent("status", "FAILED");
                     map.put("dlqTopic", dlqTopic);
-                    return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(map);
+                    return objectMapper.writeValueAsString(map);
                 } catch (Exception ignored) {
                 }
             }
@@ -227,10 +227,10 @@ public class ErpFileConsumerService {
                 }
             }
 
-            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(errMap);
+            return objectMapper.writeValueAsString(errMap);
         } catch (Exception e) {
-            String escaped = ex.getMessage() != null ? ex.getMessage().replace("\"", "\\\"").replace("\n", " ") : "Error";
-            return "{\n  \"status\": \"FAILED\",\n  \"message\": \"" + escaped + "\",\n  \"dlqTopic\": \"" + dlqTopic + "\"\n}";
+            String escaped = ex.getMessage() != null ? ex.getMessage().replace("\"", "\\\"").replace("\n", " ").replace("\r", "") : "Error";
+            return "{\"status\":\"FAILED\",\"message\":\"" + escaped + "\",\"dlqTopic\":\"" + dlqTopic + "\"}";
         }
     }
 

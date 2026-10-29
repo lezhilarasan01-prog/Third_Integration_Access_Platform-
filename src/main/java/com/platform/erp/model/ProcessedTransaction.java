@@ -1,11 +1,14 @@
 package com.platform.erp.model;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ProcessedTransaction {
+    private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
+
     private String trackingId;
     private String erpSource;
     private String facilityId;
@@ -17,14 +20,14 @@ public class ProcessedTransaction {
     private Instant convertedAt;
     private CanonicalEnvelope canonicalEnvelope;
     private String mawmStatus;
-    private String errorMessage;
+    private Object errorMessage;
 
     public ProcessedTransaction() {}
 
     public ProcessedTransaction(String trackingId, String erpSource, String documentType,
                                 String filename, String status, int totalRecords,
                                 Instant receivedAt, Instant convertedAt,
-                                CanonicalEnvelope canonicalEnvelope, String mawmStatus, String errorMessage) {
+                                CanonicalEnvelope canonicalEnvelope, String mawmStatus, Object errorMessage) {
         this.trackingId = trackingId;
         this.erpSource = erpSource;
         this.documentType = documentType;
@@ -36,6 +39,13 @@ public class ProcessedTransaction {
         this.canonicalEnvelope = canonicalEnvelope;
         this.mawmStatus = mawmStatus;
         this.errorMessage = errorMessage;
+    }
+
+    public ProcessedTransaction(String trackingId, String erpSource, String documentType,
+                                String filename, String status, int totalRecords,
+                                Instant receivedAt, Instant convertedAt,
+                                CanonicalEnvelope canonicalEnvelope, String mawmStatus, String errorMessage) {
+        this(trackingId, erpSource, documentType, filename, status, totalRecords, receivedAt, convertedAt, canonicalEnvelope, mawmStatus, (Object) errorMessage);
     }
 
     public String getTrackingId() { return trackingId; }
@@ -71,6 +81,21 @@ public class ProcessedTransaction {
     public String getMawmStatus() { return mawmStatus; }
     public void setMawmStatus(String mawmStatus) { this.mawmStatus = mawmStatus; }
 
-    public String getErrorMessage() { return errorMessage; }
-    public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+    public Object getErrorMessage() {
+        if (errorMessage instanceof String str) {
+            String trimmed = str.trim();
+            if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || 
+                (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+                try {
+                    return JSON_MAPPER.readTree(trimmed);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return errorMessage;
+    }
+
+    public void setErrorMessage(Object errorMessage) {
+        this.errorMessage = errorMessage;
+    }
 }
