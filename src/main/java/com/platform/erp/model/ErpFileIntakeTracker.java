@@ -293,17 +293,19 @@ public class ErpFileIntakeTracker {
                             if (item instanceof com.fasterxml.jackson.databind.node.ObjectNode itemObj) {
                                 itemObj.remove("errorType");
                                 itemObj.remove("deliveryLine");
+                                itemObj.remove("lineNumber");
                                 if (itemObj.has("field")) {
                                     String f = itemObj.get("field").asText();
                                     if (f.startsWith("deliveryLine[") && f.contains("].")) {
                                         int endBracket = f.indexOf("].");
-                                        String lineNum = f.substring(13, endBracket);
-                                        itemObj.put("lineNumber", lineNum);
                                         itemObj.put("field", f.substring(endBracket + 2));
                                     } else if (f.startsWith("deliveryLine.")) {
                                         itemObj.put("field", f.substring(13));
                                     } else if (f.equals("deliveryLine")) {
                                         itemObj.put("field", "lines");
+                                    } else if (f.startsWith("line[") && f.contains("].")) {
+                                        int endBracket = f.indexOf("].");
+                                        itemObj.put("field", f.substring(endBracket + 2));
                                     }
                                 }
                             }

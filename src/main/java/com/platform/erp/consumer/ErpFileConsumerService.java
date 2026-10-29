@@ -214,11 +214,9 @@ public class ErpFileConsumerService {
                             rejectedVal = rest.substring(valIdx + 9, rest.length() - 2);
                         }
 
-                        // Remove "deliveryLine" prefix and extract lineNumber if present
-                        String lineNum = null;
+                        // Remove "deliveryLine" prefix and line brackets if present
                         if (field.startsWith("deliveryLine[") && field.contains("].")) {
                             int endBracket = field.indexOf("].");
-                            lineNum = field.substring(13, endBracket);
                             field = field.substring(endBracket + 2);
                         } else if (field.startsWith("deliveryLine.")) {
                             field = field.substring(13);
@@ -226,14 +224,10 @@ public class ErpFileConsumerService {
                             field = "lines";
                         } else if (field.startsWith("line[") && field.contains("].")) {
                             int endBracket = field.indexOf("].");
-                            lineNum = field.substring(5, endBracket);
                             field = field.substring(endBracket + 2);
                         }
 
                         Map<String, Object> errItem = new LinkedHashMap<>();
-                        if (lineNum != null) {
-                            errItem.put("lineNumber", lineNum);
-                        }
                         errItem.put("field", field);
                         errItem.put("message", reason);
                         if (rejectedVal != null) {

@@ -456,9 +456,9 @@ function formatErrorOutput(rawError, targetDlq) {
         parsed.errors.forEach(err => {
           delete err.errorType;
           delete err.deliveryLine;
+          delete err.lineNumber;
           if (err.field && err.field.startsWith('deliveryLine[') && err.field.includes('].')) {
             const idx = err.field.indexOf('].');
-            err.lineNumber = err.field.substring(13, idx);
             err.field = err.field.substring(idx + 2);
           } else if (err.field && err.field.startsWith('deliveryLine.')) {
             err.field = err.field.substring(13);
@@ -489,16 +489,13 @@ function formatErrorOutput(rawError, targetDlq) {
             rejectedVal = reason.substring(valIdx + 9, reason.length - 2);
             reason = reason.substring(0, valIdx).trim();
           }
-          let lineNum = null;
           if (field.startsWith('deliveryLine[') && field.includes('].')) {
             const endBracket = field.indexOf('].');
-            lineNum = field.substring(13, endBracket);
             field = field.substring(endBracket + 2);
           } else if (field.startsWith('deliveryLine.')) {
             field = field.substring(13);
           }
           const item = {};
-          if (lineNum) item.lineNumber = lineNum;
           item.field = field;
           item.message = reason;
           if (rejectedVal !== null) item.rejectedValue = rejectedVal;
