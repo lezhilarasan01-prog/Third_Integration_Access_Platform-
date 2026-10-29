@@ -47,8 +47,17 @@ public class HmAsnSchemaValidator {
 
         // 1. Root Payload Validation
         if (message == null) {
-            errors.add(new ValidationError("root", "H&M inbound message payload is missing or null"));
+            errors.add(new ValidationError("root", "Inbound message payload is missing or null"));
             return ValidationResult.invalid(errors);
+        }
+
+        // Validate mandatory root transactionType
+        if (message.transactionType() == null || message.transactionType().isBlank()) {
+            errors.add(new ValidationError(
+                    "transactionType",
+                    "Mandatory field 'transactionType' is missing or blank",
+                    null
+            ));
         }
 
         HmInboundDelivery delivery = message.inboundDelivery();
@@ -57,11 +66,11 @@ public class HmAsnSchemaValidator {
             return ValidationResult.invalid(errors);
         }
 
-        // 2. ASN Header Mandatory Fields (MAWM: AsnId, ProductStatusId)
+        // 2. ASN Header Mandatory Fields
         if (delivery.inboundDeliveryNumber() == null || delivery.inboundDeliveryNumber().isBlank()) {
             errors.add(new ValidationError(
                     "inboundDelivery.inboundDeliveryNumber",
-                    "Mandatory field 'inboundDeliveryNumber' (MAWM AsnId) is missing or blank",
+                    "Mandatory field 'inboundDeliveryNumber' is missing or blank",
                     null
             ));
         }
@@ -69,7 +78,7 @@ public class HmAsnSchemaValidator {
         if (delivery.siteID() == null || delivery.siteID().isBlank()) {
             errors.add(new ValidationError(
                     "inboundDelivery.siteID",
-                    "Mandatory field 'siteID' (MAWM ProductStatusId) is missing or blank",
+                    "Mandatory field 'siteID' is missing or blank",
                     null
             ));
         }
@@ -95,9 +104,9 @@ public class HmAsnSchemaValidator {
                 errors.add(new ValidationError(linePrefix + ".lineNumber", "Mandatory field 'lineNumber' is missing or blank", null));
             }
 
-            // SKU -> MAWM ItemId
+            // SKU
             if (line.sku() == null || line.sku().isBlank()) {
-                errors.add(new ValidationError(linePrefix + ".sku", "Mandatory field 'sku' (MAWM ItemId) is missing or blank", null));
+                errors.add(new ValidationError(linePrefix + ".sku", "Mandatory field 'sku' is missing or blank", null));
             }
 
             // Advised Quantity
@@ -108,7 +117,7 @@ public class HmAsnSchemaValidator {
                 errors.add(new ValidationError(linePrefix + ".advisedQuantity", "Field 'advisedQuantity' must be greater than 0", advised));
             }
 
-            // Price Validation -> MAWM RetailPrice (Mandatory in spec)
+            // Price Validation
             if (line.skuAttributes() == null) {
                 errors.add(new ValidationError(linePrefix + ".skuAttributes", "Mandatory object 'skuAttributes' is missing", null));
             } else if (line.skuAttributes().prices() == null || line.skuAttributes().prices().isEmpty()) {
@@ -131,13 +140,13 @@ public class HmAsnSchemaValidator {
                 if (!hasValidPriceValue) {
                     errors.add(new ValidationError(
                             linePrefix + ".skuAttributes.prices.priceValue",
-                            "Mandatory field 'priceValue' (MAWM RetailPrice) is missing, null, or not a valid number",
+                            "Mandatory field 'priceValue' is missing, null, or not a valid number",
                             null
                     ));
                 }
             }
 
-            // Packing Containers -> MAWM Lpn & ShippedQuantity
+            // Packing Containers
             List<HmPacking> packings = line.packing();
             if (packings == null || packings.isEmpty()) {
                 errors.add(new ValidationError(linePrefix + ".packing", "Mandatory 'packing' array is missing or empty (at least one carton required)", null));
@@ -147,11 +156,11 @@ public class HmAsnSchemaValidator {
                     HmPacking packing = packings.get(pIdx);
                     String packingPrefix = linePrefix + ".packing[" + pIdx + "]";
 
-                    // Handling Unit ID -> MAWM LpnId
+                    // Handling Unit ID
                     if (packing.huIdentifier() == null || packing.huIdentifier().isBlank()) {
                         errors.add(new ValidationError(
                                 packingPrefix + ".huIdentifier",
-                                "Mandatory field 'huIdentifier' (MAWM LpnId) is missing or blank",
+                                "Mandatory field 'huIdentifier' is missing or blank",
                                 null
                         ));
                     }

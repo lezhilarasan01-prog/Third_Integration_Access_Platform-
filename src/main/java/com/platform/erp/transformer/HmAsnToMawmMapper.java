@@ -56,7 +56,10 @@ public class HmAsnToMawmMapper {
         // 1. Generic Schema & Business Rule Validation
         ValidationResult validationResult = validator.validate(message);
         if (!validationResult.isValid()) {
-        	throw new IllegalArgumentException("H&M Inbound Delivery schema validation failed: " + validationResult.getFormattedErrors());
+            String prefix = (message != null && message.transactionType() != null && !message.transactionType().isBlank())
+                    ? message.transactionType() + " schema validation failed: "
+                    : "Schema validation failed: ";
+            throw new IllegalArgumentException(prefix + validationResult.getFormattedErrors());
         }
 
         HmInboundDelivery delivery = message.inboundDelivery();

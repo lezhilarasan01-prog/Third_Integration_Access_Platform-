@@ -93,6 +93,27 @@ class HmAsnSchemaValidatorTest {
     }
 
     @Test
+    @DisplayName("Mandatory Transaction Type: Rejects payload when transactionType is missing, null, or blank")
+    void testMissingTransactionTypeFailsValidation() throws Exception {
+        String inputJson;
+        try (InputStream is = getClass().getResourceAsStream("/hm_asn_input.json")) {
+            assertNotNull(is, "hm_asn_input.json must exist in test resources");
+            inputJson = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        }
+
+        // Replace "transactionType": "I1116" with "": "I1116" as tested by user
+        String tamperedJson = inputJson.replaceFirst("\"transactionType\":\\s*\"I1116\"", "\"\": \"I1116\"");
+        HmInboundDeliveryMessage message = objectMapper.readValue(tamperedJson, HmInboundDeliveryMessage.class);
+
+        ValidationResult result = validator.validate(message);
+        assertFalse(result.isValid(), "Validation must fail when transactionType is missing");
+        assertTrue(result.errors().stream().anyMatch(e -> e.field().equals("transactionType")),
+                "Errors must contain 'transactionType'");
+        assertTrue(result.getFormattedErrors().contains("transactionType"),
+                "Formatted errors must include 'transactionType'");
+    }
+
+    @Test
     @DisplayName("Mandatory Price Validation: Rejects payload when priceValue is missing or misspelled as 'abc'")
     void testMissingOrMisspelledPriceFailsValidation() throws Exception {
         String inputJson;

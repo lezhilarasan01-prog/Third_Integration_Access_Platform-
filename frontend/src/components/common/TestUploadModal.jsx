@@ -433,6 +433,7 @@ function formatErrorOutput(rawError, targetDlq) {
             const valIdx = reason.lastIndexOf("(value: '");
             reason = reason.substring(0, valIdx).trim();
           }
+          reason = reason.replace(/\s*\(MAWM\s+[^)]+\)/gi, '');
           if (field.startsWith('deliveryLine[') && field.includes('].')) {
             const endBracket = field.indexOf('].');
             field = field.substring(endBracket + 2);
@@ -446,7 +447,12 @@ function formatErrorOutput(rawError, targetDlq) {
         }
       });
       let mainMsg = trimmed.substring(0, trimmed.indexOf('[')).replace(/:$/, '').trim();
-      if (!mainMsg) mainMsg = 'Schema validation failed';
+      if (mainMsg.includes('failed:')) {
+        mainMsg = mainMsg.substring(mainMsg.lastIndexOf('failed:') + 7).trim();
+      }
+      if (!mainMsg || mainMsg.toLowerCase().includes('h&m')) {
+        mainMsg = 'Schema validation failed';
+      }
       const out = {
         status: 'FAILED',
         message: mainMsg,

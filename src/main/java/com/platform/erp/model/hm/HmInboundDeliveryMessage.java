@@ -1,5 +1,6 @@
 package com.platform.erp.model.hm;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 
@@ -73,6 +74,7 @@ public record HmInboundDeliveryMessage(
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record HmPrice(
             String channelName,
+            @JsonAlias({"price", "retailPrice", "unitPrice", "amount", "value"})
             Object priceValue,
             String currencyISOCode
     ) {}

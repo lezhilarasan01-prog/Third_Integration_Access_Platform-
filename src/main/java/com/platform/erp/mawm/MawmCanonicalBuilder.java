@@ -97,11 +97,11 @@ public class MawmCanonicalBuilder {
                         return data;
                     }
                 } catch (IllegalArgumentException e) {
-                    log.error("[MAWM Dynamic Engine] H&M Inbound Delivery validation failed: {}", e.getMessage());
+                    log.error("[MAWM Dynamic Engine] Schema validation failed: {}", e.getMessage());
                     throw e;
                 } catch (Exception e) {
-                    log.error("[MAWM Dynamic Engine] H&M Inbound Delivery validation/mapping failed: {}", e.getMessage());
-                    throw new IllegalArgumentException("H&M Inbound Delivery mapping failed: " + e.getMessage(), e);
+                    log.error("[MAWM Dynamic Engine] Schema mapping failed: {}", e.getMessage());
+                    throw new IllegalArgumentException("Schema mapping failed: " + e.getMessage(), e);
                 }
             }
         }

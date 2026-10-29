@@ -157,14 +157,14 @@ public class ErpFileConsumerService {
 
         } catch (Exception ex) {
             log.error("Conversion failed for TrackingId: {}, routing to DLQ: {}", trackingId, dlqTopic, ex);
-            String errorJson = buildErrorJson(ex, dlqTopic);
+            String errorJson = buildErrorJson(ex, dlqTopic, docType);
             transactionStore.recordFailure(trackingId, erpSource, docType, dlqTopic, errorJson);
             sendToDlq(dlqTopic, record, trackingId, erpSource, docType, errorJson);
             ack.acknowledge();
         }
     }
 
-    private String buildErrorJson(Exception ex, String dlqTopic) {
+    private String buildErrorJson(Exception ex, String dlqTopic, String docType) {
         try {
             String msg = ex.getMessage();
             if (msg != null && msg.trim().startsWith("{") && msg.trim().endsWith("}")) {
@@ -183,12 +183,17 @@ public class ErpFileConsumerService {
             Map<String, Object> errMap = new LinkedHashMap<>();
             errMap.put("status", "FAILED");
 
-            String mainMessage = (msg != null && !msg.isBlank()) ? msg : "Conversion failed";
+            String mainMessage = (msg != null && !msg.isBlank()) ? msg : "Schema validation failed";
             if (mainMessage.contains(": [")) {
                 mainMessage = mainMessage.substring(0, mainMessage.indexOf(": [")).trim();
             }
-            if (mainMessage.startsWith("H&M Inbound Delivery validation failed: H&M Inbound Delivery schema validation failed")) {
-                mainMessage = "H&M Inbound Delivery schema validation failed";
+            if (mainMessage.contains("failed:")) {
+                mainMessage = mainMessage.substring(mainMessage.lastIndexOf("failed:") + 7).trim();
+            }
+            if (mainMessage.isBlank() || mainMessage.toLowerCase().contains("h&m")) {
+                mainMessage = (docType != null && !docType.isBlank())
+                        ? docType + " schema validation failed"
+                        : "Schema validation failed";
             }
 
             errMap.put("message", mainMessage);
@@ -211,6 +216,7 @@ public class ErpFileConsumerService {
                             int valIdx = rest.lastIndexOf("(value: '");
                             reason = rest.substring(0, valIdx).trim();
                         }
+                        reason = reason.replaceAll("\\s*\\(MAWM\\s+[^)]+\\)", "");
 
                         // Remove "deliveryLine" prefix and line brackets if present
                         if (field.startsWith("deliveryLine[") && field.contains("].")) {
