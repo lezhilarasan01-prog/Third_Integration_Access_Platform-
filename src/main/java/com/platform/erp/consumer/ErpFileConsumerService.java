@@ -173,6 +173,8 @@ public class ErpFileConsumerService {
                     Map<String, Object> map = objectMapper.readValue(msg.trim(), Map.class);
                     map.putIfAbsent("status", "FAILED");
                     map.put("dlqTopic", dlqTopic);
+                    map.remove("errorType");
+                    map.remove("deliveryLine");
                     return objectMapper.writeValueAsString(map);
                 } catch (Exception ignored) {
                 }
@@ -191,7 +193,6 @@ public class ErpFileConsumerService {
 
             errMap.put("message", mainMessage);
             errMap.put("dlqTopic", dlqTopic);
-            errMap.put("errorType", ex.getClass().getSimpleName());
 
             // Extract structured validation errors if message contains formatted errors
             if (msg != null && msg.contains("[") && msg.contains("]:")) {
@@ -213,7 +214,26 @@ public class ErpFileConsumerService {
                             rejectedVal = rest.substring(valIdx + 9, rest.length() - 2);
                         }
 
+                        // Remove "deliveryLine" prefix and extract lineNumber if present
+                        String lineNum = null;
+                        if (field.startsWith("deliveryLine[") && field.contains("].")) {
+                            int endBracket = field.indexOf("].");
+                            lineNum = field.substring(13, endBracket);
+                            field = field.substring(endBracket + 2);
+                        } else if (field.startsWith("deliveryLine.")) {
+                            field = field.substring(13);
+                        } else if (field.equals("deliveryLine")) {
+                            field = "lines";
+                        } else if (field.startsWith("line[") && field.contains("].")) {
+                            int endBracket = field.indexOf("].");
+                            lineNum = field.substring(5, endBracket);
+                            field = field.substring(endBracket + 2);
+                        }
+
                         Map<String, Object> errItem = new LinkedHashMap<>();
+                        if (lineNum != null) {
+                            errItem.put("lineNumber", lineNum);
+                        }
                         errItem.put("field", field);
                         errItem.put("message", reason);
                         if (rejectedVal != null) {

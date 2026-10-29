@@ -450,11 +450,72 @@ function formatErrorOutput(rawError, targetDlq) {
       if (!parsed.dlqTopic && targetDlq) {
         parsed.dlqTopic = targetDlq;
       }
+      delete parsed.errorType;
+      delete parsed.deliveryLine;
+      if (Array.isArray(parsed.errors)) {
+        parsed.errors.forEach(err => {
+          delete err.errorType;
+          delete err.deliveryLine;
+          if (err.field && err.field.startsWith('deliveryLine[') && err.field.includes('].')) {
+            const idx = err.field.indexOf('].');
+            err.lineNumber = err.field.substring(13, idx);
+            err.field = err.field.substring(idx + 2);
+          } else if (err.field && err.field.startsWith('deliveryLine.')) {
+            err.field = err.field.substring(13);
+          }
+        });
+      }
       return JSON.stringify(parsed, null, 2);
     } catch (e) {
       // fallback
     }
   }
+
+  // Parse raw validation exception string if present
+  if (trimmed.includes('[') && trimmed.includes(']:')) {
+    try {
+      const errorList = [];
+      const errorsPart = trimmed.substring(trimmed.indexOf('['));
+      const tokens = errorsPart.split(/;\s*(?=\[)/);
+      tokens.forEach(tok => {
+        tok = tok.trim();
+        if (tok.startsWith('[') && tok.includes(']:')) {
+          const closeIdx = tok.indexOf(']:');
+          let field = tok.substring(1, closeIdx).trim();
+          let reason = tok.substring(closeIdx + 2).trim();
+          let rejectedVal = null;
+          if (reason.includes("(value: '") && reason.endsWith("')")) {
+            const valIdx = reason.lastIndexOf("(value: '");
+            rejectedVal = reason.substring(valIdx + 9, reason.length - 2);
+            reason = reason.substring(0, valIdx).trim();
+          }
+          let lineNum = null;
+          if (field.startsWith('deliveryLine[') && field.includes('].')) {
+            const endBracket = field.indexOf('].');
+            lineNum = field.substring(13, endBracket);
+            field = field.substring(endBracket + 2);
+          } else if (field.startsWith('deliveryLine.')) {
+            field = field.substring(13);
+          }
+          const item = {};
+          if (lineNum) item.lineNumber = lineNum;
+          item.field = field;
+          item.message = reason;
+          if (rejectedVal !== null) item.rejectedValue = rejectedVal;
+          errorList.push(item);
+        }
+      });
+      return JSON.stringify({
+        status: 'FAILED',
+        message: 'H&M Inbound Delivery schema validation failed',
+        dlqTopic: targetDlq || 'erp_file_asn_dlq',
+        errors: errorList
+      }, null, 2);
+    } catch (e) {
+      // fallback
+    }
+  }
+
   return JSON.stringify({
     status: 'FAILED',
     message: rawError,

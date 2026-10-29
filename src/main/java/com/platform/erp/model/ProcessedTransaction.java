@@ -1,7 +1,10 @@
 package com.platform.erp.model;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.time.Instant;
 
@@ -87,12 +90,44 @@ public class ProcessedTransaction {
             if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || 
                 (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
                 try {
-                    return JSON_MAPPER.readTree(trimmed);
+                    JsonNode node = JSON_MAPPER.readTree(trimmed);
+                    return sanitizeErrorNode(node);
                 } catch (Exception ignored) {
                 }
             }
         }
         return errorMessage;
+    }
+
+    private static JsonNode sanitizeErrorNode(JsonNode node) {
+        if (node instanceof ObjectNode obj) {
+            obj.remove("errorType");
+            obj.remove("deliveryLine");
+            if (obj.has("errors") && obj.get("errors").isArray()) {
+                ArrayNode arr = (ArrayNode) obj.get("errors");
+                for (JsonNode item : arr) {
+                    if (item instanceof ObjectNode itemObj) {
+                        itemObj.remove("errorType");
+                        itemObj.remove("deliveryLine");
+                        if (itemObj.has("field")) {
+                            String f = itemObj.get("field").asText();
+                            if (f.startsWith("deliveryLine[") && f.contains("].")) {
+                                int endBracket = f.indexOf("].");
+                                String lineNum = f.substring(13, endBracket);
+                                itemObj.put("lineNumber", lineNum);
+                                itemObj.put("field", f.substring(endBracket + 2));
+                            } else if (f.startsWith("deliveryLine.")) {
+                                itemObj.put("field", f.substring(13));
+                            } else if (f.equals("deliveryLine")) {
+                                itemObj.put("field", "lines");
+                            }
+                        }
+                    }
+                }
+            }
+            return obj;
+        }
+        return node;
     }
 
     public void setErrorMessage(Object errorMessage) {
