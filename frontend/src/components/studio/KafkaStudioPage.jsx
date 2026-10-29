@@ -324,7 +324,7 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
 
   // Test Event Publisher State
   const [publishPayload, setPublishPayload] = useState('{\n  "poNumber": "PO-TEST-STUDIO-001",\n  "supplier": "ACME-GLOBAL",\n  "warehouse": "WH-MUMBAI-01",\n  "sku": "SKU-TEST-99",\n  "quantity": 100,\n  "uom": "EA"\n}');
-  const [publishKey, setPublishKey] = useState('CUSTOMER_A_ERP');
+  const [publishKey, setPublishKey] = useState('');
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState(null);
 
@@ -1464,7 +1464,7 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
                   value={publishKey}
                   onChange={(e) => setPublishKey(e.target.value)}
                   className="studio-input"
-                  placeholder="e.g. CUSTOMER_A_ERP"
+                  placeholder="Enter partition key / source system (optional)"
                 />
               </div>
 

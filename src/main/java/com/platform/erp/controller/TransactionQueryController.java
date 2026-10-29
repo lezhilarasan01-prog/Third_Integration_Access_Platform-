@@ -194,8 +194,8 @@ public class TransactionQueryController {
         var trackerOpt = transactionStore.getTracker(jobId);
         String filename = jobId + "_canonical.json";
         String json = null;
-        String transactionType = "PO";
-        String sourceSystem = "CUSTOMER_A_ERP";
+        String transactionType = "UNKNOWN";
+        String sourceSystem = "UNKNOWN";
 
         if (trackerOpt.isPresent()) {
             var t = trackerOpt.get();

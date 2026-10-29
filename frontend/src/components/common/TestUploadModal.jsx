@@ -38,7 +38,7 @@ const PRESET_SAMPLES = [
     format: 'CSV',
     label: '1. H&M Inbound ASN (CSV)',
     desc: 'CSV with ASN_NUMBER, LPN_ID, SKU, QUANTITY, RETAIL_PRICE',
-    erp: 'CUSTOMER_A_ERP',
+    erp: 'HM',
     docType: 'ASN',
     filename: '01_hm_inbound_asn.csv',
     mime: 'text/csv',
@@ -114,7 +114,7 @@ PO-ORA-5512,1,VEND-102,PACIFIC_ACCESSORIES,WH_CENTRAL,AC-CAP-BASEBALL,Cotton Bas
     format: 'EDI',
     label: '4. EDI X12 856 Ship Notice (EDI)',
     desc: 'Standard ANSI ASC X12 Ship Notice / Manifest transaction set',
-    erp: 'CUSTOMER_A_ERP',
+    erp: 'LOGISTICS_PARTNER',
     docType: 'ASN',
     filename: '04_edi_856_ship_notice.edi',
     mime: 'application/edi-x12',
@@ -246,7 +246,7 @@ ASN-B-9902|CUSTOMER_B_LOGISTICS|IN_5180|LPN-B-001094|SKU-B-9902|160|UNITS|AVAILA
     format: 'JSON',
     label: '9. E-Commerce Multi-Item Orders (JSON)',
     desc: 'Multi-order array with orderId, shippingSpeed, and nested items[]',
-    erp: 'CUSTOMER_A_ERP',
+    erp: 'CUSTOMER_B_ERP',
     docType: 'PO',
     filename: '09_ecommerce_fulfillment_orders.json',
     mime: 'application/json',
@@ -379,11 +379,14 @@ function getStatusStyles(status) {
 
 function formatErrorOutput(rawError, targetDlq) {
   if (!rawError) {
-    return JSON.stringify({
+    const fallback = {
       status: 'FAILED',
-      message: 'Schema validation failed. Check backend logs or DLQ for details.',
-      dlqTopic: targetDlq || 'erp_file_asn_dlq'
-    }, null, 2);
+      message: 'Schema validation failed. Check backend logs or DLQ for details.'
+    };
+    if (targetDlq) {
+      fallback.dlqTopic = targetDlq;
+    }
+    return JSON.stringify(fallback, null, 2);
   }
   const trimmed = rawError.trim();
   if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
@@ -442,29 +445,37 @@ function formatErrorOutput(rawError, targetDlq) {
           errorList.push(item);
         }
       });
-      return JSON.stringify({
+      let mainMsg = trimmed.substring(0, trimmed.indexOf('[')).replace(/:$/, '').trim();
+      if (!mainMsg) mainMsg = 'Schema validation failed';
+      const out = {
         status: 'FAILED',
-        message: 'H&M Inbound Delivery schema validation failed',
-        dlqTopic: targetDlq || 'erp_file_asn_dlq',
+        message: mainMsg,
         errors: errorList
-      }, null, 2);
+      };
+      if (targetDlq) {
+        out.dlqTopic = targetDlq;
+      }
+      return JSON.stringify(out, null, 2);
     } catch (e) {
       // fallback
     }
   }
 
-  return JSON.stringify({
+  const out = {
     status: 'FAILED',
-    message: rawError,
-    dlqTopic: targetDlq || 'erp_file_asn_dlq'
-  }, null, 2);
+    message: rawError
+  };
+  if (targetDlq) {
+    out.dlqTopic = targetDlq;
+  }
+  return JSON.stringify(out, null, 2);
 }
 
 export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
   const [selectedFile, setSelectedFile] = useState(null);
-  const [erpSource, setErpSource] = useState('CUSTOMER_A_ERP');
+  const [erpSource, setErpSource] = useState('');
   const [customErp, setCustomErp] = useState('');
-  const [docType, setDocType] = useState('ASN');
+  const [docType, setDocType] = useState('');
   const [customDocType, setCustomDocType] = useState('');
   const [dbSources, setDbSources] = useState([]);
   const [dbDocTypes, setDbDocTypes] = useState([]);
@@ -667,6 +678,16 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
       return;
     }
 
+    if (!activeErp) {
+      setUploadError('Please select or specify an ERP Source System.');
+      return;
+    }
+
+    if (!activeDocType) {
+      setUploadError('Please select or specify a Document Type (e.g. ASN, PO).');
+      return;
+    }
+
     if (!hasValidFileExtension(selectedFile.name)) {
       setUploadError(`File extension is mandatory. "${selectedFile.name}" does not have a valid extension (e.g. .csv, .json, .xml, .edi). Files without extensions are not supported.`);
       return;
@@ -752,7 +773,7 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
   const isFailed = currentStatus === 'FAILED';
   const isConverted = currentStatus === 'CONVERTED' || currentStatus === 'COMPLETED';
   const resolvedDlqTopic = liveTracker?.errorFile 
-    || (liveTracker?.transactionType === 'ASN' || activeDocType === 'ASN' ? 'erp_file_asn_dlq' : 'erp_file_po_dlq');
+    || (activeDocType ? `erp_file_${activeDocType.toLowerCase()}_dlq` : (liveTracker?.transactionType ? `erp_file_${liveTracker.transactionType.toLowerCase()}_dlq` : ''));
 
   return (
     <div className="modal-backdrop" onClick={onClose} style={{ zIndex: 9999 }}>
@@ -952,6 +973,7 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                 className="select-field"
                 style={{ width: '100%', padding: '0.45rem 0.65rem', borderRadius: '6px' }}
               >
+                <option value="">-- Select ERP Source System --</option>
                 {effectiveSources.map((src) => (
                   <option key={src} value={src}>
                     {src}
@@ -982,6 +1004,7 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                 className="select-field"
                 style={{ width: '100%', padding: '0.45rem 0.65rem', borderRadius: '6px' }}
               >
+                <option value="">-- Select Document Type --</option>
                 {effectiveDocTypes.map((type) => (
                   <option key={type} value={type}>
                     {type}
