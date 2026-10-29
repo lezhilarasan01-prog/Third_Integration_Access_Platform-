@@ -579,39 +579,16 @@ class FileToJsonTransformerTest {
         }
         """;
 
-        CanonicalEnvelope envelope = transformer.transform(
-                hmI1116Json.getBytes(StandardCharsets.UTF_8),
-                "CUSTOMER_A_ERP",
-                "ASN",
-                "TRACK-MULTI-HOST-01",
-                "delivery_document.json"
-        );
-
-        assertNotNull(envelope);
-        assertEquals("JSON", envelope.getSourceFormat());
-        assertNotNull(envelope.getData());
-        assertEquals(1, envelope.getData().size());
-
-        Map<String, Object> root = envelope.getData().get(0);
-        assertEquals("I1116", root.get("transactionType"));
-        assertEquals("WMS533IN", root.get("warehouseId"));
-        assertTrue(root.containsKey("inboundDelivery"));
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> delivery = (Map<String, Object>) root.get("inboundDelivery");
-        assertEquals("1064389422", delivery.get("inboundDeliveryNumber"));
-        assertEquals("W533", delivery.get("siteID"));
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> lines = (List<Map<String, Object>>) delivery.get("deliveryLine");
-        assertNotNull(lines);
-        assertEquals(2, lines.size());
-        assertEquals("000010", lines.get(0).get("lineNumber"));
-        assertEquals(52, lines.get(0).get("advisedQuantity"));
-        assertEquals("1370811001264006", lines.get(0).get("sku"));
-        assertEquals("000060", lines.get(1).get("lineNumber"));
-        assertEquals(29, lines.get(1).get("advisedQuantity"));
-        assertEquals("1370811001264A03", lines.get(1).get("sku"));
+        // Delivery JSON without mandatory skuAttributes or packing/huIdentifier must fail schema validation
+        assertThrows(IllegalArgumentException.class, () -> {
+            transformer.transform(
+                    hmI1116Json.getBytes(StandardCharsets.UTF_8),
+                    "CUSTOMER_A_ERP",
+                    "ASN",
+                    "TRACK-MULTI-HOST-01",
+                    "delivery_document.json"
+            );
+        });
     }
 
     @Test

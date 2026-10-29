@@ -230,6 +230,9 @@ public class ErpFileConsumerService {
                             int endBracket = field.indexOf("].");
                             field = field.substring(endBracket + 2);
                         }
+                        if (field.contains("packing[") && field.contains("].")) {
+                            field = field.replaceAll("packing\\[\\d+\\]\\.", "packing.");
+                        }
 
                         Map<String, Object> errItem = new LinkedHashMap<>();
                         errItem.put("field", field);

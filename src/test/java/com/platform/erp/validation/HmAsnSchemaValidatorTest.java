@@ -130,5 +130,40 @@ class HmAsnSchemaValidatorTest {
         assertFalse(result.isValid(), "Validation must fail when priceValue is misspelled or missing");
         assertTrue(result.getFormattedErrors().contains("priceValue"), "Error message must report missing priceValue");
     }
+
+    @Test
+    @DisplayName("Mandatory huIdentifier / LpnId Validation: Rejects payload when huIdentifier is missing or removed")
+    void testMissingHuIdentifierFailsValidation() throws Exception {
+        String inputJson;
+        try (InputStream is = getClass().getResourceAsStream("/hm_asn_input.json")) {
+            assertNotNull(is, "hm_asn_input.json must exist in test resources");
+            inputJson = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        }
+
+        // Replace "huIdentifier": "00173217306660655802" with "": "00173217306660655802" as tested by user
+        String tamperedJson = inputJson.replace("\"huIdentifier\"", "\"\"");
+        HmInboundDeliveryMessage message = objectMapper.readValue(tamperedJson, HmInboundDeliveryMessage.class);
+
+        ValidationResult result = validator.validate(message);
+        assertFalse(result.isValid(), "Validation must fail when huIdentifier is removed");
+        assertTrue(result.getFormattedErrors().contains("huIdentifier"), "Error message must report missing huIdentifier");
+    }
+
+    @Test
+    @DisplayName("LpnId Alias Support: Accepts 'LpnId' or 'lpnId' as valid alias for huIdentifier")
+    void testLpnIdAliasPassesValidation() throws Exception {
+        String inputJson;
+        try (InputStream is = getClass().getResourceAsStream("/hm_asn_input.json")) {
+            assertNotNull(is, "hm_asn_input.json must exist in test resources");
+            inputJson = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        }
+
+        // Replace "huIdentifier" with "LpnId"
+        String aliasJson = inputJson.replace("\"huIdentifier\"", "\"LpnId\"");
+        HmInboundDeliveryMessage message = objectMapper.readValue(aliasJson, HmInboundDeliveryMessage.class);
+
+        ValidationResult result = validator.validate(message);
+        assertTrue(result.isValid(), "Validation must pass when LpnId alias is used for huIdentifier");
+    }
 }
 

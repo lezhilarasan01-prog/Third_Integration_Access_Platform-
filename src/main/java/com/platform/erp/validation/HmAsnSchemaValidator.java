@@ -146,23 +146,30 @@ public class HmAsnSchemaValidator {
                 }
             }
 
-            // Packing Containers
+            // Packing Containers -> MAWM Lpn & ShippedQuantity
             List<HmPacking> packings = line.packing();
             if (packings == null || packings.isEmpty()) {
-                errors.add(new ValidationError(linePrefix + ".packing", "Mandatory 'packing' array is missing or empty (at least one carton required)", null));
+                errors.add(new ValidationError(
+                        linePrefix + ".packing",
+                        "Mandatory container 'packing' (Lpn) is missing or empty (at least one carton with 'huIdentifier' / 'LpnId' required)",
+                        null
+                ));
             } else {
                 int sumPieces = 0;
+                int validHuCount = 0;
                 for (int pIdx = 0; pIdx < packings.size(); pIdx++) {
                     HmPacking packing = packings.get(pIdx);
                     String packingPrefix = linePrefix + ".packing[" + pIdx + "]";
 
-                    // Handling Unit ID
+                    // Handling Unit ID -> MAWM LpnId (Strictly Mandatory)
                     if (packing.huIdentifier() == null || packing.huIdentifier().isBlank()) {
                         errors.add(new ValidationError(
                                 packingPrefix + ".huIdentifier",
-                                "Mandatory field 'huIdentifier' is missing or blank",
+                                "Mandatory field 'huIdentifier' (LpnId) is missing or blank",
                                 null
                         ));
+                    } else {
+                        validHuCount++;
                     }
 
                     // Pieces Per Carton -> MAWM ShippedQuantity
@@ -174,6 +181,14 @@ public class HmAsnSchemaValidator {
                     } else {
                         sumPieces += pieces;
                     }
+                }
+
+                if (validHuCount == 0) {
+                    errors.add(new ValidationError(
+                            linePrefix + ".LpnId",
+                            "Mandatory 'LpnId' (huIdentifier) is missing for delivery line",
+                            null
+                    ));
                 }
 
                 // Cross-field Reconciliation: sum(piecesPerCarton) == advisedQuantity

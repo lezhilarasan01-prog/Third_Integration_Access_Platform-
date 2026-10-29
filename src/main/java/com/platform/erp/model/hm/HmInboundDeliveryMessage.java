@@ -48,6 +48,7 @@ public record HmInboundDeliveryMessage(
             Object width,
             Object height,
             Integer piecesPerCarton,
+            @JsonAlias({"lpnId", "LpnId", "lpn", "Lpn", "handlingUnitId", "handlingUnit", "HUIdentifier", "hu_identifier"})
             String huIdentifier,
             String packingMode
     ) {}

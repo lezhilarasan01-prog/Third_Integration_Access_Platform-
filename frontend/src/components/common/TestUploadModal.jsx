@@ -440,6 +440,9 @@ function formatErrorOutput(rawError, targetDlq) {
           } else if (field.startsWith('deliveryLine.')) {
             field = field.substring(13);
           }
+          if (field.includes('packing[') && field.includes('].')) {
+            field = field.replace(/packing\[\d+\]\./g, 'packing.');
+          }
           const item = {};
           item.field = field;
           item.message = reason;

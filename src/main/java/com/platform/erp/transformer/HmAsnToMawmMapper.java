@@ -179,6 +179,10 @@ public class HmAsnToMawmMapper {
             lpnList.add(lpnObj);
         }
 
+        if (lpnList.isEmpty()) {
+            throw new IllegalArgumentException("Schema validation failed: Mandatory container 'Lpn' (LpnId / huIdentifier) is missing or contains no valid cartons");
+        }
+
         asnMap.put("Lpn", lpnList);
         asnMap.put("AsnId", asnId);
         putMandatory(asnMap, "DestinationFacilityId", properties.destinationFacilityId());

@@ -67,42 +67,27 @@ public class MawmCanonicalBuilder {
         if (camelRecords.size() == 1 && camelRecords.get(0).containsKey("inboundDelivery")) {
             Map<String, Object> rootRecord = camelRecords.get(0);
             boolean isHmSource = erpSource != null && (erpSource.equalsIgnoreCase("HM") || erpSource.equalsIgnoreCase("H&M"));
-            boolean hasPacking = false;
+            // If incoming payload has inboundDelivery, it is an ASN message and must undergo strict schema validation & transformation
             try {
+                HmInboundDeliveryMessage message;
+                if (rawPayload != null && rawPayload.length > 0) {
+                    message = objectMapper.readValue(rawPayload, HmInboundDeliveryMessage.class);
+                } else {
+                    message = objectMapper.convertValue(rootRecord, HmInboundDeliveryMessage.class);
+                }
+                Map<String, Object> mawmMap = hmAsnToMawmMapper.transform(message);
                 @SuppressWarnings("unchecked")
-                Map<String, Object> delivery = (Map<String, Object>) rootRecord.get("inboundDelivery");
-                if (delivery != null && delivery.get("deliveryLine") instanceof List<?> lines && !lines.isEmpty()) {
-                    for (Object lineObj : lines) {
-                        if (lineObj instanceof Map<?, ?> lineMap && lineMap.containsKey("packing")) {
-                            hasPacking = true;
-                            break;
-                        }
-                    }
+                List<Map<String, Object>> data = (List<Map<String, Object>>) mawmMap.get("Data");
+                if (data != null && !data.isEmpty()) {
+                    log.info("[MAWM Dynamic Engine] Successfully mapped Inbound Delivery to MAWM LPN-Level schema with {} ASN record(s)", data.size());
+                    return data;
                 }
-            } catch (Exception ignored) {}
-
-            if (isHmSource || hasPacking) {
-                try {
-                    HmInboundDeliveryMessage message;
-                    if (rawPayload != null && rawPayload.length > 0) {
-                        message = objectMapper.readValue(rawPayload, HmInboundDeliveryMessage.class);
-                    } else {
-                        message = objectMapper.convertValue(rootRecord, HmInboundDeliveryMessage.class);
-                    }
-                    Map<String, Object> mawmMap = hmAsnToMawmMapper.transform(message);
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> data = (List<Map<String, Object>>) mawmMap.get("Data");
-                    if (data != null && !data.isEmpty()) {
-                        log.info("[MAWM Dynamic Engine] Successfully mapped H&M Inbound Delivery to MAWM LPN-Level schema with {} ASN record(s)", data.size());
-                        return data;
-                    }
-                } catch (IllegalArgumentException e) {
-                    log.error("[MAWM Dynamic Engine] Schema validation failed: {}", e.getMessage());
-                    throw e;
-                } catch (Exception e) {
-                    log.error("[MAWM Dynamic Engine] Schema mapping failed: {}", e.getMessage());
-                    throw new IllegalArgumentException("Schema mapping failed: " + e.getMessage(), e);
-                }
+            } catch (IllegalArgumentException e) {
+                log.error("[MAWM Dynamic Engine] Schema validation failed: {}", e.getMessage());
+                throw e;
+            } catch (Exception e) {
+                log.error("[MAWM Dynamic Engine] Schema mapping failed: {}", e.getMessage());
+                throw new IllegalArgumentException("Schema mapping failed: " + e.getMessage(), e);
             }
         }
 
