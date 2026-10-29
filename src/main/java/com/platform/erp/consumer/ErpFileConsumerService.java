@@ -207,11 +207,9 @@ public class ErpFileConsumerService {
                         String rest = token.substring(closeBracket + 2).trim();
 
                         String reason = rest;
-                        String rejectedVal = null;
                         if (rest.contains("(value: '") && rest.endsWith("')")) {
                             int valIdx = rest.lastIndexOf("(value: '");
                             reason = rest.substring(0, valIdx).trim();
-                            rejectedVal = rest.substring(valIdx + 9, rest.length() - 2);
                         }
 
                         // Remove "deliveryLine" prefix and line brackets if present
@@ -230,9 +228,6 @@ public class ErpFileConsumerService {
                         Map<String, Object> errItem = new LinkedHashMap<>();
                         errItem.put("field", field);
                         errItem.put("message", reason);
-                        if (rejectedVal != null) {
-                            errItem.put("rejectedValue", rejectedVal);
-                        }
                         errorList.add(errItem);
                     }
                 }

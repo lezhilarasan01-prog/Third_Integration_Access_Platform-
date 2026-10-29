@@ -457,6 +457,7 @@ function formatErrorOutput(rawError, targetDlq) {
           delete err.errorType;
           delete err.deliveryLine;
           delete err.lineNumber;
+          delete err.rejectedValue;
           if (err.field && err.field.startsWith('deliveryLine[') && err.field.includes('].')) {
             const idx = err.field.indexOf('].');
             err.field = err.field.substring(idx + 2);
@@ -483,10 +484,8 @@ function formatErrorOutput(rawError, targetDlq) {
           const closeIdx = tok.indexOf(']:');
           let field = tok.substring(1, closeIdx).trim();
           let reason = tok.substring(closeIdx + 2).trim();
-          let rejectedVal = null;
           if (reason.includes("(value: '") && reason.endsWith("')")) {
             const valIdx = reason.lastIndexOf("(value: '");
-            rejectedVal = reason.substring(valIdx + 9, reason.length - 2);
             reason = reason.substring(0, valIdx).trim();
           }
           if (field.startsWith('deliveryLine[') && field.includes('].')) {
@@ -498,7 +497,6 @@ function formatErrorOutput(rawError, targetDlq) {
           const item = {};
           item.field = field;
           item.message = reason;
-          if (rejectedVal !== null) item.rejectedValue = rejectedVal;
           errorList.push(item);
         }
       });

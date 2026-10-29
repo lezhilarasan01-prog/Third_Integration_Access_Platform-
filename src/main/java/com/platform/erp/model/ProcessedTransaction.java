@@ -110,6 +110,7 @@ public class ProcessedTransaction {
                         itemObj.remove("errorType");
                         itemObj.remove("deliveryLine");
                         itemObj.remove("lineNumber");
+                        itemObj.remove("rejectedValue");
                         if (itemObj.has("field")) {
                             String f = itemObj.get("field").asText();
                             if (f.startsWith("deliveryLine[") && f.contains("].")) {
