@@ -325,7 +325,18 @@ export const integrationApi = {
 
   async fetchConvertedJsonText(jobId) {
     const res = await fetch(this.getJsonDownloadUrl(jobId));
-    if (!res.ok) throw new Error(`Status ${res.status}: Converted JSON not yet processed`);
+    if (!res.ok) {
+      let errorMsg = `Status ${res.status}: Converted JSON not yet processed`;
+      try {
+        const body = await res.json();
+        if (body && (body.message || body.error)) {
+          errorMsg = body.message || body.error;
+        }
+      } catch (e) {
+        // use default
+      }
+      throw new Error(errorMsg);
+    }
     return res.text();
   },
 

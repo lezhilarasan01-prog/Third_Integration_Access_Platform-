@@ -199,6 +199,14 @@ public class TransactionQueryController {
 
         if (trackerOpt.isPresent()) {
             var t = trackerOpt.get();
+            if ("FAILED".equalsIgnoreCase(t.getIntakeStatus())) {
+                return ResponseEntity.status(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY)
+                        .body(java.util.Map.of(
+                                "status", 422,
+                                "error", "CONVERSION_FAILED",
+                                "message", t.getProcessingErrorMessage() != null ? t.getProcessingErrorMessage() : "File processing failed and was routed to DLQ for jobId: " + jobId
+                        ));
+            }
             json = t.getOutputFiles();
             if (t.getTransactionType() != null) transactionType = t.getTransactionType();
             if (t.getSourceSystem() != null) sourceSystem = t.getSourceSystem();

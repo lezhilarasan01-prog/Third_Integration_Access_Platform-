@@ -398,6 +398,43 @@ function formatMawmOutput(payload) {
   return JSON.stringify({ Data: [] }, null, 2);
 }
 
+function getStatusStyles(status) {
+  const s = (status || '').toUpperCase();
+  switch (s) {
+    case 'CONVERTED':
+    case 'COMPLETED':
+      return {
+        color: '#10b981',
+        bg: 'rgba(16, 185, 129, 0.15)',
+        border: 'rgba(16, 185, 129, 0.35)',
+        label: 'CONVERTED'
+      };
+    case 'FAILED':
+      return {
+        color: '#ef4444',
+        bg: 'rgba(239, 68, 68, 0.15)',
+        border: 'rgba(239, 68, 68, 0.4)',
+        label: 'FAILED (Routed to DLQ)'
+      };
+    case 'PROCESSING':
+      return {
+        color: '#f59e0b',
+        bg: 'rgba(245, 158, 11, 0.15)',
+        border: 'rgba(245, 158, 11, 0.35)',
+        label: 'PROCESSING'
+      };
+    case 'QUEUED':
+    case 'RECEIVED':
+    default:
+      return {
+        color: '#38bdf8',
+        bg: 'rgba(56, 189, 248, 0.15)',
+        border: 'rgba(56, 189, 248, 0.35)',
+        label: s || 'QUEUED'
+      };
+  }
+}
+
 export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [erpSource, setErpSource] = useState('CUSTOMER_A_ERP');
@@ -409,12 +446,76 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [uploadResult, setUploadResult] = useState(null);
+  const [liveTracker, setLiveTracker] = useState(null);
   const [convertedJson, setConvertedJson] = useState(null);
   const [isLoadingJson, setIsLoadingJson] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
   const [copiedJobId, setCopiedJobId] = useState(false);
+  const [copiedError, setCopiedError] = useState(false);
 
   const fileInputRef = useRef(null);
+  const pollTimerRef = useRef(null);
+
+  const stopPolling = () => {
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      stopPolling();
+    };
+  }, []);
+
+  const pollJobStatus = (jobId, attempt = 1, maxAttempts = 15) => {
+    stopPolling();
+
+    pollTimerRef.current = setTimeout(async () => {
+      try {
+        const tracker = await integrationApi.getTrackerById(jobId);
+        if (tracker) {
+          setLiveTracker(tracker);
+          const status = (tracker.intakeStatus || '').toUpperCase();
+
+          if (status === 'CONVERTED' || status === 'COMPLETED') {
+            setIsLoadingJson(true);
+            try {
+              const jsonText = await integrationApi.fetchConvertedJsonText(jobId);
+              setConvertedJson(formatMawmOutput(jsonText));
+              setUploadError(null);
+            } catch (err) {
+              console.warn('Failed to fetch converted JSON for CONVERTED status:', err);
+            } finally {
+              setIsLoadingJson(false);
+            }
+            return;
+          }
+
+          if (status === 'FAILED') {
+            setIsLoadingJson(false);
+            setConvertedJson(null);
+            setUploadError(null);
+            return;
+          }
+        }
+
+        if (attempt < maxAttempts) {
+          pollJobStatus(jobId, attempt + 1, maxAttempts);
+        } else {
+          setIsLoadingJson(false);
+        }
+      } catch (err) {
+        console.warn('Error polling tracker status:', err);
+        if (attempt < maxAttempts) {
+          pollJobStatus(jobId, attempt + 1, maxAttempts);
+        } else {
+          setIsLoadingJson(false);
+        }
+      }
+    }, attempt === 1 ? 600 : 1200);
+  };
 
   // Dynamically fetch live distinct sources and document types from the database
   useEffect(() => {
@@ -478,14 +579,17 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
         setSelectedFile(null);
         return;
       }
+      stopPolling();
       setSelectedFile(file);
       setUploadError(null);
       setUploadResult(null);
+      setLiveTracker(null);
       setConvertedJson(null);
     }
   };
 
   const handleSelectSample = (sample) => {
+    stopPolling();
     const blob = new Blob([sample.content], { type: sample.mime || 'text/plain' });
     const file = new File([blob], sample.filename, { type: sample.mime || 'text/plain' });
     setSelectedFile(file);
@@ -493,6 +597,7 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
     setDocType(sample.docType);
     setUploadError(null);
     setUploadResult(null);
+    setLiveTracker(null);
     setConvertedJson(null);
   };
 
@@ -518,9 +623,11 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
         setSelectedFile(null);
         return;
       }
+      stopPolling();
       setSelectedFile(file);
       setUploadError(null);
       setUploadResult(null);
+      setLiveTracker(null);
       setConvertedJson(null);
     }
   };
@@ -540,28 +647,20 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
       return;
     }
 
+    stopPolling();
     setIsUploading(true);
     setUploadError(null);
     setUploadResult(null);
+    setLiveTracker(null);
     setConvertedJson(null);
 
     try {
       const res = await integrationApi.uploadFile(activeErp, activeDocType, selectedFile, null);
       setUploadResult(res);
 
-      // Automatically fetch converted JSON after brief ingestion cycle
       if (res.trackingId) {
         setIsLoadingJson(true);
-        setTimeout(async () => {
-          try {
-            const jsonText = await integrationApi.fetchConvertedJsonText(res.trackingId);
-            setConvertedJson(formatMawmOutput(jsonText));
-          } catch (e) {
-            console.warn('Initial converted JSON fetch scheduled, retrying...', e);
-          } finally {
-            setIsLoadingJson(false);
-          }
-        }, 1200);
+        pollJobStatus(res.trackingId, 1, 15);
       }
     } catch (err) {
       console.error('Test upload failed:', err);
@@ -572,13 +671,38 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
   };
 
   const handleFetchConverted = async () => {
-    if (!uploadResult?.trackingId) return;
+    const jobId = uploadResult?.trackingId || liveTracker?.jobId;
+    if (!jobId) return;
+
     setIsLoadingJson(true);
+    setUploadError(null);
+
     try {
-      const text = await integrationApi.fetchConvertedJsonText(uploadResult.trackingId);
+      const tracker = await integrationApi.getTrackerById(jobId);
+      if (tracker) {
+        setLiveTracker(tracker);
+        const status = (tracker.intakeStatus || '').toUpperCase();
+
+        if (status === 'FAILED') {
+          setIsLoadingJson(false);
+          setConvertedJson(null);
+          return;
+        }
+
+        if (status === 'CONVERTED' || status === 'COMPLETED') {
+          const text = await integrationApi.fetchConvertedJsonText(jobId);
+          setConvertedJson(formatMawmOutput(text));
+          setIsLoadingJson(false);
+          return;
+        }
+      }
+
+      const text = await integrationApi.fetchConvertedJsonText(jobId);
       setConvertedJson(formatMawmOutput(text));
     } catch (err) {
-      setUploadError(`Could not fetch converted output: ${err.message}`);
+      if (liveTracker?.intakeStatus !== 'FAILED') {
+        setUploadError(`Could not fetch converted output: ${err.message}`);
+      }
     } finally {
       setIsLoadingJson(false);
     }
@@ -597,6 +721,11 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
     setCopiedJobId(true);
     setTimeout(() => setCopiedJobId(false), 2000);
   };
+
+  const currentStatus = (liveTracker?.intakeStatus || uploadResult?.status || 'QUEUED').toUpperCase();
+  const statusMeta = getStatusStyles(currentStatus);
+  const isFailed = currentStatus === 'FAILED';
+  const isConverted = currentStatus === 'CONVERTED' || currentStatus === 'COMPLETED';
 
   return (
     <div className="modal-backdrop" onClick={onClose} style={{ zIndex: 9999 }}>
@@ -847,8 +976,8 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
             </div>
           </div>
 
-          {/* Error Alert */}
-          {uploadError && (
+          {/* Error Alert (Only show for client/network upload errors, not for job validation failure which has its own card) */}
+          {uploadError && !isFailed && (
             <div style={{
               display: 'flex',
               alignItems: 'center',
@@ -901,17 +1030,35 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
           {/* Live Ingestion Result & Converted JSON */}
           {uploadResult && (
             <div style={{
-              border: '1px solid rgba(16, 185, 129, 0.3)',
+              border: isFailed ? '1px solid rgba(239, 68, 68, 0.45)' : isConverted ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(56, 189, 248, 0.3)',
               borderRadius: '8px',
               padding: '1rem',
-              backgroundColor: 'rgba(16, 185, 129, 0.04)'
+              backgroundColor: isFailed ? 'rgba(239, 68, 68, 0.05)' : isConverted ? 'rgba(16, 185, 129, 0.04)' : 'rgba(56, 189, 248, 0.03)'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                  <CheckCircle2 size={16} color="#10b981" />
-                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#10b981' }}>
-                    File Ingested Successfully (HTTP 200)
-                  </span>
+                  {isFailed ? (
+                    <>
+                      <AlertTriangle size={18} color="#ef4444" />
+                      <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#ef4444' }}>
+                        Ingestion Rejected: Schema Validation Failed
+                      </span>
+                    </>
+                  ) : isConverted ? (
+                    <>
+                      <CheckCircle2 size={16} color="#10b981" />
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#10b981' }}>
+                        Successfully Converted to MAWM JSON
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw size={15} color="#38bdf8" className="spin-icon" />
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#38bdf8' }}>
+                        Ingested &mdash; Processing Kafka Pipeline...
+                      </span>
+                    </>
+                  )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <button
@@ -929,10 +1076,10 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                     onClick={handleFetchConverted}
                     className="hero-btn hero-btn-secondary"
                     style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }}
-                    title="Refresh Live Converted JSON"
+                    title="Refresh Live Status &amp; Output"
                   >
                     <RefreshCw size={12} className={isLoadingJson ? 'spin-icon' : ''} />
-                    <span>Poll JSON</span>
+                    <span>{isFailed ? 'Refresh Status' : 'Poll JSON'}</span>
                   </button>
                 </div>
               </div>
@@ -942,95 +1089,199 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                 <span style={{ padding: '2px 8px', borderRadius: '4px', backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
                   Job ID: <code style={{ color: '#38bdf8' }}>{uploadResult.trackingId}</code>
                 </span>
-                <span style={{ padding: '2px 8px', borderRadius: '4px', backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
-                  Status: <strong style={{ color: '#10b981' }}>{uploadResult.status || 'RECEIVED'}</strong>
+                <span style={{
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  backgroundColor: statusMeta.bg,
+                  border: `1px solid ${statusMeta.border}`,
+                  color: statusMeta.color,
+                  fontWeight: 700,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  {isLoadingJson && !isFailed && !isConverted && <RefreshCw size={10} className="spin-icon" />}
+                  Status: {statusMeta.label}
                 </span>
+                {liveTracker?.errorRecords > 0 && (
+                  <span style={{ padding: '2px 8px', borderRadius: '4px', backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                    Errors: <strong>{liveTracker.errorRecords}</strong>
+                  </span>
+                )}
+                {liveTracker?.convertedRecords > 0 && (
+                  <span style={{ padding: '2px 8px', borderRadius: '4px', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                    Converted Records: <strong>{liveTracker.convertedRecords}</strong>
+                  </span>
+                )}
+                {liveTracker?.kafkaTopic && (
+                  <span style={{ padding: '2px 8px', borderRadius: '4px', backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
+                    Topic: <code style={{ color: 'var(--text-main)' }}>{liveTracker.kafkaTopic}</code>
+                  </span>
+                )}
               </div>
 
-              {/* Converted MAWM JSON Output Viewer */}
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-main)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <Code size={13} color="#0284c7" />
-                    <span>Converted MAWM Output JSON ({`{ "Data": [ ... ] }`})</span>
-                  </span>
-                  {convertedJson && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      {onOpenBeautifier && (
+              {/* Conditional Content: Failure Details vs Converted MAWM Output */}
+              {isFailed ? (
+                <div style={{
+                  backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                  borderRadius: '6px',
+                  padding: '0.85rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.5rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#ef4444', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <AlertTriangle size={15} color="#ef4444" />
+                      <span>Schema &amp; Business Rule Validation Failure</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const errMsg = liveTracker?.processingErrorMessage || 'Validation failed. No error details recorded.';
+                        navigator.clipboard.writeText(errMsg);
+                        setCopiedError(true);
+                        setTimeout(() => setCopiedError(false), 2000);
+                      }}
+                      style={{
+                        background: 'rgba(239, 68, 68, 0.15)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        borderRadius: '4px',
+                        padding: '0.2rem 0.55rem',
+                        color: '#f87171',
+                        fontSize: '0.7rem',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem'
+                      }}
+                      title="Copy full error message"
+                    >
+                      {copiedError ? <Check size={11} /> : <Copy size={11} />}
+                      <span>{copiedError ? 'Copied' : 'Copy Error Details'}</span>
+                    </button>
+                  </div>
+
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                    The message was rejected during ingestion and routed to the Dead-Letter Queue (DLQ).
+                  </div>
+
+                  <div style={{
+                    backgroundColor: '#070b12',
+                    border: '1px solid rgba(239, 68, 68, 0.35)',
+                    borderRadius: '6px',
+                    padding: '0.75rem',
+                    fontFamily: 'monospace',
+                    fontSize: '0.75rem',
+                    lineHeight: '1.45',
+                    color: '#fca5a5',
+                    maxHeight: 200,
+                    overflowY: 'auto',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-all'
+                  }}>
+                    {liveTracker?.processingErrorMessage || 'Schema validation failed. Check backend logs or DLQ for details.'}
+                  </div>
+
+                  <div style={{
+                    fontSize: '0.7rem',
+                    color: 'var(--text-dim)',
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    paddingTop: '2px'
+                  }}>
+                    <span>DLQ Topic: <strong style={{ color: '#f87171' }}>erp-dlq</strong></span>
+                    <span>No output JSON generated because record failed validation.</span>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-main)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <Code size={13} color="#0284c7" />
+                      <span>Converted MAWM Output JSON ({`{ "Data": [ ... ] }`})</span>
+                    </span>
+                    {convertedJson && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {onOpenBeautifier && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onOpenBeautifier(formatMawmOutput(convertedJson));
+                              onClose();
+                            }}
+                            style={{
+                              background: 'rgba(2, 132, 199, 0.15)',
+                              border: '1px solid rgba(2, 132, 199, 0.4)',
+                              borderRadius: '4px',
+                              padding: '0.2rem 0.5rem',
+                              color: '#38bdf8',
+                              fontSize: '0.7rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem'
+                            }}
+                            title="Open and edit this payload in the JSON Beautifier"
+                          >
+                            <Sparkles size={11} />
+                            <span>Open in Beautifier</span>
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => {
-                            onOpenBeautifier(formatMawmOutput(convertedJson));
-                            onClose();
-                          }}
+                          onClick={handleCopyJson}
                           style={{
-                            background: 'rgba(2, 132, 199, 0.15)',
-                            border: '1px solid rgba(2, 132, 199, 0.4)',
-                            borderRadius: '4px',
-                            padding: '0.2rem 0.5rem',
-                            color: '#38bdf8',
+                            background: 'none',
+                            border: 'none',
+                            color: copiedJson ? '#10b981' : 'var(--text-dim)',
                             fontSize: '0.7rem',
-                            fontWeight: 600,
                             cursor: 'pointer',
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: '0.25rem'
                           }}
-                          title="Open and edit this payload in the JSON Beautifier"
                         >
-                          <Sparkles size={11} />
-                          <span>Open in Beautifier</span>
+                          {copiedJson ? <Check size={12} /> : <Copy size={12} />}
+                          <span>{copiedJson ? 'Copied!' : 'Copy Converted JSON'}</span>
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={handleCopyJson}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: copiedJson ? '#10b981' : 'var(--text-dim)',
-                          fontSize: '0.7rem',
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.25rem'
-                        }}
-                      >
-                        {copiedJson ? <Check size={12} /> : <Copy size={12} />}
-                        <span>{copiedJson ? 'Copied!' : 'Copy Converted JSON'}</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
+                      </div>
+                    )}
+                  </div>
 
-                <div style={{
-                  backgroundColor: '#070b12',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '6px',
-                  padding: '0.75rem',
-                  maxHeight: 220,
-                  overflowY: 'auto',
-                  fontFamily: 'monospace',
-                  fontSize: '0.72rem',
-                  lineHeight: '1.4',
-                  color: '#e2e8f0'
-                }}>
-                  {isLoadingJson ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#38bdf8', padding: '0.5rem' }}>
-                      <RefreshCw size={13} className="spin-icon" />
-                      <span>Camel conversion in progress... Streaming transformed JSON...</span>
-                    </div>
-                  ) : convertedJson ? (
-                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                      {convertedJson}
-                    </pre>
-                  ) : (
-                    <div style={{ color: 'var(--text-muted)', padding: '0.5rem' }}>
-                      Click [Poll JSON] above to stream the transformed MAWM output from PostgreSQL/S3.
-                    </div>
-                  )}
+                  <div style={{
+                    backgroundColor: '#070b12',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '6px',
+                    padding: '0.75rem',
+                    maxHeight: 220,
+                    overflowY: 'auto',
+                    fontFamily: 'monospace',
+                    fontSize: '0.72rem',
+                    lineHeight: '1.4',
+                    color: '#e2e8f0'
+                  }}>
+                    {isLoadingJson ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#38bdf8', padding: '0.5rem' }}>
+                        <RefreshCw size={13} className="spin-icon" />
+                        <span>Camel conversion in progress... Streaming transformed JSON...</span>
+                      </div>
+                    ) : convertedJson ? (
+                      <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                        {convertedJson}
+                      </pre>
+                    ) : (
+                      <div style={{ color: 'var(--text-muted)', padding: '0.5rem' }}>
+                        Click [Poll JSON] above to stream the transformed MAWM output from PostgreSQL/S3.
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
