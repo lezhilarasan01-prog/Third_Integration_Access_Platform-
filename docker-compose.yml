@@ -26,7 +26,7 @@ services:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - INLINE_THRESHOLD_BYTES=5242880
-      - MAWM_ENABLED=false
+      - MAWM_ENABLED=${MAWM_ENABLED:-true}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
       interval: 30s
