@@ -69,6 +69,7 @@ export default function App() {
 
   // Purge any stored credentials on initial load so opening the app always requires login
   useEffect(() => {
+    document.title = 'ERB';
     localStorage.removeItem('erp_user_profile');
     localStorage.removeItem('erp_user_token');
   }, []);
