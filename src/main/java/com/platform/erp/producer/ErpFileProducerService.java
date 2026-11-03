@@ -82,16 +82,13 @@ public class ErpFileProducerService {
 		});
 
 		try {
-			future.get(3, TimeUnit.SECONDS);
-		} catch (Exception e) {
-			log.warn("Fast-path timeout or warning for trackingId: {}, continuing asynchronously: {}", trackingId,
-					e.getMessage());
+			future.get(200, TimeUnit.MILLISECONDS);
+		} catch (Exception ignored) {
 		}
 
 		return IngestionAckResponse
 				.builder().trackingId(trackingId).erpSource(erpSource).documentType(docType).filename(filename)
-				.sizeBytes(payload.length).status("QUEUED").message("File successfully accepted and queued on topic '"
-						+ targetTopic + "' for asynchronous JSON conversion.")
+				.sizeBytes(payload.length).status("QUEUED").message("File successfully accepted for asynchronous conversion and MAWM Cloud delivery.")
 				.timestamp(Instant.ofEpochMilli(nowMillis)).build();
 	}
 

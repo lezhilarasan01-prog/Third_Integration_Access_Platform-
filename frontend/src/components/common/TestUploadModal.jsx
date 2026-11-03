@@ -15,29 +15,64 @@ import {
   Database,
   Send,
   Code,
-  Download
+  Download,
+  Info
 } from 'lucide-react';
 import { integrationApi } from '../../services/integrationApi';
 import { copyToClipboard } from '../../utils/clipboard';
 
 const DEFAULT_ERP_SOURCES = [
+  'Opti',
+  'ORACLE_NETSUITE',
+  'SAP',
+  'HM',
   'CUSTOMER_A_ERP',
   'CUSTOMER_B_ERP',
   'CUSTOMER_C_ERP',
   'CUSTOMER_D_ERP',
-  'HM',
-  'SAP_ERP',
   'LOGISTICS_PARTNER',
-  'ORACLE_NETSUITE'
+  'RETAIL_HQ',
+  'WAREHOUSE_DC',
+  'ECOMMERCE'
 ];
 
 const DEFAULT_DOC_TYPES = ['ASN', 'PO'];
 
 const PRESET_SAMPLES = [
   {
-    id: '01-hm-asn-csv',
+    id: '01-opti-asn-json',
+    format: 'JSON',
+    label: '1. Opti Inbound ASN (JSON)',
+    desc: 'Opti standard inbound ASN with AsnId, DestinationFacilityId, AsnLine',
+    erp: 'Opti',
+    docType: 'ASN',
+    filename: 'opti_rep.json',
+    mime: 'application/json',
+    content: JSON.stringify({
+      AsnId: "ASNOPTI00004769",
+      AsnOriginTypeId: "S",
+      DestinationFacilityId: "Food_Cbe",
+      OriginFacilityId: "",
+      EstimatedDeliveryDate: null,
+      AsnLevelId: "ITEM",
+      VendorId: "",
+      AsnLine: [
+        {
+          QuantityUomId: "UNIT",
+          ItemId: "231_board",
+          ShippedQuantity: 10,
+          AsnLineId: "1",
+          PurchaseOrderId: "OPTIPO000004760",
+          PurchaseOrderLineId: "1",
+          Canceled: false
+        }
+      ]
+    }, null, 2)
+  },
+  {
+    id: '02-hm-asn-csv',
     format: 'CSV',
-    label: '1. H&M Inbound ASN (CSV)',
+    label: '2. H&M Inbound ASN (CSV)',
     desc: 'CSV with ASN_NUMBER, LPN_ID, SKU, QUANTITY, RETAIL_PRICE',
     erp: 'HM',
     docType: 'ASN',
@@ -50,11 +85,11 @@ const PRESET_SAMPLES = [
 1064389422,CID001683,H&M,IN_5180,00173217306660655743,1370811001264009,120,Units,1299,IN`
   },
   {
-    id: '02-sap-orders-xml',
+    id: '03-sap-orders-xml',
     format: 'XML',
-    label: '2. SAP Purchase Orders (XML)',
+    label: '3. SAP Purchase Orders (XML)',
     desc: 'Nested XML with <orders><order><poNumber>...</poNumber></order>',
-    erp: 'CUSTOMER_C_ERP',
+    erp: 'SAP',
     docType: 'PO',
     filename: '02_sap_purchase_orders.xml',
     mime: 'application/xml',
@@ -96,9 +131,9 @@ const PRESET_SAMPLES = [
 </orders>`
   },
   {
-    id: '03-oracle-po-csv',
+    id: '04-oracle-po-csv',
     format: 'CSV',
-    label: '3. Oracle NetSuite PO (CSV)',
+    label: '4. Oracle NetSuite PO (CSV)',
     desc: 'Multi-line PO feed with VENDOR, ITEM_CODE, ORDER_QTY, UNIT_COST',
     erp: 'ORACLE_NETSUITE',
     docType: 'PO',
@@ -111,11 +146,11 @@ PO-ORA-5511,1,VEND-904,MODERN_FOOTWEAR,IN_5180,SH-SNEAKER-09,Runner Sneaker Blac
 PO-ORA-5512,1,VEND-102,PACIFIC_ACCESSORIES,WH_CENTRAL,AC-CAP-BASEBALL,Cotton Baseball Cap,400,EA,8.00`
   },
   {
-    id: '04-edi-856-asn',
+    id: '05-edi-856-asn',
     format: 'EDI',
-    label: '4. EDI X12 856 Ship Notice (EDI)',
+    label: '5. EDI X12 856 Ship Notice (EDI)',
     desc: 'Standard ANSI ASC X12 Ship Notice / Manifest transaction set',
-    erp: 'LOGISTICS_PARTNER',
+    erp: 'CUSTOMER_A_ERP',
     docType: 'ASN',
     filename: '04_edi_856_ship_notice.edi',
     mime: 'application/edi-x12',
@@ -144,11 +179,11 @@ GE*1*856001~
 IEA*1*000000856~`
   },
   {
-    id: '05-edi-850-po',
+    id: '06-edi-850-po',
     format: 'X12',
-    label: '5. EDI X12 850 Purchase Order (X12)',
+    label: '6. EDI X12 850 Purchase Order (X12)',
     desc: 'Standard ANSI ASC X12 850 Electronic Purchase Order',
-    erp: 'CUSTOMER_B_ERP',
+    erp: 'RETAIL_HQ',
     docType: 'PO',
     filename: '05_edi_850_purchase_order.x12',
     mime: 'application/edi-x12',
@@ -173,9 +208,9 @@ GE*1*850001~
 IEA*1*000000850~`
   },
   {
-    id: '06-logistics-yaml',
+    id: '07-logistics-yaml',
     format: 'YAML',
-    label: '6. Logistics Manifest (YAML)',
+    label: '7. Logistics Manifest (YAML)',
     desc: 'Hierarchical YAML manifest with shipments, pallets, and SKU items',
     erp: 'LOGISTICS_PARTNER',
     docType: 'ASN',
@@ -213,11 +248,11 @@ shipments:
         uom: Units`
   },
   {
-    id: '07-warehouse-tsv',
+    id: '08-warehouse-tsv',
     format: 'TSV',
-    label: '7. Warehouse Receiving (TSV)',
+    label: '8. Warehouse Receiving (TSV)',
     desc: 'Tab-delimited warehouse feed with RECEIPT_NBR, LOT, EXPIRATION',
-    erp: 'CUSTOMER_D_ERP',
+    erp: 'WAREHOUSE_DC',
     docType: 'PO',
     filename: '07_warehouse_inbound.tsv',
     mime: 'text/tab-separated-values',
@@ -228,9 +263,9 @@ RC-2026-102\tIN_5180\tFEDEX\tCONT-99205\tSKU-COSMETIC-01\tLOT-9911X\t450\tBOX\t2
 RC-2026-103\tIN_5180\tUPS\tCONT-99312\tSKU-COSMETIC-02\tLOT-9912Y\t300\tBOX\t2027-07-31`
   },
   {
-    id: '08-pipe-txt',
+    id: '09-pipe-txt',
     format: 'TXT',
-    label: '8. Customer Flat File (Pipe TXT)',
+    label: '9. Customer Flat File (Pipe TXT)',
     desc: 'Pipe-delimited flat file (ASN_ID|SUPPLIER|SKU|SHIPPED_QTY)',
     erp: 'CUSTOMER_B_ERP',
     docType: 'ASN',
@@ -243,11 +278,11 @@ ASN-B-9902|CUSTOMER_B_LOGISTICS|IN_5180|LPN-B-001093|SKU-B-9901|85|UNITS|INSPECT
 ASN-B-9902|CUSTOMER_B_LOGISTICS|IN_5180|LPN-B-001094|SKU-B-9902|160|UNITS|AVAILABLE`
   },
   {
-    id: '09-ecom-orders-json',
+    id: '10-ecom-orders-json',
     format: 'JSON',
-    label: '9. E-Commerce Multi-Item Orders (JSON)',
+    label: '10. E-Commerce Multi-Item Orders (JSON)',
     desc: 'Multi-order array with orderId, shippingSpeed, and nested items[]',
-    erp: 'CUSTOMER_B_ERP',
+    erp: 'ECOMMERCE',
     docType: 'PO',
     filename: '09_ecommerce_fulfillment_orders.json',
     mime: 'application/json',
@@ -481,11 +516,61 @@ function formatErrorOutput(rawError, targetDlq) {
   return JSON.stringify(out, null, 2);
 }
 
+function autoDetectMetadata(filename, content) {
+  const name = (filename || '').toLowerCase();
+  let detectedErp = '';
+  let detectedDocType = '';
+
+  // 1. Detect ERP from filename
+  if (name.includes('oracle') || name.includes('netsuite')) detectedErp = 'ORACLE_NETSUITE';
+  else if (name.includes('sap')) detectedErp = 'SAP';
+  else if (name.includes('hm') || name.includes('h&m')) detectedErp = 'HM';
+  else if (name.includes('opti') || name.includes('otpi')) detectedErp = 'Opti';
+  else if (name.includes('customer_a') || name.includes('customera')) detectedErp = 'CUSTOMER_A_ERP';
+  else if (name.includes('customer_b') || name.includes('customerb')) detectedErp = 'CUSTOMER_B_ERP';
+  else if (name.includes('logistics') || name.includes('dhl')) detectedErp = 'LOGISTICS_PARTNER';
+  else if (name.includes('warehouse')) detectedErp = 'WAREHOUSE_DC';
+  else if (name.includes('ecom')) detectedErp = 'ECOMMERCE';
+  else if (name.includes('retail')) detectedErp = 'RETAIL_HQ';
+
+  // 2. Detect DocType from filename
+  if (name.includes('asn') || name.includes('ship') || name.includes('desadv') || name.includes('856') || name.includes('manifest') || name.includes('delivery')) {
+    detectedDocType = 'ASN';
+  } else if (name.includes('po') || name.includes('order') || name.includes('purchase') || name.includes('850') || name.includes('inbound') || name.includes('feed')) {
+    detectedDocType = 'PO';
+  }
+
+  // 3. Fallback: inspect sample text content if available
+  if (content && typeof content === 'string') {
+    const text = content.slice(0, 1000);
+    if (!detectedErp) {
+      if (text.includes('ASNOPTI') || text.includes('OPTIPO') || text.includes('Opti') || text.includes('OPTI')) detectedErp = 'Opti';
+      else if (text.includes('H&M') || text.includes('CID001683')) detectedErp = 'HM';
+      else if (text.includes('ACME_LOGISTICS') || text.includes('SAP')) detectedErp = 'SAP';
+      else if (text.includes('GLOBAL_TEXTILES') || text.includes('PO-ORA')) detectedErp = 'ORACLE_NETSUITE';
+      else if (text.includes('CUSTOMER_A')) detectedErp = 'CUSTOMER_A_ERP';
+      else if (text.includes('CUSTOMER_B')) detectedErp = 'CUSTOMER_B_ERP';
+    }
+    if (!detectedDocType) {
+      if (text.includes('AsnId') || text.includes('ASN_NUMBER') || text.includes('856') || text.includes('inboundDelivery')) {
+        detectedDocType = 'ASN';
+      } else if (text.includes('poNumber') || text.includes('PO_HEADER') || text.includes('orderId') || text.includes('850') || text.includes('PurchaseOrder')) {
+        detectedDocType = 'PO';
+      }
+    }
+  }
+
+  return {
+    erp: detectedErp,
+    docType: detectedDocType
+  };
+}
+
 export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
   const [selectedFile, setSelectedFile] = useState(null);
-  const [erpSource, setErpSource] = useState('');
+  const [erpSource, setErpSource] = useState('Opti');
   const [customErp, setCustomErp] = useState('');
-  const [docType, setDocType] = useState('');
+  const [docType, setDocType] = useState('ASN');
   const [customDocType, setCustomDocType] = useState('');
   const [dbSources, setDbSources] = useState([]);
   const [dbDocTypes, setDbDocTypes] = useState([]);
@@ -498,6 +583,7 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
   const [copiedJson, setCopiedJson] = useState(false);
   const [copiedJobId, setCopiedJobId] = useState(false);
   const [copiedError, setCopiedError] = useState(false);
+  const [activeOutputTab, setActiveOutputTab] = useState('mawm'); // 'mawm' | 'canonical'
 
   const fileInputRef = useRef(null);
   const pollTimerRef = useRef(null);
@@ -515,7 +601,7 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
     };
   }, []);
 
-  const pollJobStatus = (jobId, attempt = 1, maxAttempts = 15) => {
+  const pollJobStatus = (jobId, attempt = 1, maxAttempts = 30) => {
     stopPolling();
 
     pollTimerRef.current = setTimeout(async () => {
@@ -524,19 +610,31 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
         if (tracker) {
           setLiveTracker(tracker);
           const status = (tracker.intakeStatus || '').toUpperCase();
+          const hasMawm = tracker.mawmResponse || tracker.dispatchStatus?.includes('DELIVERED') || tracker.dispatchStatus?.includes('200');
+
+          if (tracker.outputFiles && !convertedJson) {
+            setConvertedJson(formatMawmOutput(tracker.outputFiles));
+          }
 
           if (status === 'CONVERTED' || status === 'COMPLETED') {
-            setIsLoadingJson(true);
-            try {
-              const jsonText = await integrationApi.fetchConvertedJsonText(jobId);
-              setConvertedJson(formatMawmOutput(jsonText));
-              setUploadError(null);
-            } catch (err) {
-              console.warn('Failed to fetch converted JSON for CONVERTED status:', err);
-            } finally {
+            const isOptiRecord = (tracker.sourceSystem || activeErp || '').toUpperCase() === 'OPTI' || (tracker.sourceSystem || activeErp || '').toUpperCase() === 'OTPI';
+            if (hasMawm || !isOptiRecord || tracker.dispatchStatus?.includes('Opti Exclusive')) {
               setIsLoadingJson(false);
+              if (!isOptiRecord) {
+                setActiveOutputTab('canonical');
+              } else {
+                setActiveOutputTab('mawm');
+              }
+              return;
             }
-            return;
+            if (attempt < maxAttempts) {
+              setIsLoadingJson(true);
+              pollJobStatus(jobId, attempt + 1, maxAttempts);
+              return;
+            } else {
+              setIsLoadingJson(false);
+              return;
+            }
           }
 
           if (status === 'FAILED') {
@@ -560,8 +658,20 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
           setIsLoadingJson(false);
         }
       }
-    }, attempt === 1 ? 600 : 1200);
+    }, attempt === 1 ? 500 : 1000);
   };
+
+  // Pre-load default OPTI ASN sample on open
+  useEffect(() => {
+    if (isOpen && !selectedFile) {
+      const optiSample = PRESET_SAMPLES[0];
+      const blob = new Blob([optiSample.content], { type: optiSample.mime || 'application/json' });
+      const file = new File([blob], optiSample.filename, { type: optiSample.mime || 'application/json' });
+      setSelectedFile(file);
+      setErpSource(optiSample.erp || 'OPTI');
+      setDocType(optiSample.docType || 'ASN');
+    }
+  }, [isOpen]);
 
   // Dynamically fetch live distinct sources and document types from the database
   useEffect(() => {
@@ -588,10 +698,14 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
   }, [isOpen]);
 
   const effectiveSources = useMemo(() => {
-    const base = dbSources.length > 0 ? dbSources : DEFAULT_ERP_SOURCES;
-    const list = [...base];
+    const list = [...DEFAULT_ERP_SOURCES];
+    dbSources.forEach(s => {
+      if (s && !list.includes(s) && !['files', 'ingest', 'raw'].includes(s.toLowerCase())) {
+        list.push(s);
+      }
+    });
     if (erpSource && erpSource !== 'CUSTOM' && !list.includes(erpSource)) {
-      list.unshift(erpSource);
+      list.push(erpSource);
     }
     return list;
   }, [dbSources, erpSource]);
@@ -609,6 +723,7 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
 
   const activeErp = erpSource === 'CUSTOM' ? customErp.trim() || 'CUSTOM_ERP' : erpSource;
   const activeDocType = docType === 'CUSTOM' ? (customDocType.trim().toUpperCase() || 'CUSTOM_DOC') : docType;
+  const isOpti = (activeErp || '').toUpperCase() === 'OPTI' || (activeErp || '').toUpperCase() === 'OTPI';
 
   const hasValidFileExtension = (name) => {
     if (!name || typeof name !== 'string') return false;
@@ -627,6 +742,16 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
       }
       stopPolling();
       setSelectedFile(file);
+
+      // Auto-detect ERP source and document type from file name
+      const detected = autoDetectMetadata(file.name);
+      if (detected.erp) {
+        setErpSource(detected.erp);
+      }
+      if (detected.docType) {
+        setDocType(detected.docType);
+      }
+
       setUploadError(null);
       setUploadResult(null);
       setLiveTracker(null);
@@ -639,8 +764,12 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
     const blob = new Blob([sample.content], { type: sample.mime || 'text/plain' });
     const file = new File([blob], sample.filename, { type: sample.mime || 'text/plain' });
     setSelectedFile(file);
-    setErpSource(sample.erp);
-    setDocType(sample.docType);
+    if (sample.erp) {
+      setErpSource(sample.erp);
+    }
+    if (sample.docType) {
+      setDocType(sample.docType);
+    }
     setUploadError(null);
     setUploadResult(null);
     setLiveTracker(null);
@@ -671,6 +800,16 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
       }
       stopPolling();
       setSelectedFile(file);
+
+      // Auto-detect ERP source and document type from dropped file
+      const detected = autoDetectMetadata(file.name);
+      if (detected.erp) {
+        setErpSource(detected.erp);
+      }
+      if (detected.docType) {
+        setDocType(detected.docType);
+      }
+
       setUploadError(null);
       setUploadResult(null);
       setLiveTracker(null);
@@ -714,9 +853,20 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
       const res = await integrationApi.uploadFile(activeErp, activeDocType, selectedFile, null);
       setUploadResult(res);
 
-      if (res.trackingId) {
+      if (res && res.trackingId) {
         setIsLoadingJson(true);
-        pollJobStatus(res.trackingId, 1, 15);
+        setActiveOutputTab(isOpti ? 'mawm' : 'canonical');
+        if (res.mawmResponse || res.dispatchStatus?.includes('Opti Exclusive')) {
+          setLiveTracker(res);
+          setIsLoadingJson(false);
+        } else {
+          pollJobStatus(res.trackingId, 1, 30);
+        }
+
+        // Fetch converted JSON immediately so payload view is ready without extra clicks
+        integrationApi.fetchConvertedJsonText(res.trackingId).then(text => {
+          if (text) setConvertedJson(formatMawmOutput(text));
+        }).catch(() => {});
       }
     } catch (err) {
       console.error('Test upload failed:', err);
@@ -816,7 +966,7 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                 Test File Ingestion Hub
               </h3>
               <p style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Directly upload &amp; convert ANY file format dynamically through Apache Camel to MAWM JSON
+                Directly upload &amp; process ANY file format dynamically through Apache Camel
               </p>
             </div>
           </div>
@@ -1005,6 +1155,26 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                   style={{ width: '100%', marginTop: '0.4rem', padding: '0.4rem 0.6rem' }}
                 />
               )}
+              {activeErp && activeErp.toUpperCase() !== 'OPTI' && activeErp.toUpperCase() !== 'OTPI' && (
+                <div style={{
+                  marginTop: '0.45rem',
+                  padding: '0.4rem 0.6rem',
+                  borderRadius: '6px',
+                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                  border: '1px solid rgba(59, 130, 246, 0.25)',
+                  color: '#93c5fd',
+                  fontSize: '0.72rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  lineHeight: '1.4'
+                }}>
+                  <Info size={14} style={{ flexShrink: 0 }} />
+                  <div>
+                    Standard processing active (Live MAWM Cloud HTTP dispatch is exclusive to <strong>Opti</strong>).
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Document Type */}
@@ -1079,12 +1249,12 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
               {isUploading ? (
                 <>
                   <RefreshCw size={16} className="spin-icon" />
-                  <span>Ingesting via Apache Camel &amp; Publishing to Kafka...</span>
+                  <span>Processing...</span>
                 </>
               ) : (
                 <>
                   <Send size={15} />
-                  <span>Execute Ingestion &amp; Convert to MAWM JSON</span>
+                  <span>Execute Ingestion</span>
                 </>
               )}
             </button>
@@ -1111,14 +1281,14 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                     <>
                       <CheckCircle2 size={16} color="#10b981" />
                       <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#10b981' }}>
-                        Successfully Converted to MAWM JSON
+                        Successfully Processed
                       </span>
                     </>
                   ) : (
                     <>
                       <RefreshCw size={15} color="#38bdf8" className="spin-icon" />
                       <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#38bdf8' }}>
-                        Ingested &mdash; Processing Kafka Pipeline...
+                        Processing Ingestion...
                       </span>
                     </>
                   )}
@@ -1176,11 +1346,32 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                     Converted Records: <strong>{liveTracker.convertedRecords}</strong>
                   </span>
                 )}
-                {liveTracker?.kafkaTopic && (
-                  <span style={{ padding: '2px 8px', borderRadius: '4px', backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
-                    Topic: <code style={{ color: 'var(--text-main)' }}>{liveTracker.kafkaTopic}</code>
-                  </span>
-                )}
+                {/* MAWM Dispatch Status Pill */}
+                <span style={{
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  backgroundColor: liveTracker?.dispatchStatus?.includes('200') || liveTracker?.dispatchStatus?.includes('DELIVERED') || liveTracker?.mawmResponse
+                    ? 'rgba(16, 185, 129, 0.15)'
+                    : (isOpti ? (liveTracker?.dispatchStatus?.includes('FAIL') ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)') : 'rgba(59, 130, 246, 0.15)'),
+                  border: `1px solid ${
+                    liveTracker?.dispatchStatus?.includes('200') || liveTracker?.dispatchStatus?.includes('DELIVERED') || liveTracker?.mawmResponse
+                      ? '#10b981'
+                      : (isOpti ? (liveTracker?.dispatchStatus?.includes('FAIL') ? '#ef4444' : '#f59e0b') : '#3b82f6')
+                  }`,
+                  color: liveTracker?.dispatchStatus?.includes('200') || liveTracker?.dispatchStatus?.includes('DELIVERED') || liveTracker?.mawmResponse
+                    ? '#10b981'
+                    : (isOpti ? (liveTracker?.dispatchStatus?.includes('FAIL') ? '#ef4444' : '#f59e0b') : '#60a5fa'),
+                  fontWeight: 700,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  MAWM Dispatch: <strong>{
+                    isOpti
+                      ? (liveTracker?.dispatchStatus?.includes('200') || liveTracker?.mawmResponse ? 'DELIVERED (200 OK)' : (liveTracker?.dispatchStatus || 'AWAITING'))
+                      : 'Opti Exclusive'
+                  }</strong>
+                </span>
               </div>
 
               {/* Conditional Content: Failure Details vs Converted MAWM Output */}
@@ -1262,18 +1453,72 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                 </div>
               ) : (
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-main)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <Code size={13} color="#0284c7" />
-                      <span>Converted MAWM Output JSON ({`{ "Data": [ ... ] }`})</span>
-                    </span>
-                    {convertedJson && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => setActiveOutputTab('mawm')}
+                        style={{
+                          background: activeOutputTab === 'mawm' ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
+                          border: activeOutputTab === 'mawm' ? '1px solid #10b981' : '1px solid var(--border-color)',
+                          color: activeOutputTab === 'mawm' ? '#34d399' : 'var(--text-muted)',
+                          borderRadius: '4px',
+                          padding: '0.2rem 0.55rem',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.3rem'
+                        }}
+                      >
+                        <Check size={12} color="#10b981" />
+                        <span>MAWM Cloud Response {liveTracker?.mawmResponse ? '✓' : ''}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setActiveOutputTab('canonical')}
+                        style={{
+                          background: activeOutputTab === 'canonical' ? 'rgba(2, 132, 199, 0.2)' : 'transparent',
+                          border: activeOutputTab === 'canonical' ? '1px solid #0284c7' : '1px solid var(--border-color)',
+                          color: activeOutputTab === 'canonical' ? '#38bdf8' : 'var(--text-muted)',
+                          borderRadius: '4px',
+                          padding: '0.2rem 0.55rem',
+                          fontSize: '0.72rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.3rem'
+                        }}
+                      >
+                        <Code size={12} />
+                        <span>Processed Payload</span>
+                      </button>
+                    </div>
+
+                    {(convertedJson || liveTracker?.mawmResponse || liveTracker?.dispatchStatus) && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         {onOpenBeautifier && (
                           <button
                             type="button"
                             onClick={() => {
-                              onOpenBeautifier(formatMawmOutput(convertedJson));
+                              const resp = liveTracker?.mawmResponse || uploadResult?.mawmResponse;
+                              let mawmText;
+                              if (resp) {
+                                mawmText = typeof resp === 'string' ? (() => { try { return JSON.stringify(JSON.parse(resp), null, 2); } catch { return resp; } })() : JSON.stringify(resp, null, 2);
+                              } else {
+                                const isDelivered = liveTracker?.dispatchStatus?.includes('200') || liveTracker?.dispatchStatus?.includes('DELIVERED');
+                                mawmText = JSON.stringify({
+                                  dispatchStatus: liveTracker?.dispatchStatus || uploadResult?.dispatchStatus || (isDelivered ? "DELIVERED_TO_MAWM (200 OK)" : "PENDING"),
+                                  facility: liveTracker?.facilityId || "Food_Cbe",
+                                  trackingId: liveTracker?.jobId || uploadResult?.trackingId,
+                                  message: isDelivered ? "Acknowledged receipt by Manhattan Active WMS Cloud" : "Waiting for MAWM Cloud response acknowledgment..."
+                                }, null, 2);
+                              }
+                              const textToOpen = activeOutputTab === 'mawm' ? mawmText : formatMawmOutput(convertedJson);
+                              onOpenBeautifier(textToOpen);
                               onClose();
                             }}
                             style={{
@@ -1297,7 +1542,25 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                         )}
                         <button
                           type="button"
-                          onClick={handleCopyJson}
+                          onClick={() => {
+                            const resp = liveTracker?.mawmResponse || uploadResult?.mawmResponse;
+                            let mawmText;
+                            if (resp) {
+                              mawmText = typeof resp === 'string' ? (() => { try { return JSON.stringify(JSON.parse(resp), null, 2); } catch { return resp; } })() : JSON.stringify(resp, null, 2);
+                            } else {
+                              const isDelivered = liveTracker?.dispatchStatus?.includes('200') || liveTracker?.dispatchStatus?.includes('DELIVERED');
+                              mawmText = JSON.stringify({
+                                dispatchStatus: liveTracker?.dispatchStatus || uploadResult?.dispatchStatus || (isDelivered ? "DELIVERED_TO_MAWM (200 OK)" : "PENDING"),
+                                facility: liveTracker?.facilityId || "Food_Cbe",
+                                trackingId: liveTracker?.jobId || uploadResult?.trackingId,
+                                message: isDelivered ? "Acknowledged receipt by Manhattan Active WMS Cloud" : "Waiting for MAWM Cloud response acknowledgment..."
+                              }, null, 2);
+                            }
+                            const textToCopy = activeOutputTab === 'mawm' ? mawmText : (convertedJson || '');
+                            navigator.clipboard.writeText(textToCopy);
+                            setCopiedJson(true);
+                            setTimeout(() => setCopiedJson(false), 2000);
+                          }}
                           style={{
                             background: 'none',
                             border: 'none',
@@ -1310,7 +1573,7 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                           }}
                         >
                           {copiedJson ? <Check size={12} /> : <Copy size={12} />}
-                          <span>{copiedJson ? 'Copied!' : 'Copy Converted JSON'}</span>
+                          <span>{copiedJson ? 'Copied!' : 'Copy'}</span>
                         </button>
                       </div>
                     )}
@@ -1326,20 +1589,55 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                     fontFamily: 'monospace',
                     fontSize: '0.72rem',
                     lineHeight: '1.4',
-                    color: '#e2e8f0'
+                    color: activeOutputTab === 'mawm' ? '#34d399' : '#e2e8f0'
                   }}>
                     {isLoadingJson ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#38bdf8', padding: '0.5rem' }}>
                         <RefreshCw size={13} className="spin-icon" />
-                        <span>Camel conversion in progress... Streaming transformed JSON...</span>
+                        <span>Processing...</span>
                       </div>
+                    ) : activeOutputTab === 'mawm' ? (
+                      (() => {
+                        if (!isOpti) {
+                          return (
+                            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: '#93c5fd' }}>
+                              {JSON.stringify({
+                                dispatchStatus: "Opti Exclusive",
+                                erpSource: activeErp,
+                                message: "Hot dispatch to live MAWM Cloud REST API is configured exclusively for Opti feeds. Processed payload is available in the 'Processed Payload' tab.",
+                                trackingId: liveTracker?.jobId || uploadResult?.trackingId
+                              }, null, 2)}
+                            </pre>
+                          );
+                        }
+                        const resp = liveTracker?.mawmResponse || uploadResult?.mawmResponse;
+                        if (resp) {
+                          const formatted = typeof resp === 'string' ? (() => { try { return JSON.stringify(JSON.parse(resp), null, 2); } catch { return resp; } })() : JSON.stringify(resp, null, 2);
+                          return (
+                            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                              {formatted}
+                            </pre>
+                          );
+                        }
+                        const isDelivered = liveTracker?.dispatchStatus?.includes('200') || liveTracker?.dispatchStatus?.includes('DELIVERED');
+                        return (
+                          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                            {JSON.stringify({
+                              dispatchStatus: liveTracker?.dispatchStatus || uploadResult?.dispatchStatus || (isDelivered ? "DELIVERED_TO_MAWM (200 OK)" : "PENDING"),
+                              facility: liveTracker?.facilityId || "Food_Cbe",
+                              trackingId: liveTracker?.jobId || uploadResult?.trackingId,
+                              message: isDelivered ? "Acknowledged receipt by Manhattan Active WMS Cloud" : "Waiting for MAWM Cloud response acknowledgment..."
+                            }, null, 2)}
+                          </pre>
+                        );
+                      })()
                     ) : convertedJson ? (
                       <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                         {convertedJson}
                       </pre>
                     ) : (
                       <div style={{ color: 'var(--text-muted)', padding: '0.5rem' }}>
-                        Click [Poll JSON] above to stream the transformed MAWM output from PostgreSQL/S3.
+                        No payload generated yet.
                       </div>
                     )}
                   </div>

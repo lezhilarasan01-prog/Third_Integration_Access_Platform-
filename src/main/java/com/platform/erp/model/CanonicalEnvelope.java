@@ -7,6 +7,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -78,8 +80,8 @@ public class CanonicalEnvelope {
      * { "Data": [ ... ] }
      */
     public Map<String, Object> toMawmPayload() {
-        Map<String, Object> mawm = new java.util.LinkedHashMap<>();
-        mawm.put("Data", this.data != null ? this.data : (this.records != null ? this.records : java.util.Collections.emptyList()));
+        Map<String, Object> mawm = new LinkedHashMap<>();
+        mawm.put("Data", this.data != null ? this.data : (this.records != null ? this.records : Collections.emptyList()));
         return mawm;
     }
 

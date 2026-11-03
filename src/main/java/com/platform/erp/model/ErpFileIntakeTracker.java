@@ -23,19 +23,19 @@ public class ErpFileIntakeTracker {
     @Column(name = "source_system", length = 64, nullable = false)
     private String sourceSystem;
 
-    @Column(name = "transaction_type", length = 32, nullable = false)
+    @Column(name = "transaction_type", length = 255, nullable = false)
     private String transactionType;
 
-    @Column(name = "mapping_profile", length = 64)
+    @Column(name = "mapping_profile", length = 255)
     private String mappingProfile;
 
-    @Column(name = "input_format", length = 32)
+    @Column(name = "input_format", length = 255)
     private String inputFormat;
 
     @Column(name = "original_filename", length = 255)
     private String originalFilename;
 
-    @Column(name = "facility_id", length = 64)
+    @Column(name = "facility_id", length = 255)
     private String facilityId;
 
     @Column(name = "file_size_bytes")
@@ -63,7 +63,7 @@ public class ErpFileIntakeTracker {
     private Instant receivedAt;
 
     // --- Convert Stage ---
-    @Column(name = "intake_status", length = 32, nullable = false)
+    @Column(name = "intake_status", length = 255, nullable = false)
     private String intakeStatus;
 
     @Column(name = "processing_started_at")
@@ -94,7 +94,7 @@ public class ErpFileIntakeTracker {
     private Instant updatedAt;
 
     // --- Deliver to MAWM Stage ---
-    @Column(name = "dispatch_status", length = 32)
+    @Column(name = "dispatch_status", length = 255)
     private String dispatchStatus;
 
     @Column(name = "dispatched_records")
@@ -108,6 +108,9 @@ public class ErpFileIntakeTracker {
 
     @Column(name = "dispatch_completed_at")
     private Instant dispatchCompletedAt;
+
+    @Column(name = "mawm_response", columnDefinition = "TEXT")
+    private String mawmResponse;
 
     public ErpFileIntakeTracker() {
     }
@@ -395,5 +398,13 @@ public class ErpFileIntakeTracker {
 
     public void setKafkaOffset(Long kafkaOffset) {
         this.kafkaOffset = kafkaOffset;
+    }
+
+    public String getMawmResponse() {
+        return mawmResponse;
+    }
+
+    public void setMawmResponse(String mawmResponse) {
+        this.mawmResponse = mawmResponse;
     }
 }

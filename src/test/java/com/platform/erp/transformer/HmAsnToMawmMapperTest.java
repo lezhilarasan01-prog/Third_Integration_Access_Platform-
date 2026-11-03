@@ -37,7 +37,9 @@ class HmAsnToMawmMapperTest {
         }
 
         // 2. Transform incoming file through mapper
-        String actualJson = mapper.transformJson(inputJson);
+        HmInboundDeliveryMessage message = objectMapper.readValue(inputJson, HmInboundDeliveryMessage.class);
+        Map<String, Object> mawmMap = mapper.transform(message);
+        String actualJson = objectMapper.writeValueAsString(mawmMap);
         assertNotNull(actualJson);
 
         // 3. Verify output dynamically from incoming file data

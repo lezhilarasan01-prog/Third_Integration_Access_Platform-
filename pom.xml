@@ -19,7 +19,6 @@
         <java.version>21</java.version>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
-        <commons-csv.version>1.11.0</commons-csv.version>
         <camel.version>4.8.0</camel.version>
     </properties>
 
@@ -51,15 +50,6 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.datatype</groupId>
-            <artifactId>jackson-datatype-jsr310</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.commons</groupId>
-            <artifactId>commons-csv</artifactId>
-            <version>${commons-csv.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -144,26 +134,11 @@
             <groupId>org.apache.camel.springboot</groupId>
             <artifactId>camel-flatpack-starter</artifactId>
         </dependency>
-        <!-- Apache Camel Bindy Component (Positional & Fixed-Length Record Unmarshaling) -->
-        <dependency>
-            <groupId>org.apache.camel.springboot</groupId>
-            <artifactId>camel-bindy-starter</artifactId>
-        </dependency>
         <!-- StAEDI: Enterprise Standard Streaming X12 & EDI Parser for Java -->
         <dependency>
             <groupId>io.xlate</groupId>
             <artifactId>staedi</artifactId>
             <version>1.26.3</version>
-        </dependency>
-        <!-- Apache Camel JSLT Starter (Declarative JSON-to-JSON Transformation Plugin) -->
-        <dependency>
-            <groupId>org.apache.camel.springboot</groupId>
-            <artifactId>camel-jslt-starter</artifactId>
-        </dependency>
-        <!-- Apache Camel FreeMarker Starter (Declarative Template Transformation Plugin) -->
-        <dependency>
-            <groupId>org.apache.camel.springboot</groupId>
-            <artifactId>camel-freemarker-starter</artifactId>
         </dependency>
     </dependencies>
 
@@ -172,14 +147,6 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-                <configuration>
-                    <excludes>
-                        <exclude>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                        </exclude>
-                    </excludes>
-                </configuration>
             </plugin>
         </plugins>
     </build>

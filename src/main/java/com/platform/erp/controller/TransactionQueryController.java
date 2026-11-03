@@ -18,11 +18,14 @@ public class TransactionQueryController {
 
     private final TransactionStore transactionStore;
     private final com.platform.erp.storage.BlobStorageService blobStorageService;
+    private final com.platform.erp.mawm.MawmDispatcherService mawmDispatcherService;
 
     public TransactionQueryController(TransactionStore transactionStore,
-                                      com.platform.erp.storage.BlobStorageService blobStorageService) {
+                                      com.platform.erp.storage.BlobStorageService blobStorageService,
+                                      com.platform.erp.mawm.MawmDispatcherService mawmDispatcherService) {
         this.transactionStore = transactionStore;
         this.blobStorageService = blobStorageService;
+        this.mawmDispatcherService = mawmDispatcherService;
     }
 
     /**
@@ -38,11 +41,29 @@ public class TransactionQueryController {
     }
 
     /**
-     * Get transaction details and the converted Canonical JSON by trackingId.
+     * Get transaction details, converted Canonical JSON, and actual MAWM Cloud response by trackingId.
+     * Automatically dispatches to MAWM Cloud if the job was previously in a pending/saved state.
      * Example: GET /api/v1/erp/transactions/c843858c-58fe-4773-a660-bb1bf02a0fa8
      */
     @GetMapping("/{trackingId}")
     public ResponseEntity<ProcessedTransaction> getTransaction(@PathVariable("trackingId") String trackingId) {
+        var optTracker = transactionStore.getTracker(trackingId);
+        if (optTracker.isPresent()) {
+            var tracker = optTracker.get();
+            boolean isOpti = tracker.getSourceSystem() != null &&
+                    ("Opti".equalsIgnoreCase(tracker.getSourceSystem()) ||
+                     "OPTI".equalsIgnoreCase(tracker.getSourceSystem()) ||
+                     "OTPI".equalsIgnoreCase(tracker.getSourceSystem()));
+            if (isOpti && "CONVERTED".equalsIgnoreCase(tracker.getIntakeStatus()) &&
+                    (tracker.getMawmResponse() == null || tracker.getMawmResponse().isBlank()) &&
+                    (tracker.getDispatchStatus() == null || tracker.getDispatchStatus().startsWith("SAVED") || tracker.getDispatchStatus().startsWith("PENDING"))) {
+                try {
+                    mawmDispatcherService.dispatchJob(trackingId);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+
         return transactionStore.getTransaction(trackingId)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -63,7 +84,24 @@ public class TransactionQueryController {
      */
     @GetMapping("/tracker/{jobId}")
     public ResponseEntity<com.platform.erp.model.ErpFileIntakeTracker> getTrackerRow(@PathVariable("jobId") String jobId) {
-        return transactionStore.getTracker(jobId)
+        var optTracker = transactionStore.getTracker(jobId);
+        if (optTracker.isPresent()) {
+            var tracker = optTracker.get();
+            boolean isOpti = tracker.getSourceSystem() != null &&
+                    ("Opti".equalsIgnoreCase(tracker.getSourceSystem()) ||
+                     "OPTI".equalsIgnoreCase(tracker.getSourceSystem()) ||
+                     "OTPI".equalsIgnoreCase(tracker.getSourceSystem()));
+            if (isOpti && "CONVERTED".equalsIgnoreCase(tracker.getIntakeStatus()) &&
+                    (tracker.getMawmResponse() == null || tracker.getMawmResponse().isBlank()) &&
+                    (tracker.getDispatchStatus() == null || tracker.getDispatchStatus().startsWith("SAVED") || tracker.getDispatchStatus().startsWith("PENDING"))) {
+                try {
+                    mawmDispatcherService.dispatchJob(jobId);
+                    optTracker = transactionStore.getTracker(jobId);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return optTracker
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }

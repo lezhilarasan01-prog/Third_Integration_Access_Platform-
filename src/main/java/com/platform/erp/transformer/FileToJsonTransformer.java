@@ -1,5 +1,6 @@
 package com.platform.erp.transformer;
 
+import com.platform.erp.mawm.MawmCanonicalBuilder;
 import com.platform.erp.model.CanonicalEnvelope;
 import com.platform.erp.transformer.CamelTransformationEngine.TransformationResult;
 import com.platform.erp.util.FacilityExtractor;
@@ -23,15 +24,14 @@ public class FileToJsonTransformer {
     private static final Logger log = LoggerFactory.getLogger(FileToJsonTransformer.class);
 
     private final CamelTransformationEngine camelEngine;
-    private final com.platform.erp.mawm.MawmCanonicalBuilder mawmBuilder;
+    private final MawmCanonicalBuilder mawmBuilder;
 
     public FileToJsonTransformer(CamelTransformationEngine camelEngine) {
-        this(camelEngine, new com.platform.erp.mawm.MawmCanonicalBuilder());
+        this(camelEngine, new MawmCanonicalBuilder());
     }
 
     @Autowired
-    public FileToJsonTransformer(CamelTransformationEngine camelEngine,
-                                 com.platform.erp.mawm.MawmCanonicalBuilder mawmBuilder) {
+    public FileToJsonTransformer(CamelTransformationEngine camelEngine, MawmCanonicalBuilder mawmBuilder) {
         this.camelEngine = camelEngine;
         this.mawmBuilder = mawmBuilder;
     }

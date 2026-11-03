@@ -31,6 +31,7 @@ public interface TrackerSummaryProjection {
     Integer getDispatchFailedRecords();
     Instant getDispatchStartedAt();
     Instant getDispatchCompletedAt();
+    String getMawmResponse();
 
     default String getRawContent() {
         return null;

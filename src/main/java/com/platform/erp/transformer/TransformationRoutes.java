@@ -27,36 +27,29 @@ import java.util.*;
 public class TransformationRoutes extends RouteBuilder {
 
     public static final String DIRECT_UNMARSHAL_AUTO = "direct:unmarshal-auto";
-    public static final String DIRECT_HM_ASN_TO_MAWM = "direct:hm-asn-to-mawm";
 
     private final CamelDataFormatRegistry registry;
     private final FlatFileParser flatFileParser;
     private final EdiParser ediParser;
-    private final HmAsnToMawmMapper hmAsnToMawmMapper;
 
     public TransformationRoutes() {
-        this(new CamelDataFormatRegistry(new ExcelParser(), new EdiParser(), new FlatFileParser()), new FlatFileParser(), new EdiParser(), new HmAsnToMawmMapper());
+        this(new CamelDataFormatRegistry(new ExcelParser(), new EdiParser(), new FlatFileParser()), new FlatFileParser(), new EdiParser());
     }
 
     @Autowired
-    public TransformationRoutes(CamelDataFormatRegistry registry, FlatFileParser flatFileParser, EdiParser ediParser, HmAsnToMawmMapper hmAsnToMawmMapper) {
+    public TransformationRoutes(CamelDataFormatRegistry registry, FlatFileParser flatFileParser, EdiParser ediParser) {
         this.registry = registry;
         this.flatFileParser = flatFileParser;
         this.ediParser = ediParser;
-        this.hmAsnToMawmMapper = hmAsnToMawmMapper;
     }
 
     @Override
     public void configure() throws Exception {
         from(DIRECT_UNMARSHAL_AUTO)
                 .routeId("camel-orchestrator-route")
+             //   .process(exhange-> orchestrateIntake(exhange))
                 .process(this::orchestrateIntake)
                 .marshal().json()
-                .convertBodyTo(String.class);
-
-        from(DIRECT_HM_ASN_TO_MAWM)
-                .routeId("hm-asn-to-mawm-route")
-                .bean(hmAsnToMawmMapper, "transformJson")
                 .convertBodyTo(String.class);
     }
 
@@ -89,7 +82,7 @@ public class TransformationRoutes extends RouteBuilder {
         String sample = (payload != null && payload.length > 0)
                 ? new String(payload, 0, Math.min(payload.length, 1024), StandardCharsets.UTF_8).trim() : "";
 
-        if (route != null && !"PLAIN".equalsIgnoreCase(route.formatName()) && !"OCTET-STREAM".equalsIgnoreCase(route.formatName())) {
+        if (route != null) {
             detectedFormat = route.formatName();
             result = route.unmarshaler().unmarshal(context, payload, filename);
         } else {

@@ -340,7 +340,7 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
   const [copiedPayload, setCopiedPayload] = useState(false);
 
   // Topic Selection & Date Range Filter State
-  const [dateRange, setDateRange] = useState('all'); // 'all', 'today', '24h', '7d', 'custom'
+  const [dateRange, setDateRange] = useState('7d'); // 'today', '24h', '7d', '30d', 'custom'
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
 
@@ -854,28 +854,28 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
   // Filter messages by Topic, Date Range, and Search Query
   const filteredMessages = messages.filter((msg) => {
     // 1. Date Range filter
-    if (dateRange !== 'all') {
-      const msgTime = msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now();
-      const now = Date.now();
-      if (dateRange === 'today') {
-        const startOfToday = new Date();
-        startOfToday.setHours(0, 0, 0, 0);
-        if (msgTime < startOfToday.getTime()) return false;
-      } else if (dateRange === '24h') {
-        if (msgTime < (now - 24 * 60 * 60 * 1000)) return false;
-      } else if (dateRange === '7d') {
-        if (msgTime < (now - 7 * 24 * 60 * 60 * 1000)) return false;
-      } else if (dateRange === 'custom') {
-        if (customStartDate) {
-          const s = new Date(customStartDate);
-          s.setHours(0, 0, 0, 0);
-          if (msgTime < s.getTime()) return false;
-        }
-        if (customEndDate) {
-          const e = new Date(customEndDate);
-          e.setHours(23, 59, 59, 999);
-          if (msgTime > e.getTime()) return false;
-        }
+    const msgTime = msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now();
+    const now = Date.now();
+    if (dateRange === 'today') {
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      if (msgTime < startOfToday.getTime()) return false;
+    } else if (dateRange === '24h') {
+      if (msgTime < (now - 24 * 60 * 60 * 1000)) return false;
+    } else if (dateRange === '7d') {
+      if (msgTime < (now - 7 * 24 * 60 * 60 * 1000)) return false;
+    } else if (dateRange === '30d') {
+      if (msgTime < (now - 30 * 24 * 60 * 60 * 1000)) return false;
+    } else if (dateRange === 'custom') {
+      if (customStartDate) {
+        const s = new Date(customStartDate);
+        s.setHours(0, 0, 0, 0);
+        if (msgTime < s.getTime()) return false;
+      }
+      if (customEndDate) {
+        const e = new Date(customEndDate);
+        e.setHours(23, 59, 59, 999);
+        if (msgTime > e.getTime()) return false;
       }
     }
 
@@ -1579,8 +1579,8 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
               </select>
             </div>
 
-            {/* Date Range Selector Dropdown */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {/* Date Range Selector & Inputs */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
               <Calendar size={15} style={{ color: '#60a5fa' }} />
               <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)' }}>Date Range:</label>
               <select
@@ -1588,32 +1588,36 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
                 onChange={(e) => setDateRange(e.target.value)}
                 className="studio-filter-select"
               >
-                <option value="all">All Recorded Time</option>
+                <option value="7d">Last 7 Days</option>
                 <option value="today">Today</option>
                 <option value="24h">Last 24 Hours</option>
-                <option value="7d">Last 7 Days</option>
+                <option value="30d">Last 30 Days</option>
                 <option value="custom">Custom Date Range...</option>
               </select>
 
-              {dateRange === 'custom' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginLeft: '0.25rem' }}>
-                  <input
-                    type="date"
-                    value={customStartDate}
-                    onChange={(e) => setCustomStartDate(e.target.value)}
-                    className="studio-date-input"
-                    title="Start Date"
-                  />
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>to</span>
-                  <input
-                    type="date"
-                    value={customEndDate}
-                    onChange={(e) => setCustomEndDate(e.target.value)}
-                    className="studio-date-input"
-                    title="End Date"
-                  />
-                </div>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginLeft: '0.2rem' }}>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => {
+                    setCustomStartDate(e.target.value);
+                    setDateRange('custom');
+                  }}
+                  className="studio-date-input"
+                  title="Start Date (From)"
+                />
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>to</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => {
+                    setCustomEndDate(e.target.value);
+                    setDateRange('custom');
+                  }}
+                  className="studio-date-input"
+                  title="End Date (To)"
+                />
+              </div>
             </div>
           </div>
 

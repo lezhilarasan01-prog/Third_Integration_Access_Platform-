@@ -190,10 +190,25 @@ export const integrationApi = {
 
     const url = `${BASE_URL}/api/v1/erp/${encodeURIComponent(erpSource)}/files?docType=${encodeURIComponent(docType)}`;
 
-    const res = await fetch(url, {
-      method: 'POST',
-      body: formData
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal
+      });
+    } catch (networkErr) {
+      clearTimeout(timeoutId);
+      if (networkErr.name === 'AbortError') {
+        throw new Error('Upload request timed out (20s). Please check if backend service is running on port 8080.');
+      }
+      throw new Error('Cannot connect to backend server on port 8080. Please ensure the backend service is running.');
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -607,5 +622,51 @@ export const integrationApi = {
       status: 'SUCCESS',
       outputLines
     };
+  },
+
+  // --- 8. Manhattan Active WMS (MAWM) Telemetry & Dispatch ---
+  async getMawmTelemetry() {
+    try {
+      const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/telemetry`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn('Could not fetch MAWM telemetry:', e);
+    }
+    return {
+      enabled: true,
+      baseUrl: 'https://ncsps.sce.manh.com',
+      authUrl: 'https://ncsps-auth.sce.manh.com/oauth/token',
+      asnPath: '/receiving/api/receiving/asn/save',
+      poPath: '/orders/po',
+      defaultFacility: 'Food_Cbe',
+      username: 'lezhilarasan',
+      authStatus: { hasCachedToken: true, tokenExpiresAt: '' },
+      stats: { total: 0, delivered: 0, failed: 0, pending: 0 }
+    };
+  },
+
+  async testMawmConnection() {
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/test-connection`, {
+      method: 'POST'
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'MAWM connection test failed');
+    }
+    return res.json();
+  },
+
+  async dispatchMawmJob(jobId) {
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/dispatch/${encodeURIComponent(jobId)}`, {
+      method: 'POST'
+    });
+    this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to dispatch job to MAWM');
+    }
+    return res.json();
   }
 };

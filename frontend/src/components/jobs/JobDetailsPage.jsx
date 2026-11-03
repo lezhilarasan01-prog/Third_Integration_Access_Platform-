@@ -23,14 +23,20 @@ import {
   Eye,
   Download,
   Cloud,
-  Trash2
+  Trash2,
+  Send,
+  Code
 } from 'lucide-react';
 import { integrationApi } from '../../services/integrationApi';
 import ConfirmDialogModal from '../common/ConfirmDialogModal';
 import { copyToClipboard } from '../../utils/clipboard';
 
 function formatSourceName(code) {
-  return code || 'Unknown Source';
+  if (!code) return 'Unknown Source';
+  if (code.toUpperCase() === 'OTPI' || code.toUpperCase() === 'OPTI') {
+    return 'Opti';
+  }
+  return code;
 }
 
 function resolveCustomerRawFilename(job) {
@@ -209,9 +215,17 @@ function getJobTimeline(job) {
       id: 'stage-6-outbound',
       stageNumber: 6,
       name: 'MAWM Cloud Dispatch',
-      summary: 'Outbound dispatch adapter to Manhattan Active WMS sandbox',
-      status: 'not_connected',
-      timestamp: null
+      summary: (job.dispatchStatus && (job.dispatchStatus.includes('DELIVERED') || job.dispatchStatus.includes('200')))
+        ? 'Acknowledged 200 OK receipt by Manhattan Active WMS Cloud'
+        : (job.dispatchStatus && (job.dispatchStatus.includes('FAIL') || job.dispatchStatus.includes('ERROR')))
+        ? 'Outbound dispatch rejected by Manhattan Active WMS Cloud'
+        : 'Converted to Canonical JSON; ready for cloud dispatch',
+      status: (job.dispatchStatus && (job.dispatchStatus.includes('DELIVERED') || job.dispatchStatus.includes('200')))
+        ? 'completed'
+        : (job.dispatchStatus && (job.dispatchStatus.includes('FAIL') || job.dispatchStatus.includes('ERROR')))
+        ? 'failed'
+        : 'warning',
+      timestamp: job.dispatchCompletedAt || (job.dispatchStatus ? updatedAt : null)
     }
   ];
 }
@@ -234,6 +248,31 @@ export default function JobDetailsPage({ jobId, onBack }) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState('documents');
+  const [isDispatchingMawm, setIsDispatchingMawm] = useState(false);
+  const [copiedMawmResponse, setCopiedMawmResponse] = useState(false);
+  const [mawmActiveSubtab, setMawmActiveSubtab] = useState('response');
+
+  const handleDispatchMawmNow = async () => {
+    if (!jobId) return;
+    setIsDispatchingMawm(true);
+    try {
+      const res = await integrationApi.dispatchMawmJob(jobId);
+      const updated = await integrationApi.getTrackerById(jobId);
+      if (updated) {
+        setLiveJob((prev) => ({
+          ...prev,
+          dispatchStatus: 'DELIVERED_TO_MAWM (200 OK)',
+          mawmResponse: res.response || updated.mawmResponse || prev?.mawmResponse,
+          facilityId: updated.facilityId || prev?.facilityId,
+          dispatchCompletedAt: updated.dispatchCompletedAt || new Date().toISOString()
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to dispatch job to MAWM:', err);
+    } finally {
+      setIsDispatchingMawm(false);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -271,6 +310,11 @@ export default function JobDetailsPage({ jobId, onBack }) {
               : [],
             isClaimCheck: isClaim,
             dispatchStatus: tracker.dispatchStatus,
+            mawmResponse: tracker.mawmResponse,
+            facilityId: tracker.facilityId,
+            dispatchedRecords: tracker.dispatchedRecords,
+            dispatchFailedRecords: tracker.dispatchFailedRecords,
+            dispatchCompletedAt: tracker.dispatchCompletedAt,
             kafkaTopic: tracker.kafkaTopic,
             kafkaPartition: tracker.kafkaPartition,
             kafkaOffset: tracker.kafkaOffset
@@ -551,6 +595,63 @@ export default function JobDetailsPage({ jobId, onBack }) {
                   FAILED
                 </span>
               )}
+
+              {/* MAWM Cloud Dispatch Badge */}
+              {(() => {
+                const dStatus = job.dispatchStatus || '';
+                if (dStatus.includes('DELIVERED') || dStatus.includes('200')) {
+                  return (
+                    <span
+                      className="status-badge"
+                      style={{
+                        backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                        color: '#10b981',
+                        border: '1px solid rgba(16, 185, 129, 0.35)',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => setActiveTab('mawm')}
+                      title="Delivered to Manhattan Active WMS Cloud - Click to view live response"
+                    >
+                      <CheckCircle2 size={13} />
+                      MAWM: DELIVERED (200 OK)
+                    </span>
+                  );
+                }
+                if (dStatus.includes('FAIL') || dStatus.includes('ERROR')) {
+                  return (
+                    <span
+                      className="status-badge"
+                      style={{
+                        backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                        color: '#ef4444',
+                        border: '1px solid rgba(239, 68, 68, 0.35)',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => setActiveTab('mawm')}
+                      title="MAWM Cloud delivery failed - Click to view error details"
+                    >
+                      <AlertTriangle size={13} />
+                      MAWM: FAILED
+                    </span>
+                  );
+                }
+                return (
+                  <span
+                    className="status-badge"
+                    style={{
+                      backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                      color: '#f59e0b',
+                      border: '1px solid rgba(245, 158, 11, 0.35)',
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => setActiveTab('mawm')}
+                    title="Awaiting MAWM Cloud delivery - Click to dispatch"
+                  >
+                    <Clock size={13} />
+                    MAWM: AWAITING
+                  </span>
+                );
+              })()}
             </div>
 
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
@@ -995,9 +1096,9 @@ export default function JobDetailsPage({ jobId, onBack }) {
             <span>Payload Transformation (Before vs. After)</span>
           </button>
 
-          {/* TAB 4: PIPELINE FILES & ARTIFACTS */}
+          {/* TAB 4: MAWM CLOUD DISPATCH & LIVE RESPONSE */}
           <button
-            onClick={() => setActiveTab('metadata')}
+            onClick={() => setActiveTab('mawm')}
             style={{
               padding: '0.85rem 1.25rem',
               fontSize: '0.82rem',
@@ -1005,8 +1106,8 @@ export default function JobDetailsPage({ jobId, onBack }) {
               border: 'none',
               background: 'none',
               cursor: 'pointer',
-              color: activeTab === 'metadata' ? 'var(--primary-500)' : 'var(--text-muted)',
-              borderBottom: activeTab === 'metadata' ? '2px solid var(--primary-500)' : '2px solid transparent',
+              color: activeTab === 'mawm' ? 'var(--primary-500)' : 'var(--text-muted)',
+              borderBottom: activeTab === 'mawm' ? '2px solid var(--primary-500)' : '2px solid transparent',
               marginBottom: -1,
               display: 'inline-flex',
               alignItems: 'center',
@@ -1014,8 +1115,13 @@ export default function JobDetailsPage({ jobId, onBack }) {
               whiteSpace: 'nowrap',
             }}
           >
-            <FileCode size={15} />
-            <span>File Paths & Raw Artifacts</span>
+            <Server size={15} />
+            <span>MAWM Cloud Dispatch</span>
+            {job.dispatchStatus && (job.dispatchStatus.includes('DELIVERED') || job.dispatchStatus.includes('200')) && (
+              <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '0.1rem 0.4rem', borderRadius: 4, fontWeight: 700 }}>
+                200 OK
+              </span>
+            )}
           </button>
         </div>
 
@@ -1551,57 +1657,146 @@ export default function JobDetailsPage({ jobId, onBack }) {
           )}
 
           {/* ============================================================== */}
-          {/* TAB 5: FILE PATHS & RAW ARTIFACT REFS                         */}
+          {/* TAB 4: MAWM CLOUD DISPATCH & LIVE RESPONSE                      */}
           {/* ============================================================== */}
-          {activeTab === 'metadata' && (
+          {activeTab === 'mawm' && (
             <div>
-              <div style={{ marginBottom: '1rem' }}>
-                <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.5rem' }}>
-                  Ingestion Artifact File References
-                </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
-                  <div className="job-meta-card">
-                    <span className="job-meta-card-label">Input File Reference</span>
-                    <code style={{ fontSize: '0.74rem', color: 'var(--primary-500)', wordBreak: 'break-all' }}>
-                      {job.inputFileRef || `data/input/${job.jobId}_${job.originalFilename}`}
-                    </code>
+              {/* Outbound Dispatch Specification */}
+              <div
+                style={{
+                  backgroundColor: 'var(--bg-app)',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '1rem 1.25rem',
+                  marginBottom: '1.25rem',
+                  fontSize: '0.8rem',
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: '0.5rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Server size={14} color="#10b981" />
+                    <span>Outbound Manhattan Active WMS Cloud Dispatch Specification</span>
                   </div>
-
-                  <div className="job-meta-card">
-                    <span className="job-meta-card-label">Canonical Output Artifacts</span>
-                    <code style={{ fontSize: '0.74rem', color: 'var(--success-text)', wordBreak: 'break-all' }}>
-                      {Array.isArray(job.outputFiles)
-                        ? job.outputFiles.join(', ')
-                        : (job.outputFiles || 'None (0 valid records)')}
-                    </code>
+                  {(() => {
+                    const isOpti = job.sourceSystem?.toUpperCase() === 'OPTI' || job.sourceSystem?.toUpperCase() === 'OTPI';
+                    return (
+                      <button
+                        onClick={() => isOpti && handleDispatchMawmNow()}
+                        disabled={isDispatchingMawm || !isOpti}
+                        className="btn-primary"
+                        title={isOpti ? "Redeliver to MAWM Cloud" : "Rejection: Only Opti ERP is authorized for MAWM Cloud dispatch"}
+                        style={{
+                          padding: '0.35rem 0.75rem',
+                          fontSize: '0.74rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                          opacity: isOpti ? 1 : 0.45,
+                          cursor: isOpti ? 'pointer' : 'not-allowed',
+                          backgroundColor: !isOpti ? 'rgba(100, 116, 139, 0.2)' : undefined,
+                          borderColor: !isOpti ? 'rgba(100, 116, 139, 0.3)' : undefined,
+                          color: !isOpti ? '#94a3b8' : undefined
+                        }}
+                      >
+                        <Send size={12} />
+                        <span>{!isOpti ? 'Opti Only' : isDispatchingMawm ? 'Dispatching...' : 'Redeliver to MAWM Cloud'}</span>
+                      </button>
+                    );
+                  })()}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.5rem', color: 'var(--text-muted)' }}>
+                  <div><strong>HTTP Method:</strong> <code style={{ color: '#10b981' }}>POST</code></div>
+                  <div><strong>Target Host:</strong> <code style={{ color: '#38bdf8' }}>https://ncsps.sce.manh.com</code></div>
+                  <div><strong>selectedLocation:</strong> <code style={{ color: '#f59e0b' }}>{job.facilityId || 'Food_Cbe'}</code></div>
+                  <div><strong>selectedOrganization:</strong> <code style={{ color: '#f59e0b' }}>{job.facilityId || 'Food_Cbe'}</code></div>
+                  <div><strong>selectedBusinessUnit:</strong> <code style={{ color: '#f59e0b' }}>{job.facilityId || 'Food_Cbe'}</code></div>
+                  <div><strong>Authorization:</strong> <code>Bearer &lt;OAuth2 Cached Token&gt;</code></div>
+                  <div>
+                    <strong>Dispatch Status:</strong>{' '}
+                    <strong style={{ color: job.dispatchStatus?.includes('200') || job.dispatchStatus?.includes('DELIVERED') ? '#10b981' : (job.dispatchStatus?.includes('FAIL') ? '#ef4444' : '#f59e0b') }}>
+                      {job.dispatchStatus || 'PENDING'}
+                    </strong>
                   </div>
-
-                  <div className="job-meta-card">
-                    <span className="job-meta-card-label">Dead-Letter Error File</span>
-                    <code style={{ fontSize: '0.74rem', color: job.errorFile ? 'var(--error-text)' : 'var(--text-dim)', wordBreak: 'break-all' }}>
-                      {job.errorFile || 'None (no errors isolated)'}
-                    </code>
-                  </div>
+                  <div><strong>Dispatched Timestamp:</strong> <span>{job.dispatchCompletedAt ? new Date(job.dispatchCompletedAt).toLocaleString() : 'N/A'}</span></div>
                 </div>
               </div>
 
-              <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.5rem' }}>
-                Complete Raw Job Descriptor (JSON)
-              </h4>
+              {/* Subtabs: Live MAWM Cloud Response vs Converted Request Payload */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <button
+                    onClick={() => setMawmActiveSubtab('response')}
+                    className={`filter-pill ${mawmActiveSubtab === 'response' ? 'active' : ''}`}
+                    style={{ fontSize: '0.75rem', padding: '0.3rem 0.75rem' }}
+                  >
+                    <CheckCircle2 size={12} />
+                    <span>Live MAWM Cloud Response</span>
+                  </button>
+                  <button
+                    onClick={() => setMawmActiveSubtab('payload')}
+                    className={`filter-pill ${mawmActiveSubtab === 'payload' ? 'active' : ''}`}
+                    style={{ fontSize: '0.75rem', padding: '0.3rem 0.75rem' }}
+                  >
+                    <Code size={12} />
+                    <span>Converted Request Payload</span>
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => {
+                    const text = mawmActiveSubtab === 'response'
+                      ? (typeof job.mawmResponse === 'string' ? job.mawmResponse : JSON.stringify(job.mawmResponse, null, 2))
+                      : (job.sampleOutput ? formatMawmOutput(job.sampleOutput) : '// No payload');
+                    navigator.clipboard?.writeText(text);
+                    setCopiedMawmResponse(true);
+                    setTimeout(() => setCopiedMawmResponse(false), 2000);
+                  }}
+                  className="btn-secondary"
+                  style={{ padding: '0.3rem 0.65rem', fontSize: '0.74rem', gap: '0.3rem' }}
+                >
+                  {copiedMawmResponse ? <Check size={12} /> : <Copy size={12} />}
+                  <span>{copiedMawmResponse ? 'Copied!' : 'Copy'}</span>
+                </button>
+              </div>
+
+              {/* Code Pre Block */}
               <pre
                 style={{
                   backgroundColor: 'var(--bg-app)',
-                  color: 'var(--text-main)',
+                  color: mawmActiveSubtab === 'response' ? '#34d399' : 'var(--text-main)',
                   padding: '1.25rem',
                   borderRadius: 'var(--radius-md)',
-                  fontSize: '0.74rem',
+                  fontSize: '0.78rem',
                   fontFamily: 'var(--font-mono)',
                   overflowX: 'auto',
-                  maxHeight: 320,
+                  maxHeight: 480,
                   border: '1px solid var(--border-default)',
+                  lineHeight: 1.5,
                 }}
               >
-                {JSON.stringify(job, null, 2)}
+                {(() => {
+                  if (mawmActiveSubtab === 'response') {
+                    if (!job.mawmResponse) {
+                      return JSON.stringify({
+                        status: job.dispatchStatus || 'PENDING',
+                        trackingId: job.jobId,
+                        message: job.dispatchStatus?.includes('DELIVERED')
+                          ? 'Acknowledged receipt by Manhattan Active WMS Cloud'
+                          : 'Waiting for MAWM Cloud response acknowledgment...',
+                      }, null, 2);
+                    }
+                    try {
+                      const parsed = typeof job.mawmResponse === 'string'
+                        ? JSON.parse(job.mawmResponse)
+                        : job.mawmResponse;
+                      return JSON.stringify(parsed, null, 2);
+                    } catch (e) {
+                      return String(job.mawmResponse);
+                    }
+                  } else {
+                    return job.sampleOutput ? formatMawmOutput(job.sampleOutput) : '// No converted output produced';
+                  }
+                })()}
               </pre>
             </div>
           )}

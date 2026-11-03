@@ -23,7 +23,12 @@ import {
   Cloud,
   RefreshCw,
   Trash2,
-  UploadCloud
+  UploadCloud,
+  Server,
+  Send,
+  ExternalLink,
+  X,
+  Code
 } from 'lucide-react';
 import JobDetailsPage from './JobDetailsPage';
 import ConfirmDialogModal from '../common/ConfirmDialogModal';
@@ -36,12 +41,18 @@ const mapTrackerRow = (r) => ({
   mappingProfile: r.mappingProfile,
   inputFormat: r.inputFormat || 'CSV',
   originalFilename: r.originalFilename,
+  facilityId: r.facilityId,
   fileSizeBytes: r.fileSizeBytes,
   fileChecksum: r.fileChecksum,
   storagePath: r.storagePath,
   rawContent: r.rawContent,
   createdAt: r.receivedAt || r.updatedAt,
   status: r.intakeStatus === 'CONVERTED' ? 'COMPLETED' : (r.intakeStatus || 'RECEIVED'),
+  dispatchStatus: r.dispatchStatus,
+  mawmResponse: r.mawmResponse,
+  dispatchedRecords: r.dispatchedRecords,
+  dispatchFailedRecords: r.dispatchFailedRecords,
+  dispatchCompletedAt: r.dispatchCompletedAt,
   totalRecords: r.totalRecords || 1,
   convertedRecords: r.convertedRecords || (r.intakeStatus === 'CONVERTED' ? 1 : 0),
   errorRecords: r.errorRecords || 0,
@@ -79,6 +90,33 @@ export default function IntegrationJobsPage({
   const [copiedId, setCopiedId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [dateRange, setDateRange] = useState('7d');
+  const [customStartDateTime, setCustomStartDateTime] = useState('');
+  const [customEndDateTime, setCustomEndDateTime] = useState('');
+  const [quickMawmJob, setQuickMawmJob] = useState(null);
+  const [quickMawmTab, setQuickMawmTab] = useState('response');
+  const [copiedQuickMawm, setCopiedQuickMawm] = useState(false);
+  const [isRedispatching, setIsRedispatching] = useState(false);
+
+  const handleRedispatchMawm = async (jobId) => {
+    if (!jobId) return;
+    setIsRedispatching(true);
+    try {
+      const res = await integrationApi.dispatchMawmJob(jobId);
+      await fetchTrackers(false);
+      if (quickMawmJob && quickMawmJob.jobId === jobId) {
+        setQuickMawmJob((prev) => ({
+          ...prev,
+          dispatchStatus: 'DELIVERED_TO_MAWM (200 OK)',
+          mawmResponse: res.response || prev.mawmResponse,
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to dispatch job to MAWM:', err);
+    } finally {
+      setIsRedispatching(false);
+    }
+  };
 
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
@@ -179,25 +217,45 @@ export default function IntegrationJobsPage({
   const jobCounts = useMemo(() => {
     const all = effectiveJobs.length;
     const completed = effectiveJobs.filter((j) => j.status === 'COMPLETED').length;
+    const mawmDelivered = effectiveJobs.filter(
+      (j) => j.dispatchStatus && (j.dispatchStatus.includes('DELIVERED') || j.dispatchStatus.includes('200'))
+    ).length;
+    const mawmAwaiting = effectiveJobs.filter(
+      (j) => !j.dispatchStatus || j.dispatchStatus === 'PENDING' || j.dispatchStatus === 'SAVED' || j.dispatchStatus === 'AWAITING' || j.dispatchStatus.includes('SAVED')
+    ).length;
     const withErrors = effectiveJobs.filter(
       (j) => j.status === 'COMPLETED_WITH_ERRORS' || (j.errorRecords > 0 && j.status !== 'FAILED')
     ).length;
-    const failed = effectiveJobs.filter((j) => j.status === 'FAILED').length;
-    return { all, completed, withErrors, failed };
+    const failed = effectiveJobs.filter((j) => j.status === 'FAILED' || (j.dispatchStatus && j.dispatchStatus.includes('FAIL'))).length;
+    return { all, completed, mawmDelivered, mawmAwaiting, withErrors, failed };
   }, [effectiveJobs]);
 
-  // Filter jobs based on status, source, type, and search query
+  // Filter jobs based on status, source, type, date range, and search query
   const filteredJobs = useMemo(() => {
     return effectiveJobs.filter((job) => {
       // 1. Status Filter
       if (statusFilter === 'COMPLETED' && job.status !== 'COMPLETED') return false;
+      if (
+        statusFilter === 'MAWM_DELIVERED' &&
+        (!job.dispatchStatus || (!job.dispatchStatus.includes('DELIVERED') && !job.dispatchStatus.includes('200')))
+      ) {
+        return false;
+      }
+      if (
+        statusFilter === 'MAWM_AWAITING' &&
+        (job.dispatchStatus && (job.dispatchStatus.includes('DELIVERED') || job.dispatchStatus.includes('200') || job.dispatchStatus.includes('FAIL')))
+      ) {
+        return false;
+      }
       if (
         statusFilter === 'ERRORS' &&
         !(job.status === 'COMPLETED_WITH_ERRORS' || (job.errorRecords > 0 && job.status !== 'FAILED'))
       ) {
         return false;
       }
-      if (statusFilter === 'FAILED' && job.status !== 'FAILED') return false;
+      if (statusFilter === 'FAILED' && job.status !== 'FAILED' && (!job.dispatchStatus || !job.dispatchStatus.includes('FAIL'))) {
+        return false;
+      }
 
       // 2. Source ERP Filter
       if (sourceFilter !== 'ALL' && job.sourceSystem !== sourceFilter) return false;
@@ -205,7 +263,34 @@ export default function IntegrationJobsPage({
       // 3. Transaction Type Filter
       if (typeFilter !== 'ALL' && job.transactionType !== typeFilter) return false;
 
-      // 4. Search Query Filter
+      // 4. Date & Time Range Filter
+      const timeStr = job.dispatchCompletedAt || job.updatedAt || job.createdAt;
+      if (timeStr) {
+        const rowTime = new Date(timeStr).getTime();
+        const now = Date.now();
+        if (dateRange === 'today') {
+          const startOfToday = new Date();
+          startOfToday.setHours(0, 0, 0, 0);
+          if (rowTime < startOfToday.getTime()) return false;
+        } else if (dateRange === '24h') {
+          if (now - rowTime > 24 * 60 * 60 * 1000) return false;
+        } else if (dateRange === '7d') {
+          if (now - rowTime > 7 * 24 * 60 * 60 * 1000) return false;
+        } else if (dateRange === '30d') {
+          if (now - rowTime > 30 * 24 * 60 * 60 * 1000) return false;
+        } else if (dateRange === 'custom') {
+          if (customStartDateTime) {
+            const start = new Date(customStartDateTime).getTime();
+            if (rowTime < start) return false;
+          }
+          if (customEndDateTime) {
+            const end = new Date(customEndDateTime).getTime();
+            if (rowTime > end) return false;
+          }
+        }
+      }
+
+      // 5. Search Query Filter
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase().trim();
         const matchesId = (job.jobId || '').toLowerCase().includes(query);
@@ -214,15 +299,16 @@ export default function IntegrationJobsPage({
         const matchesType = (job.transactionType || '').toLowerCase().includes(query);
         const matchesProfile = (job.mappingProfile || '').toLowerCase().includes(query);
         const matchesFormat = (job.inputFormat || '').toLowerCase().includes(query);
+        const matchesDispatch = (job.dispatchStatus || '').toLowerCase().includes(query);
 
-        if (!matchesId && !matchesFilename && !matchesSource && !matchesType && !matchesProfile && !matchesFormat) {
+        if (!matchesId && !matchesFilename && !matchesSource && !matchesType && !matchesProfile && !matchesFormat && !matchesDispatch) {
           return false;
         }
       }
 
       return true;
     });
-  }, [effectiveJobs, statusFilter, sourceFilter, typeFilter, searchQuery]);
+  }, [effectiveJobs, statusFilter, sourceFilter, typeFilter, dateRange, customStartDateTime, customEndDateTime, searchQuery]);
 
   // Pagination calculations
   const totalRecords = filteredJobs.length;
@@ -241,6 +327,9 @@ export default function IntegrationJobsPage({
     setStatusFilter('ALL');
     setSourceFilter('ALL');
     setTypeFilter('ALL');
+    setDateRange('7d');
+    setCustomStartDateTime('');
+    setCustomEndDateTime('');
     setSearchQuery('');
     setCurrentPage(1);
   };
@@ -253,7 +342,12 @@ export default function IntegrationJobsPage({
   };
 
   const sourceBadgeClass = (source) => {
-    switch (source) {
+    const s = (source || '').toUpperCase();
+    switch (s) {
+      case 'OPTI':
+      case 'OTPI':
+        return 'badge-orange';
+      case 'SAP':
       case 'SAP_ERP':
         return 'badge-blue';
       case 'LOGISTICS_PARTNER':
@@ -266,11 +360,21 @@ export default function IntegrationJobsPage({
   };
 
   const formatSourceName = (source) => {
-    return source || 'Unknown';
+    if (!source) return 'Unknown';
+    if (source.toUpperCase() === 'OTPI' || source.toUpperCase() === 'OPTI') {
+      return 'Opti';
+    }
+    return source;
   };
 
   const hasActiveFilters =
-    statusFilter !== 'ALL' || sourceFilter !== 'ALL' || typeFilter !== 'ALL' || searchQuery.trim() !== '';
+    statusFilter !== 'ALL' ||
+    sourceFilter !== 'ALL' ||
+    typeFilter !== 'ALL' ||
+    dateRange !== '7d' ||
+    customStartDateTime !== '' ||
+    customEndDateTime !== '' ||
+    searchQuery.trim() !== '';
 
   if (inspectedJobId) {
     return (
@@ -472,6 +576,56 @@ export default function IntegrationJobsPage({
               ))}
             </select>
 
+            {/* Date & Time Range Filter */}
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+              <select
+                value={dateRange}
+                onChange={(e) => {
+                  setDateRange(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="form-select-theme"
+                style={{ minWidth: 125 }}
+                title="Filter by ingestion time range"
+              >
+                <option value="today">Today</option>
+                <option value="24h">Last 24 Hours</option>
+                <option value="7d">Last 7 Days</option>
+                <option value="30d">Last 30 Days</option>
+                <option value="custom">Custom Range...</option>
+              </select>
+
+              {dateRange === 'custom' && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <input
+                    type="datetime-local"
+                    value={customStartDateTime}
+                    onChange={(e) => {
+                      setCustomStartDateTime(e.target.value);
+                      setDateRange('custom');
+                      setCurrentPage(1);
+                    }}
+                    className="form-input-theme"
+                    style={{ padding: '0.3rem 0.45rem', fontSize: '0.74rem' }}
+                    title="Start Date & Time"
+                  />
+                  <span style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>to</span>
+                  <input
+                    type="datetime-local"
+                    value={customEndDateTime}
+                    onChange={(e) => {
+                      setCustomEndDateTime(e.target.value);
+                      setDateRange('custom');
+                      setCurrentPage(1);
+                    }}
+                    className="form-input-theme"
+                    style={{ padding: '0.3rem 0.45rem', fontSize: '0.74rem' }}
+                    title="End Date & Time"
+                  />
+                </div>
+              )}
+            </div>
+
             {/* Test Upload Action Button */}
             {onOpenTestUpload && (
               <button
@@ -549,6 +703,20 @@ export default function IntegrationJobsPage({
               Completed ({jobCounts.completed})
             </button>
             <button
+              className={`filter-pill ${statusFilter === 'MAWM_DELIVERED' ? 'active' : ''}`}
+              onClick={() => handleStatusFilterChange('MAWM_DELIVERED')}
+              style={statusFilter === 'MAWM_DELIVERED' ? { backgroundColor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', borderColor: '#10b981' } : {}}
+            >
+              MAWM Delivered ({jobCounts.mawmDelivered})
+            </button>
+            <button
+              className={`filter-pill ${statusFilter === 'MAWM_AWAITING' ? 'active' : ''}`}
+              onClick={() => handleStatusFilterChange('MAWM_AWAITING')}
+              style={statusFilter === 'MAWM_AWAITING' ? { backgroundColor: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', borderColor: '#f59e0b' } : {}}
+            >
+              MAWM Awaiting ({jobCounts.mawmAwaiting})
+            </button>
+            <button
               className={`filter-pill ${statusFilter === 'ERRORS' ? 'active' : ''}`}
               onClick={() => handleStatusFilterChange('ERRORS')}
             >
@@ -593,6 +761,7 @@ export default function IntegrationJobsPage({
                 <th>Valid Records</th>
                 <th>Error Count</th>
                 <th>Status</th>
+                <th>MAWM Dispatch</th>
                 <th>Ingestion Timestamp</th>
                 <th style={{ textAlign: 'right', paddingRight: '1.5rem' }}>Action</th>
               </tr>
@@ -752,6 +921,90 @@ export default function IntegrationJobsPage({
                         )}
                       </td>
 
+                      {/* 7b. MAWM Dispatch Status */}
+                      <td onClick={(e) => {
+                        e.stopPropagation();
+                        if (job.mawmResponse) {
+                          setQuickMawmJob(job);
+                        } else {
+                          handleOpenJob(job.jobId);
+                        }
+                      }}>
+                        {(() => {
+                          const dStatus = job.dispatchStatus || '';
+                          if (dStatus.includes('DELIVERED') || dStatus.includes('200')) {
+                            return (
+                              <span
+                                className="badge"
+                                title="Click to view live MAWM Cloud 200 OK response"
+                                style={{
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.35rem',
+                                  backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                                  color: '#10b981',
+                                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                                  padding: '0.2rem 0.55rem',
+                                  borderRadius: 6,
+                                  fontWeight: 700,
+                                  fontSize: '0.73rem',
+                                }}
+                              >
+                                <CheckCircle2 size={12} />
+                                DELIVERED (200 OK)
+                              </span>
+                            );
+                          }
+                          if (dStatus.includes('FAIL') || dStatus.includes('ERROR')) {
+                            return (
+                              <span
+                                className="badge"
+                                title="MAWM Cloud delivery failed - Click to view diagnostics"
+                                style={{
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.35rem',
+                                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                                  color: '#ef4444',
+                                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                                  padding: '0.2rem 0.55rem',
+                                  borderRadius: 6,
+                                  fontWeight: 700,
+                                  fontSize: '0.73rem',
+                                }}
+                              >
+                                <AlertTriangle size={12} />
+                                FAILED
+                              </span>
+                            );
+                          }
+                          return (
+                            <span
+                              className="badge"
+                              title="Awaiting MAWM Cloud delivery"
+                              style={{
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                                color: '#f59e0b',
+                                border: '1px solid rgba(245, 158, 11, 0.3)',
+                                padding: '0.2rem 0.55rem',
+                                borderRadius: 6,
+                                fontWeight: 600,
+                                fontSize: '0.73rem',
+                              }}
+                            >
+                              <Clock size={12} />
+                              AWAITING
+                            </span>
+                          );
+                        })()}
+                      </td>
+
                       {/* 8. Ingestion Timestamp */}
                       <td>
                         <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
@@ -770,6 +1023,28 @@ export default function IntegrationJobsPage({
                       {/* 9. Inspect & Direct S3 Download Actions */}
                       <td style={{ textAlign: 'right', paddingRight: '1rem', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <button
+                            className="btn-secondary"
+                            style={{
+                              padding: '0.35rem 0.55rem',
+                              fontSize: '0.72rem',
+                              color: '#10b981',
+                              borderColor: 'rgba(16, 185, 129, 0.35)',
+                              backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              cursor: 'pointer'
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setQuickMawmJob(job);
+                            }}
+                            title="Inspect MAWM Cloud delivery telemetry and live 200 OK response"
+                          >
+                            <Server size={12} />
+                            <span>MAWM</span>
+                          </button>
                           <a
                             href={integrationApi.getRawDownloadUrl(job.jobId)}
                             download={resolveCustomerRawFilename(job)}
@@ -834,7 +1109,7 @@ export default function IntegrationJobsPage({
                 })
               ) : (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+                  <td colSpan={10} style={{ textAlign: 'center', padding: '3rem 1rem' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                       <AlertCircle size={28} color="var(--text-dim)" />
                       <div style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem' }}>
@@ -908,6 +1183,310 @@ export default function IntegrationJobsPage({
           </div>
         </div>
       </section>
+
+      {/* Quick MAWM Inspection Modal */}
+      {quickMawmJob && (
+        <div
+          className="modal-overlay"
+          onClick={() => setQuickMawmJob(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 1050,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+          }}
+        >
+          <div
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: '#0d1117',
+              border: '1px solid #30363d',
+              borderRadius: '12px',
+              width: '100%',
+              maxWidth: '820px',
+              maxHeight: '88vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                padding: '1rem 1.25rem',
+                borderBottom: '1px solid #30363d',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                backgroundColor: '#161b22',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <Server size={18} color="#10b981" />
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#f0f6fc', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span>MAWM Dispatch Telemetry Inspector</span>
+                    <span style={{ fontSize: '0.72rem', color: '#58a6ff', fontFamily: 'monospace', backgroundColor: 'rgba(56, 189, 248, 0.1)', padding: '0.15rem 0.4rem', borderRadius: 4 }}>
+                      {quickMawmJob.jobId}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: '#8b949e', marginTop: 2 }}>
+                    File: <strong>{quickMawmJob.originalFilename}</strong> • Source: <strong>{quickMawmJob.sourceSystem}</strong> • Facility: <strong>{quickMawmJob.facilityId || 'Food_Cbe'}</strong>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setQuickMawmJob(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#8b949e',
+                  cursor: 'pointer',
+                  padding: '0.25rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  borderRadius: '4px',
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '1.25rem', overflowY: 'auto', flex: 1 }}>
+              {/* Outbound Dispatch Specification */}
+              <div
+                style={{
+                  backgroundColor: '#161b22',
+                  border: '1px solid #30363d',
+                  borderRadius: '8px',
+                  padding: '0.85rem 1rem',
+                  marginBottom: '1rem',
+                  fontSize: '0.78rem',
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: '0.45rem', color: '#f0f6fc', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Server size={13} color="#10b981" />
+                  <span>Outbound HTTP Dispatch Specification</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.4rem', color: '#8b949e' }}>
+                  <div><strong>HTTP Method:</strong> <code style={{ color: '#10b981' }}>POST</code></div>
+                  <div><strong>Target Host:</strong> <code style={{ color: '#38bdf8' }}>https://ncsps.sce.manh.com</code></div>
+                  <div><strong>selectedLocation:</strong> <code style={{ color: '#f59e0b' }}>{quickMawmJob.facilityId || 'Food_Cbe'}</code></div>
+                  <div><strong>selectedOrganization:</strong> <code style={{ color: '#f59e0b' }}>{quickMawmJob.facilityId || 'Food_Cbe'}</code></div>
+                  <div><strong>selectedBusinessUnit:</strong> <code style={{ color: '#f59e0b' }}>{quickMawmJob.facilityId || 'Food_Cbe'}</code></div>
+                  <div><strong>Authorization:</strong> <code>Bearer &lt;OAuth2 Cached Token&gt;</code></div>
+                  <div>
+                    <strong>Dispatch Status:</strong>{' '}
+                    <strong style={{ color: quickMawmJob.dispatchStatus?.includes('200') || quickMawmJob.dispatchStatus?.includes('DELIVERED') ? '#10b981' : (quickMawmJob.dispatchStatus?.includes('FAIL') ? '#ef4444' : '#f59e0b') }}>
+                      {quickMawmJob.dispatchStatus || 'PENDING'}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payload Tabs */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', gap: '0.35rem' }}>
+                  <button
+                    onClick={() => setQuickMawmTab('response')}
+                    style={{
+                      padding: '0.35rem 0.75rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      borderRadius: '6px',
+                      border: '1px solid',
+                      borderColor: quickMawmTab === 'response' ? '#10b981' : '#30363d',
+                      backgroundColor: quickMawmTab === 'response' ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
+                      color: quickMawmTab === 'response' ? '#10b981' : '#8b949e',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                    }}
+                  >
+                    <CheckCircle2 size={13} />
+                    <span>MAWM Cloud Response</span>
+                  </button>
+                  <button
+                    onClick={() => setQuickMawmTab('payload')}
+                    style={{
+                      padding: '0.35rem 0.75rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      borderRadius: '6px',
+                      border: '1px solid',
+                      borderColor: quickMawmTab === 'payload' ? '#38bdf8' : '#30363d',
+                      backgroundColor: quickMawmTab === 'payload' ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
+                      color: quickMawmTab === 'payload' ? '#38bdf8' : '#8b949e',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                    }}
+                  >
+                    <Code size={13} />
+                    <span>Converted Request Payload</span>
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => {
+                    const text = quickMawmTab === 'response'
+                      ? (typeof quickMawmJob.mawmResponse === 'string' ? quickMawmJob.mawmResponse : JSON.stringify(quickMawmJob.mawmResponse, null, 2))
+                      : (quickMawmJob.rawContent || '// No payload available');
+                    navigator.clipboard?.writeText(text);
+                    setCopiedQuickMawm(true);
+                    setTimeout(() => setCopiedQuickMawm(false), 2000);
+                  }}
+                  style={{
+                    padding: '0.3rem 0.65rem',
+                    fontSize: '0.74rem',
+                    color: copiedQuickMawm ? '#10b981' : '#8b949e',
+                    border: '1px solid #30363d',
+                    backgroundColor: '#161b22',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.3rem',
+                  }}
+                >
+                  {copiedQuickMawm ? <Check size={12} /> : <Copy size={12} />}
+                  <span>{copiedQuickMawm ? 'Copied!' : 'Copy'}</span>
+                </button>
+              </div>
+
+              {/* Code Pre Block */}
+              <div
+                style={{
+                  backgroundColor: '#090d13',
+                  border: '1px solid #21262d',
+                  borderRadius: '8px',
+                  padding: '1rem',
+                  maxHeight: '360px',
+                  overflowY: 'auto',
+                  fontFamily: 'monospace',
+                  fontSize: '0.78rem',
+                  color: quickMawmTab === 'response' ? '#34d399' : '#e6edf3',
+                  lineHeight: 1.5,
+                }}
+              >
+                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                  {(() => {
+                    if (quickMawmTab === 'response') {
+                      if (!quickMawmJob.mawmResponse) {
+                        return JSON.stringify({
+                          status: quickMawmJob.dispatchStatus || 'PENDING',
+                          trackingId: quickMawmJob.jobId,
+                          message: quickMawmJob.dispatchStatus?.includes('DELIVERED')
+                            ? 'Acknowledged receipt by Manhattan Active WMS Cloud'
+                            : 'Waiting for MAWM Cloud response acknowledgment...',
+                        }, null, 2);
+                      }
+                      try {
+                        const parsed = typeof quickMawmJob.mawmResponse === 'string'
+                          ? JSON.parse(quickMawmJob.mawmResponse)
+                          : quickMawmJob.mawmResponse;
+                        return JSON.stringify(parsed, null, 2);
+                      } catch (e) {
+                        return String(quickMawmJob.mawmResponse);
+                      }
+                    } else {
+                      return quickMawmJob.rawContent || '// No payload available';
+                    }
+                  })()}
+                </pre>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div
+              style={{
+                padding: '0.85rem 1.25rem',
+                borderTop: '1px solid #30363d',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                backgroundColor: '#161b22',
+              }}
+            >
+              <button
+                onClick={() => setQuickMawmJob(null)}
+                style={{
+                  padding: '0.4rem 0.9rem',
+                  fontSize: '0.78rem',
+                  backgroundColor: '#21262d',
+                  border: '1px solid #30363d',
+                  color: '#c9d1d9',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                }}
+              >
+                Close
+              </button>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  onClick={() => {
+                    const id = quickMawmJob.jobId;
+                    setQuickMawmJob(null);
+                    handleOpenJob(id);
+                  }}
+                  style={{
+                    padding: '0.4rem 0.9rem',
+                    fontSize: '0.78rem',
+                    backgroundColor: 'transparent',
+                    border: '1px solid #38bdf8',
+                    color: '#38bdf8',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                  }}
+                >
+                  <Eye size={13} />
+                  <span>Full Job Details</span>
+                </button>
+                {(() => {
+                  const isOpti = quickMawmJob?.sourceSystem?.toUpperCase() === 'OPTI' || quickMawmJob?.sourceSystem?.toUpperCase() === 'OTPI';
+                  return (
+                    <button
+                      onClick={() => isOpti && handleRedispatchMawm(quickMawmJob.jobId)}
+                      disabled={isRedispatching || !isOpti}
+                      title={isOpti ? "Dispatch to Live Cloud" : "Rejection: Only Opti ERP is authorized for MAWM Cloud dispatch"}
+                      style={{
+                        padding: '0.4rem 0.9rem',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        backgroundColor: isOpti ? '#10b981' : 'rgba(100, 116, 139, 0.2)',
+                        border: isOpti ? 'none' : '1px solid rgba(100, 116, 139, 0.3)',
+                        color: isOpti ? '#ffffff' : '#94a3b8',
+                        borderRadius: '6px',
+                        cursor: (isRedispatching || !isOpti) ? 'not-allowed' : 'pointer',
+                        opacity: isOpti ? 1 : 0.5,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                      }}
+                    >
+                      <Send size={13} />
+                      <span>{!isOpti ? 'Opti Only' : isRedispatching ? 'Dispatching...' : 'Dispatch to Live Cloud'}</span>
+                    </button>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation Modal (Bootbox replacement) */}
       <ConfirmDialogModal

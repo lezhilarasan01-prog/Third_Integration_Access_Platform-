@@ -3,6 +3,7 @@ package com.platform.erp.transformer;
 import org.apache.camel.CamelContext;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -60,6 +61,11 @@ public class CamelDataFormatRegistry {
             return new FormatRoute("FLAT", (ctx, data, name) -> flatFileParser.parse(data, name));
         }
 
+        // 3. Plain text and generic binary streams fall back to content probe in TransformationRoutes
+        if (lower.contains("plain") || lower.contains("octet-stream")) {
+            return null;
+        }
+
         // 3. Dynamic Native Camel DataFormat resolution directly by MIME subtype
         String subType = extractSubtype(lower);
         String formatName = normalizeFormatName(subType);
@@ -71,7 +77,7 @@ public class CamelDataFormatRegistry {
                 return ctx.createProducerTemplate().requestBody(camelEndpoint, data);
             } catch (Exception e) {
                 // If not a built-in Camel unmarshaler, check if text content or wrap as universal record
-                return java.util.List.of(createBinaryRecord(formatName, name, data));
+                return List.of(createBinaryRecord(formatName, name, data));
             }
         });
     }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.platform.erp.config.KafkaTopicProperties;
 import com.platform.erp.mawm.MawmDispatcherService;
 import com.platform.erp.model.CanonicalEnvelope;
+import com.platform.erp.storage.BlobStorageService;
 import com.platform.erp.store.TransactionStore;
 import com.platform.erp.transformer.FileToJsonTransformer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -18,13 +19,10 @@ import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 @Service
 public class ErpFileConsumerService {
@@ -37,18 +35,7 @@ public class ErpFileConsumerService {
     private final ObjectMapper objectMapper;
     private final TransactionStore transactionStore;
     private final MawmDispatcherService mawmDispatcher;
-    private final com.platform.erp.storage.BlobStorageService blobStorageService;
-
-    private final Set<String> processedFingerprints = Collections.newSetFromMap(
-            new LinkedHashMap<String, Boolean>(1000, 0.75f, true) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
-                    return size() > 10000;
-                }
-            });
-
-    @org.springframework.beans.factory.annotation.Value("${platform.kafka.consumer.deduplication-enabled:true}")
-    private boolean deduplicationEnabled = true;
+    private final BlobStorageService blobStorageService;
 
     public ErpFileConsumerService(FileToJsonTransformer transformer,
             KafkaTemplate<String, byte[]> kafkaTemplate,
@@ -56,7 +43,7 @@ public class ErpFileConsumerService {
             ObjectMapper objectMapper,
             TransactionStore transactionStore,
             MawmDispatcherService mawmDispatcher,
-            com.platform.erp.storage.BlobStorageService blobStorageService) {
+            BlobStorageService blobStorageService) {
         this.transformer = transformer;
         this.kafkaTemplate = kafkaTemplate;
         this.topicProperties = topicProperties;
@@ -123,21 +110,7 @@ public class ErpFileConsumerService {
                 payloadBytes = record.value();
             }
 
-            // 1. Kafka Idempotency & Deduplication check
-            // Deduplicates by trackingId to handle Kafka redelivery while allowing new file uploads with identical content
-            if (deduplicationEnabled) {
-                synchronized (processedFingerprints) {
-                    if (processedFingerprints.contains(trackingId)) {
-                        log.warn("Duplicate Kafka delivery detected for TrackingId: {}. Skipping conversion.", trackingId);
-                        transactionStore.recordDuplicate(trackingId, erpSource, docType, filename);
-                        ack.acknowledge();
-                        return;
-                    }
-                    processedFingerprints.add(trackingId);
-                }
-            }
-
-            // 2. Format parsing & Canonical JSON conversion
+            // 1. Format parsing & Canonical JSON conversion
             CanonicalEnvelope envelope = transformer.transform(payloadBytes, erpSource, docType, trackingId, filename);
 
             // 3. Save to Transaction Store & Output Disk File
@@ -148,9 +121,18 @@ public class ErpFileConsumerService {
             log.info("Successfully converted {} records to MAWM Canonical JSON in {}ms. TrackingId: {}\n{}",
                     envelope.getTotalRecords(), (System.currentTimeMillis() - startTime), trackingId, jsonOutput);
 
-            // 4. Dispatch to MAWM Cloud REST Endpoint (or save/simulate if pending live
-            // URL)
-            mawmDispatcher.dispatch(envelope);
+            // 4. Dispatch to MAWM Cloud REST Endpoint ONLY if source is Opti
+            boolean isOpti = "Opti".equalsIgnoreCase(erpSource)
+                    || "OPTI".equalsIgnoreCase(erpSource)
+                    || "OTPI".equalsIgnoreCase(erpSource);
+            if (isOpti) {
+                mawmDispatcher.dispatch(envelope);
+            } else {
+                log.info("[Consumer] Non-Opti source '{}' converted. Skipping MAWM Cloud dispatch (Hot dispatch is exclusive to Opti). TrackingId: {}",
+                        erpSource, trackingId);
+                transactionStore.recordMawmStatus(trackingId, "CONVERTED (Opti Exclusive)", envelope.getTotalRecords(), 0,
+                        "{\"status\":\"CONVERTED\",\"hotDispatch\":false,\"erpSource\":\"" + erpSource + "\",\"message\":\"Payload converted to MAWM Canonical JSON. Hot dispatch is exclusive to Opti.\"}");
+            }
 
             // 5. Offset commit
             ack.acknowledge();

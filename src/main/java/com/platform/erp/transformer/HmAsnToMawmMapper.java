@@ -192,21 +192,6 @@ public class HmAsnToMawmMapper {
         return root;
     }
 
-    /**
-     * Converts JSON byte[] or String into HmInboundDeliveryMessage and maps to MAWM JSON string.
-     */
-    public String transformJson(String jsonInput) throws Exception {
-        HmInboundDeliveryMessage message = objectMapper.readValue(jsonInput, HmInboundDeliveryMessage.class);
-        Map<String, Object> result = transform(message);
-        return objectMapper.writeValueAsString(result);
-    }
-
-    public String transformJson(byte[] payloadBytes) throws Exception {
-        HmInboundDeliveryMessage message = objectMapper.readValue(payloadBytes, HmInboundDeliveryMessage.class);
-        Map<String, Object> result = transform(message);
-        return objectMapper.writeValueAsString(result);
-    }
-
     public static String formatNumber(Object val) {
         if (val == null) return null;
         String str = String.valueOf(val).trim();

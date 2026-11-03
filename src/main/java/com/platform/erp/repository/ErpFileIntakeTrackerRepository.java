@@ -34,6 +34,9 @@ public interface ErpFileIntakeTrackerRepository extends JpaRepository<ErpFileInt
     @Query("SELECT t.intakeStatus, COUNT(t) FROM ErpFileIntakeTracker t GROUP BY t.intakeStatus")
     List<Object[]> countGroupedByStatus();
 
+    @Query("SELECT t.dispatchStatus, COUNT(t) FROM ErpFileIntakeTracker t GROUP BY t.dispatchStatus")
+    List<Object[]> countGroupedByDispatchStatus();
+
     @org.springframework.data.jpa.repository.Modifying
     @org.springframework.transaction.annotation.Transactional
     @Query("DELETE FROM ErpFileIntakeTracker t WHERE LOWER(t.sourceSystem) IN ('files', 'ingest', 'raw')")

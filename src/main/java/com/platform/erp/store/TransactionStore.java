@@ -244,20 +244,56 @@ public class TransactionStore {
      * Stage 3: Deliver to MAWM
      */
     @Transactional
-    public void recordMawmStatus(String trackingId, String mawmStatus, int dispatchedCount, int failedCount) {
+    public void recordMawmStatus(String trackingId, String mawmStatus, int dispatchedCount, int failedCount, String mawmResponse) {
         trackerRepository.findByJobId(trackingId).ifPresent(tracker -> {
-            tracker.setDispatchStatus(mawmStatus);
+            String safeStatus = mawmStatus;
+            if (safeStatus != null && safeStatus.startsWith("DISPATCH_FAILED")) {
+                tracker.setProcessingErrorMessage(safeStatus);
+                safeStatus = "DISPATCH_FAILED";
+            } else if (safeStatus != null && safeStatus.length() > 64) {
+                safeStatus = safeStatus.substring(0, 64);
+            }
+            tracker.setDispatchStatus(safeStatus);
             tracker.setDispatchedRecords(dispatchedCount);
             tracker.setDispatchFailedRecords(failedCount);
             tracker.setDispatchCompletedAt(Instant.now());
+            if (mawmResponse != null && !mawmResponse.isBlank()) {
+                tracker.setMawmResponse(mawmResponse);
+            }
             tracker.setUpdatedAt(Instant.now());
             trackerRepository.save(tracker);
-            log.info("[DB Tracker] Updated MAWM dispatch status '{}' for jobId: {}", mawmStatus, trackingId);
+            log.info("[DB Tracker] Updated MAWM dispatch status '{}' and response for jobId: {}", safeStatus, trackingId);
         });
     }
 
+    @Transactional
+    public void recordMawmStatus(String trackingId, String mawmStatus, int dispatchedCount, int failedCount) {
+        recordMawmStatus(trackingId, mawmStatus, dispatchedCount, failedCount, null);
+    }
+
+    @Transactional
+    public void recordMawmFailure(String trackingId, String error, int failedCount, String mawmResponse) {
+        trackerRepository.findByJobId(trackingId).ifPresent(tracker -> {
+            tracker.setDispatchStatus("DISPATCH_FAILED");
+            tracker.setProcessingErrorMessage(error);
+            tracker.setDispatchFailedRecords(failedCount);
+            tracker.setDispatchCompletedAt(Instant.now());
+            if (mawmResponse != null && !mawmResponse.isBlank()) {
+                tracker.setMawmResponse(mawmResponse);
+            }
+            tracker.setUpdatedAt(Instant.now());
+            trackerRepository.save(tracker);
+            log.warn("[DB Tracker] Recorded MAWM DISPATCH_FAILED for jobId: {}", trackingId);
+        });
+    }
+
+    @Transactional
+    public void recordMawmFailure(String trackingId, String error, int failedCount) {
+        recordMawmFailure(trackingId, error, failedCount, null);
+    }
+
     public void recordMawmStatus(String trackingId, String mawmStatus) {
-        recordMawmStatus(trackingId, mawmStatus, 0, 0);
+        recordMawmStatus(trackingId, mawmStatus, 0, 0, null);
     }
 
     public Optional<ErpFileIntakeTracker> getTracker(String jobId) {
@@ -353,6 +389,37 @@ public class TransactionStore {
         );
     }
 
+    public Map<String, Object> getMawmStats() {
+        long delivered = 0;
+        long failed = 0;
+        long pending = 0;
+        long other = 0;
+        try {
+            List<Object[]> rows = trackerRepository.countGroupedByDispatchStatus();
+            for (Object[] r : rows) {
+                String status = r[0] != null ? r[0].toString().toUpperCase() : "UNKNOWN";
+                long c = ((Number) r[1]).longValue();
+                if (status.contains("DELIVERED") || status.contains("200")) {
+                    delivered += c;
+                } else if (status.contains("FAILED")) {
+                    failed += c;
+                } else if (status.contains("PENDING") || status.contains("AWAITING")) {
+                    pending += c;
+                } else {
+                    other += c;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not calculate dispatch counts: {}", e.getMessage());
+        }
+        return Map.of(
+            "total", delivered + failed + pending + other,
+            "delivered", delivered,
+            "failed", failed,
+            "pending", pending
+        );
+    }
+
     public List<ErpFileIntakeTracker> getDlqExceptions() {
         return trackerRepository.findDlqExceptions();
     }
@@ -388,6 +455,38 @@ public class TransactionStore {
         return trackerRepository.findByJobId(trackingId).map(this::mapToProcessedTransaction);
     }
 
+    /**
+     * Polls database briefly to wait for asynchronous Kafka conversion and MAWM Cloud dispatch.
+     * Returns as soon as dispatch completes/fails or timeout elapses.
+     */
+    public Optional<ErpFileIntakeTracker> waitForCompletion(String trackingId, long maxWaitMs) {
+        long deadline = System.currentTimeMillis() + maxWaitMs;
+        while (System.currentTimeMillis() < deadline) {
+            Optional<ErpFileIntakeTracker> opt = trackerRepository.findByJobId(trackingId);
+            if (opt.isPresent()) {
+                ErpFileIntakeTracker t = opt.get();
+                String dStatus = t.getDispatchStatus();
+                String iStatus = t.getIntakeStatus();
+                if ((dStatus != null && (dStatus.startsWith("DELIVERED") || dStatus.startsWith("DISPATCH_FAILED") || dStatus.contains("Opti Exclusive")))
+                        || "FAILED".equalsIgnoreCase(iStatus)
+                        || ("CONVERTED".equalsIgnoreCase(iStatus) && t.getOutputFiles() != null && !t.getOutputFiles().isBlank() && !isOptiSystem(t.getSourceSystem()))) {
+                    return opt;
+                }
+            }
+            try {
+                Thread.sleep(60);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        return trackerRepository.findByJobId(trackingId);
+    }
+
+    private boolean isOptiSystem(String s) {
+        return s != null && ("Opti".equalsIgnoreCase(s) || "OPTI".equalsIgnoreCase(s) || "OTPI".equalsIgnoreCase(s));
+    }
+
     public List<ProcessedTransaction> getAllTransactions() {
         List<ErpFileIntakeTracker> trackers = getAllTrackers(0, 500);
         List<ProcessedTransaction> result = new ArrayList<>();
@@ -409,6 +508,14 @@ public class TransactionStore {
         tx.setConvertedAt(tracker.getProcessingCompletedAt() != null ? tracker.getProcessingCompletedAt() : tracker.getReceivedAt());
         tx.setErrorMessage(tracker.getProcessingErrorMessage());
         tx.setMawmStatus(tracker.getDispatchStatus());
+
+        if (tracker.getMawmResponse() != null && !tracker.getMawmResponse().isBlank()) {
+            try {
+                tx.setMawmResponse(objectMapper.readTree(tracker.getMawmResponse()));
+            } catch (Exception e) {
+                tx.setMawmResponse(tracker.getMawmResponse());
+            }
+        }
 
         if (tracker.getOutputFiles() != null && !tracker.getOutputFiles().isBlank()) {
             try {

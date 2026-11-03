@@ -60,34 +60,25 @@ public class CamelTransformationEngine {
         exchange.getIn().setBody(payload);
 
         Exchange responseExchange = producerTemplate.send(TransformationRoutes.DIRECT_UNMARSHAL_AUTO, exchange);
-        String detectedFormat = responseExchange.getMessage().getHeader("DetectedFormat", "TEXT", String.class);
+        String detectedFormat = responseExchange.getMessage().getHeader("DetectedFormat", String.class);
         String json = responseExchange.getMessage().getBody(String.class);
 
         List<Map<String, Object>> records = normalizeToRecords(json);
-        if (records != null && !records.isEmpty() && (json == null || json.startsWith("[["))) {
-            try {
-                json = objectMapper.writeValueAsString(records);
-            } catch (Exception ignored) {
-            }
-        }
-        return new TransformationResult(detectedFormat != null ? detectedFormat : "TEXT", json, records);
-    }
-
-    /**
-     * Dedicated Apache Camel route for H&M Inbound Delivery to MAWM LPN-Level ASN.
-     */
-    public String transformHmAsnToMawm(byte[] payload) {
-        if (payload == null || payload.length == 0) {
-            return "{\"Data\":[]}";
-        }
-        return producerTemplate.requestBody(TransformationRoutes.DIRECT_HM_ASN_TO_MAWM, payload, String.class);
+        return new TransformationResult(detectedFormat, json, records);
     }
 
     /**
      * Auto-converts any incoming file format directly to JSON via Apache Camel.
      */
     public String autoConvertToJson(byte[] payload, String filename) {
-        return unmarshalAuto(payload, filename).json();
+        TransformationResult result = unmarshalAuto(payload, filename);
+        if (result.records() != null && !result.records().isEmpty()) {
+            try {
+                return objectMapper.writeValueAsString(result.records());
+            } catch (Exception ignored) {
+            }
+        }
+        return result.json();
     }
 
     /**
@@ -101,70 +92,68 @@ public class CamelTransformationEngine {
      * Normalizes Camel auto-converted JSON output into standard List of Map records.
      */
     @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> normalizeToRecords(Object result) {
-        if (result == null) {
+    private List<Map<String, Object>> normalizeToRecords(String json) {
+        if (json == null || json.isBlank()) {
             return Collections.emptyList();
         }
 
         try {
-            if (result instanceof java.io.InputStream is) {
-                result = objectMapper.readValue(is, Object.class);
-            } else if (result instanceof byte[] bytes) {
-                result = objectMapper.readValue(bytes, Object.class);
-            } else if (result instanceof String jsonString) {
-                result = objectMapper.readValue(jsonString, Object.class);
+            Object parsed = objectMapper.readValue(json, Object.class);
+
+            // Case 1: JSON array of objects
+            if (parsed instanceof List<?> list && !list.isEmpty()) {
+                if (list.get(0) instanceof Map) {
+                    return (List<Map<String, Object>>) (List<?>) list;
+                }
+                // Case 2: Tabular CSV/Excel rows (Row 0 = headers, Rows 1..N = row values)
+                if (list.get(0) instanceof List<?> headerRow && list.size() > 1) {
+                    return mapTabularRows(headerRow, list);
+                }
+            }
+
+            // Case 3: JSON or XML Object (unwraps XML root tags like <orders><order> if present)
+            if (parsed instanceof Map<?, ?> map) {
+                return unwrapRoot(map);
             }
         } catch (Exception e) {
             log.warn("Failed to parse Camel JSON output: {}", e.getMessage());
-            return Collections.emptyList();
-        }
-
-        if (result instanceof List<?> list) {
-            if (list.isEmpty()) {
-                return Collections.emptyList();
-            }
-            if (list.get(0) instanceof Map) {
-                return list.stream()
-                        .filter(Map.class::isInstance)
-                        .map(m -> (Map<String, Object>) m)
-                        .toList();
-            }
-            // Tabular format representation: row 0 = headers, rows 1..N = row values
-            if (list.get(0) instanceof List<?> headerRow && list.size() > 1) {
-                List<String> headers = headerRow.stream().map(Object::toString).toList();
-                List<Map<String, Object>> mappedRecords = new ArrayList<>();
-                for (int i = 1; i < list.size(); i++) {
-                    if (list.get(i) instanceof List<?> row) {
-                        Map<String, Object> map = new LinkedHashMap<>();
-                        for (int h = 0; h < headers.size() && h < row.size(); h++) {
-                            map.put(headers.get(h), row.get(h));
-                        }
-                        mappedRecords.add(map);
-                    }
-                }
-                return mappedRecords;
-            }
-        }
-
-        if (result instanceof Map<?, ?> rootMap) {
-            Map<?, ?> current = rootMap;
-            while (current.size() == 1) {
-                Object val = current.values().iterator().next();
-                if (val instanceof List<?> innerList) {
-                    return innerList.stream()
-                            .filter(Map.class::isInstance)
-                            .map(m -> (Map<String, Object>) m)
-                            .toList();
-                } else if (val instanceof Map<?, ?> innerMap) {
-                    current = innerMap;
-                } else {
-                    break;
-                }
-            }
-            return List.of((Map<String, Object>) current);
         }
 
         return Collections.emptyList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> unwrapRoot(Map<?, ?> rootMap) {
+        Map<?, ?> current = rootMap;
+        while (current.size() == 1) {
+            Object val = current.values().iterator().next();
+            if (val instanceof List<?> innerList) {
+                return innerList.stream()
+                        .filter(Map.class::isInstance)
+                        .map(m -> (Map<String, Object>) m)
+                        .toList();
+            } else if (val instanceof Map<?, ?> innerMap) {
+                current = innerMap;
+            } else {
+                break;
+            }
+        }
+        return List.of((Map<String, Object>) current);
+    }
+
+    private List<Map<String, Object>> mapTabularRows(List<?> headerRow, List<?> list) {
+        List<String> headers = headerRow.stream().map(Object::toString).toList();
+        List<Map<String, Object>> mappedRecords = new ArrayList<>(list.size() - 1);
+        for (int i = 1; i < list.size(); i++) {
+            if (list.get(i) instanceof List<?> row) {
+                Map<String, Object> map = new LinkedHashMap<>();
+                for (int h = 0; h < headers.size() && h < row.size(); h++) {
+                    map.put(headers.get(h), row.get(h));
+                }
+                mappedRecords.add(map);
+            }
+        }
+        return mappedRecords;
     }  
     private void ensureRoutesLoaded() {
         try {

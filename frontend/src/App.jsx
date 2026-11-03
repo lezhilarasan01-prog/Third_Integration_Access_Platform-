@@ -8,6 +8,7 @@ import LoginPage from './components/auth/LoginPage';
 import KafkaStudioPage from './components/studio/KafkaStudioPage';
 import S3ActivityPage from './components/s3/S3ActivityPage';
 import SettingsPage from './components/settings/SettingsPage';
+import MawmDispatchPage from './components/mawm/MawmDispatchPage';
 import TestUploadModal from './components/common/TestUploadModal';
 import JsonBeautifierModal from './components/common/JsonBeautifierModal';
 import { integrationApi } from './services/integrationApi';
@@ -213,6 +214,13 @@ export default function App() {
               <KafkaStudioPage initialTab={activeView === 'kafka-cli' ? 'cli' : activeView === 'errors' ? 'dlq' : 'visual'} />
             ) : activeView === 's3-activity' ? (
               <S3ActivityPage />
+            ) : activeView === 'delivery' ? (
+              <MawmDispatchPage
+                onReturnOverview={() => handleSelectView('overview')}
+                onNavigateToJobs={() => handleSelectView('jobs')}
+                onOpenTestUpload={() => setIsTestUploadOpen(true)}
+                onOpenBeautifier={handleOpenBeautifier}
+              />
             ) : activeView === 'settings' ? (
               <SettingsPage />
             ) : (

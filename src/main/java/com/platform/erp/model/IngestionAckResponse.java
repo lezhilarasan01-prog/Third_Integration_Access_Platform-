@@ -12,19 +12,30 @@ public class IngestionAckResponse {
     private final String filename;
     private final long sizeBytes;
     private final String status;
+    private final String dispatchStatus;
+    private final Object mawmResponse;
     private final String message;
     private final Instant timestamp;
 
     public IngestionAckResponse(String trackingId, String erpSource, String documentType,
-                                String filename, long sizeBytes, String status, String message, Instant timestamp) {
+                                String filename, long sizeBytes, String status,
+                                String dispatchStatus, Object mawmResponse,
+                                String message, Instant timestamp) {
         this.trackingId = trackingId;
         this.erpSource = erpSource;
         this.documentType = documentType;
         this.filename = filename;
         this.sizeBytes = sizeBytes;
         this.status = status;
+        this.dispatchStatus = dispatchStatus;
+        this.mawmResponse = mawmResponse;
         this.message = message;
         this.timestamp = timestamp;
+    }
+
+    public IngestionAckResponse(String trackingId, String erpSource, String documentType,
+                                String filename, long sizeBytes, String status, String message, Instant timestamp) {
+        this(trackingId, erpSource, documentType, filename, sizeBytes, status, null, null, message, timestamp);
     }
 
     public String getTrackingId() { return trackingId; }
@@ -33,6 +44,8 @@ public class IngestionAckResponse {
     public String getFilename() { return filename; }
     public long getSizeBytes() { return sizeBytes; }
     public String getStatus() { return status; }
+    public String getDispatchStatus() { return dispatchStatus; }
+    public Object getMawmResponse() { return mawmResponse; }
     public String getMessage() { return message; }
     public Instant getTimestamp() { return timestamp; }
 
@@ -47,6 +60,8 @@ public class IngestionAckResponse {
         private String filename;
         private long sizeBytes;
         private String status;
+        private String dispatchStatus;
+        private Object mawmResponse;
         private String message;
         private Instant timestamp;
 
@@ -56,11 +71,14 @@ public class IngestionAckResponse {
         public Builder filename(String filename) { this.filename = filename; return this; }
         public Builder sizeBytes(long sizeBytes) { this.sizeBytes = sizeBytes; return this; }
         public Builder status(String status) { this.status = status; return this; }
+        public Builder dispatchStatus(String dispatchStatus) { this.dispatchStatus = dispatchStatus; return this; }
+        public Builder mawmResponse(Object mawmResponse) { this.mawmResponse = mawmResponse; return this; }
         public Builder message(String message) { this.message = message; return this; }
         public Builder timestamp(Instant timestamp) { this.timestamp = timestamp; return this; }
 
         public IngestionAckResponse build() {
-            return new IngestionAckResponse(trackingId, erpSource, documentType, filename, sizeBytes, status, message, timestamp);
+            return new IngestionAckResponse(trackingId, erpSource, documentType, filename, sizeBytes, status,
+                    dispatchStatus, mawmResponse, message, timestamp);
         }
     }
 }

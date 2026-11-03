@@ -23,6 +23,7 @@ public class ProcessedTransaction {
     private Instant convertedAt;
     private CanonicalEnvelope canonicalEnvelope;
     private String mawmStatus;
+    private Object mawmResponse;
     private Object errorMessage;
 
     public ProcessedTransaction() {}
@@ -83,6 +84,9 @@ public class ProcessedTransaction {
 
     public String getMawmStatus() { return mawmStatus; }
     public void setMawmStatus(String mawmStatus) { this.mawmStatus = mawmStatus; }
+
+    public Object getMawmResponse() { return mawmResponse; }
+    public void setMawmResponse(Object mawmResponse) { this.mawmResponse = mawmResponse; }
 
     public Object getErrorMessage() {
         if (errorMessage instanceof String str) {

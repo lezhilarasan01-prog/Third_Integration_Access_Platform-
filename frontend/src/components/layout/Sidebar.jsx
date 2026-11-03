@@ -110,9 +110,9 @@ export default function Sidebar({
           id: 'delivery',
           label: 'MAWM Dispatch',
           icon: Radio,
-          badge: 'Staged',
-          badgeType: 'staged',
-          isUpcoming: true,
+          badge: 'Live',
+          badgeType: 'count',
+          isUpcoming: false,
           desc: 'Manhattan Active WM REST API telemetry'
         }
       ]
