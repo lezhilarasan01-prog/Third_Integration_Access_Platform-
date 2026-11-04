@@ -223,8 +223,8 @@ export default function MawmDispatchPage({
         </div>
       )}
 
-      {/* 2. Top Metric KPI Summary Cards (Clean: NO target host displayed!) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
+      {/* 2. Top Metric KPI Summary Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
         <div className="card" style={{ padding: '0.85rem 1rem', borderRadius: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
             <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>WMS CLOUD INTEGRATION</span>
@@ -232,26 +232,20 @@ export default function MawmDispatchPage({
               ONLINE
             </span>
           </div>
-          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+          <div style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>
             Active & Connected
-          </div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-            Token Status: <strong style={{ color: '#10b981' }}>OAuth2 Valid</strong>
           </div>
         </div>
 
         <div className="card" style={{ padding: '0.85rem 1rem', borderRadius: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>FACILITY & USER</span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>FACILITY</span>
             <span style={{ fontSize: '0.68rem', color: '#f59e0b', fontWeight: 700, backgroundColor: 'rgba(245, 158, 11, 0.12)', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
               ROUTING
             </span>
           </div>
-          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+          <div style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>
             {telemetry?.defaultFacility || 'Food_Cbe'}
-          </div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-            User: <strong style={{ color: '#a78bfa' }}>{telemetry?.username || 'lezhilarasan'}</strong>
           </div>
         </div>
 
@@ -263,9 +257,6 @@ export default function MawmDispatchPage({
           <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#38bdf8', lineHeight: 1.2 }}>
             {stats.verified}
           </div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-            Status Code: <strong style={{ color: '#38bdf8' }}>8000 Verified</strong>
-          </div>
         </div>
 
         <div className="card" style={{ padding: '0.85rem 1rem', borderRadius: '8px' }}>
@@ -275,9 +266,6 @@ export default function MawmDispatchPage({
           </div>
           <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#10b981', lineHeight: 1.2 }}>
             {stats.delivered}
-          </div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-            Status: <span style={{ color: '#10b981', fontWeight: 600 }}>200 OK</span>
           </div>
         </div>
       </div>
