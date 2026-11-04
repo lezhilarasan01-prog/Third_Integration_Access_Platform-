@@ -32,6 +32,9 @@ public interface TrackerSummaryProjection {
     Instant getDispatchStartedAt();
     Instant getDispatchCompletedAt();
     String getMawmResponse();
+    String getCreatedBy();
+    String getMawmAsnStatus();
+    String getOutputFiles();
 
     default String getRawContent() {
         return null;

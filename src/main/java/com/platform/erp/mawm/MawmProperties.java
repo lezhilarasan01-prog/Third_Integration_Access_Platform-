@@ -21,6 +21,7 @@ public class MawmProperties {
     private String poPath;
     private String defaultFacility;
     private String apiKey;
+    private String verifiedStatus = "8000";
 
     public MawmProperties() {}
 
@@ -56,4 +57,7 @@ public class MawmProperties {
 
     public String getApiKey() { return apiKey; }
     public void setApiKey(String apiKey) { this.apiKey = apiKey; }
+
+    public String getVerifiedStatus() { return verifiedStatus; }
+    public void setVerifiedStatus(String verifiedStatus) { this.verifiedStatus = verifiedStatus; }
 }

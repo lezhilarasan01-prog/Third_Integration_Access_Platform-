@@ -173,7 +173,7 @@ public class MawmDispatcherService {
     /**
      * Checks ASN verification status in MAWM Cloud using /receiving/api/receiving/asn/search
      * Query: AsnId in ('<AsnId>')
-     * Returns: { "data": [ { "AsnId": "...", "AsnStatus": "8000" } ] } where 8000 = Verified
+     * Returns: { "data": [ { "AsnId": "...", "AsnStatus": "..." } ] } containing the actual MAWM status
      */
     public Map<String, Object> searchAsnStatus(String asnId, String destinationFacilityId, String username) {
         if (asnId == null || asnId.isBlank()) {
@@ -207,22 +207,34 @@ public class MawmDispatcherService {
 
             JsonNode rootNode = objectMapper.readTree(responseBody);
             String asnStatus = null;
-            boolean isVerified = false;
+            String statusDescription = null;
 
             if (rootNode.has("data") && rootNode.get("data").isArray() && rootNode.get("data").size() > 0) {
                 JsonNode firstMatch = rootNode.get("data").get(0);
                 if (firstMatch.has("AsnStatus")) {
                     asnStatus = firstMatch.get("AsnStatus").asText();
-                    isVerified = "8000".equals(asnStatus);
+                }
+                if (firstMatch.has("StatusDescription")) {
+                    statusDescription = firstMatch.get("StatusDescription").asText();
+                } else if (firstMatch.has("AsnStatusDescription")) {
+                    statusDescription = firstMatch.get("AsnStatusDescription").asText();
+                } else if (firstMatch.has("Description")) {
+                    statusDescription = firstMatch.get("Description").asText();
+                } else {
+                    statusDescription = asnStatus;
                 }
             }
+
+            String configuredVerifiedStatus = mawmProperties.getVerifiedStatus();
+            boolean isVerified = configuredVerifiedStatus != null && !configuredVerifiedStatus.isBlank()
+                    && configuredVerifiedStatus.equalsIgnoreCase(asnStatus);
 
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("success", true);
             result.put("asnId", asnId.trim());
             result.put("asnStatus", asnStatus != null ? asnStatus : "UNKNOWN");
             result.put("isVerified", isVerified);
-            result.put("statusDescription", isVerified ? "8000 - Verified in MAWM" : ("Status: " + (asnStatus != null ? asnStatus : "Pending")));
+            result.put("statusDescription", statusDescription != null ? statusDescription : (asnStatus != null ? asnStatus : "NO_RECORD_FOUND"));
             result.put("rawResponse", responseBody);
             result.put("endpoint", searchEndpoint);
             result.put("facilityId", facility);
@@ -368,7 +380,7 @@ public class MawmDispatcherService {
         String rawContent = tracker.getRawContent();
 
         String asnId = null;
-        String destinationFacility = tracker.getFacilityId();
+        String destinationFacility = null;
         String createdBy = tracker.getCreatedBy();
 
         // Extract AsnId and DestinationFacilityId from converted outputFiles
@@ -381,9 +393,7 @@ public class MawmDispatcherService {
                     if (first.has("AsnId")) asnId = first.get("AsnId").asText();
                     else if (first.has("asnId")) asnId = first.get("asnId").asText();
 
-                    if (destinationFacility == null || destinationFacility.isBlank()) {
-                        if (first.has("DestinationFacilityId")) destinationFacility = first.get("DestinationFacilityId").asText();
-                    }
+                    if (first.has("DestinationFacilityId")) destinationFacility = first.get("DestinationFacilityId").asText();
                     if (createdBy == null || createdBy.isBlank()) {
                         if (first.has("CreatedBy")) createdBy = first.get("CreatedBy").asText();
                     }
@@ -391,9 +401,7 @@ public class MawmDispatcherService {
                     if (dataNode.has("AsnId")) asnId = dataNode.get("AsnId").asText();
                     else if (dataNode.has("asnId")) asnId = dataNode.get("asnId").asText();
 
-                    if (destinationFacility == null || destinationFacility.isBlank()) {
-                        if (dataNode.has("DestinationFacilityId")) destinationFacility = dataNode.get("DestinationFacilityId").asText();
-                    }
+                    if (dataNode.has("DestinationFacilityId")) destinationFacility = dataNode.get("DestinationFacilityId").asText();
                     if (createdBy == null || createdBy.isBlank()) {
                         if (dataNode.has("CreatedBy")) createdBy = dataNode.get("CreatedBy").asText();
                     }
@@ -402,12 +410,50 @@ public class MawmDispatcherService {
         }
 
         // Fallback from rawContent
-        if (asnId == null && rawContent != null && !rawContent.isBlank() && !rawContent.startsWith("[CLAIM_CHECK:")) {
+        if (rawContent != null && !rawContent.isBlank() && !rawContent.startsWith("[CLAIM_CHECK:")) {
             try {
                 JsonNode root = objectMapper.readTree(rawContent);
-                if (root.has("AsnId")) asnId = root.get("AsnId").asText();
-                else if (root.has("asnId")) asnId = root.get("asnId").asText();
+                if (destinationFacility == null && root.has("DestinationFacilityId")) {
+                    destinationFacility = root.get("DestinationFacilityId").asText();
+                }
+                if (asnId == null) {
+                    if (root.has("AsnId")) asnId = root.get("AsnId").asText();
+                    else if (root.has("asnId")) asnId = root.get("asnId").asText();
+                }
+                if (createdBy == null || createdBy.isBlank()) {
+                    if (root.has("CreatedBy")) createdBy = root.get("CreatedBy").asText();
+                }
             } catch (Exception ignored) {}
+        }
+
+        // Fallback from mawmResponse
+        if (tracker.getMawmResponse() != null && !tracker.getMawmResponse().isBlank()) {
+            try {
+                JsonNode root = objectMapper.readTree(tracker.getMawmResponse());
+                JsonNode dataNode = root.has("data") ? root.get("data") : root;
+                if (dataNode != null) {
+                    if (destinationFacility == null && dataNode.has("DestinationFacilityId")) {
+                        destinationFacility = dataNode.get("DestinationFacilityId").asText();
+                    }
+                    if (asnId == null) {
+                        if (dataNode.has("AsnId")) asnId = dataNode.get("AsnId").asText();
+                        else if (dataNode.has("asnId")) asnId = dataNode.get("asnId").asText();
+                        else if (dataNode.has("Asn") && dataNode.get("Asn").has("AsnId")) asnId = dataNode.get("Asn").get("AsnId").asText();
+                        else if (dataNode.has("AsnLine") && dataNode.get("AsnLine").isArray() && dataNode.get("AsnLine").size() > 0) {
+                            JsonNode line0 = dataNode.get("AsnLine").get(0);
+                            if (line0.has("AsnId")) asnId = line0.get("AsnId").asText();
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (destinationFacility == null || destinationFacility.isBlank() || "OPTI".equalsIgnoreCase(destinationFacility) || "SAMPLE".equalsIgnoreCase(destinationFacility)) {
+            destinationFacility = tracker.getFacilityId();
+        }
+        if (destinationFacility == null || destinationFacility.isBlank() || "OPTI".equalsIgnoreCase(destinationFacility) || "SAMPLE".equalsIgnoreCase(destinationFacility)) {
+            destinationFacility = mawmProperties.getDefaultFacility() != null && !mawmProperties.getDefaultFacility().isBlank()
+                    ? mawmProperties.getDefaultFacility() : "Food_Cbe";
         }
 
         if (asnId == null || asnId.isBlank()) {

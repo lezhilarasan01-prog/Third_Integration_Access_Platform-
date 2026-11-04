@@ -263,7 +263,7 @@ export default function JobDetailsPage({ jobId, onBack }) {
       if (updated) {
         setLiveJob((prev) => ({
           ...prev,
-          mawmAsnStatus: res.statusDescription || updated.mawmAsnStatus || (res.isVerified ? '8000 (Verified)' : 'Checked')
+          mawmAsnStatus: res.statusDescription || res.asnStatus || updated.mawmAsnStatus || 'Checked'
         }));
       }
     } catch (err) {
@@ -1764,7 +1764,7 @@ export default function JobDetailsPage({ jobId, onBack }) {
                   </div>
                   <div>
                     <strong>MAWM Verification (5.4.2):</strong>{' '}
-                    <strong style={{ color: job.mawmAsnStatus?.includes('8000') || job.mawmAsnStatus?.includes('Verified') ? '#10b981' : '#38bdf8' }}>
+                    <strong style={{ color: job.mawmAsnStatus ? '#38bdf8' : 'var(--text-muted)' }}>
                       {job.mawmAsnStatus || 'NOT VERIFIED'}
                     </strong>
                   </div>

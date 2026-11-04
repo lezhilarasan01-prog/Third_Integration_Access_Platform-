@@ -44,6 +44,7 @@ public class MawmTelemetryController {
         data.put("poPath", mawmProperties.getPoPath());
         data.put("defaultFacility", mawmProperties.getDefaultFacility());
         data.put("username", mawmProperties.getUsername());
+        data.put("verifiedStatus", mawmProperties.getVerifiedStatus());
         data.put("authStatus", mawmAuthService.getAuthStatus());
         data.put("stats", transactionStore.getMawmStats());
         return ResponseEntity.ok(data);
