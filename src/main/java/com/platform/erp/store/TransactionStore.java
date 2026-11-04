@@ -164,6 +164,13 @@ public class TransactionStore {
             tracker.setDispatchStatus("SAVED_AWAITING_ENDPOINT");
             tracker.setUpdatedAt(Instant.now());
 
+            if (envelope != null && envelope.getCreatedBy() != null && !envelope.getCreatedBy().isBlank()) {
+                tracker.setCreatedBy(envelope.getCreatedBy());
+            }
+            if (envelope != null && envelope.getFacilityId() != null && !envelope.getFacilityId().isBlank()) {
+                tracker.setFacilityId(envelope.getFacilityId());
+            }
+
             byte[] jsonBytes = jsonPayload.getBytes(java.nio.charset.StandardCharsets.UTF_8);
             if (blobStorageService.isLarge(jsonBytes.length)) {
                 String jsonBlobUri = blobStorageService.storeConvertedJson(trackingId, jsonPayload);
@@ -269,6 +276,16 @@ public class TransactionStore {
     @Transactional
     public void recordMawmStatus(String trackingId, String mawmStatus, int dispatchedCount, int failedCount) {
         recordMawmStatus(trackingId, mawmStatus, dispatchedCount, failedCount, null);
+    }
+
+    @Transactional
+    public void recordMawmAsnStatus(String trackingId, String asnStatus) {
+        trackerRepository.findByJobId(trackingId).ifPresent(tracker -> {
+            tracker.setMawmAsnStatus(asnStatus);
+            tracker.setUpdatedAt(Instant.now());
+            trackerRepository.save(tracker);
+            log.info("[DB Tracker] Updated MAWM ASN verification status '{}' for jobId: {}", asnStatus, trackingId);
+        });
     }
 
     @Transactional

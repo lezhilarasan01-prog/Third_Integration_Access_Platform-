@@ -25,7 +25,8 @@ import {
   Cloud,
   Trash2,
   Send,
-  Code
+  Code,
+  Search
 } from 'lucide-react';
 import { integrationApi } from '../../services/integrationApi';
 import ConfirmDialogModal from '../common/ConfirmDialogModal';
@@ -249,8 +250,28 @@ export default function JobDetailsPage({ jobId, onBack }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState('documents');
   const [isDispatchingMawm, setIsDispatchingMawm] = useState(false);
+  const [isVerifyingMawm, setIsVerifyingMawm] = useState(false);
   const [copiedMawmResponse, setCopiedMawmResponse] = useState(false);
   const [mawmActiveSubtab, setMawmActiveSubtab] = useState('response');
+
+  const handleVerifyMawmNow = async () => {
+    if (!jobId) return;
+    setIsVerifyingMawm(true);
+    try {
+      const res = await integrationApi.verifyJobAsn(jobId);
+      const updated = await integrationApi.getTrackerById(jobId);
+      if (updated) {
+        setLiveJob((prev) => ({
+          ...prev,
+          mawmAsnStatus: res.statusDescription || updated.mawmAsnStatus || (res.isVerified ? '8000 (Verified)' : 'Checked')
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to verify ASN in MAWM:', err);
+    } finally {
+      setIsVerifyingMawm(false);
+    }
+  };
 
   const handleDispatchMawmNow = async () => {
     if (!jobId) return;
@@ -1677,32 +1698,55 @@ export default function JobDetailsPage({ jobId, onBack }) {
                     <Server size={14} color="#10b981" />
                     <span>Outbound Manhattan Active WMS Cloud Dispatch Specification</span>
                   </div>
-                  {(() => {
-                    const isOpti = job.sourceSystem?.toUpperCase() === 'OPTI' || job.sourceSystem?.toUpperCase() === 'OTPI';
-                    return (
-                      <button
-                        onClick={() => isOpti && handleDispatchMawmNow()}
-                        disabled={isDispatchingMawm || !isOpti}
-                        className="btn-primary"
-                        title={isOpti ? "Redeliver to MAWM Cloud" : "Rejection: Only Opti ERP is authorized for MAWM Cloud dispatch"}
-                        style={{
-                          padding: '0.35rem 0.75rem',
-                          fontSize: '0.74rem',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.3rem',
-                          opacity: isOpti ? 1 : 0.45,
-                          cursor: isOpti ? 'pointer' : 'not-allowed',
-                          backgroundColor: !isOpti ? 'rgba(100, 116, 139, 0.2)' : undefined,
-                          borderColor: !isOpti ? 'rgba(100, 116, 139, 0.3)' : undefined,
-                          color: !isOpti ? '#94a3b8' : undefined
-                        }}
-                      >
-                        <Send size={12} />
-                        <span>{!isOpti ? 'Opti Only' : isDispatchingMawm ? 'Dispatching...' : 'Redeliver to MAWM Cloud'}</span>
-                      </button>
-                    );
-                  })()}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                    {(() => {
+                      const isOpti = job.sourceSystem?.toUpperCase() === 'OPTI' || job.sourceSystem?.toUpperCase() === 'OTPI';
+                      return (
+                        <>
+                          <button
+                            onClick={() => isOpti && handleVerifyMawmNow()}
+                            disabled={isVerifyingMawm || !isOpti}
+                            className="btn-secondary"
+                            title={isOpti ? "Check ASN Verification Status (5.4.2 /asn/search)" : "Rejection: Only Opti ERP is authorized for MAWM Cloud verification"}
+                            style={{
+                              padding: '0.35rem 0.75rem',
+                              fontSize: '0.74rem',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              opacity: isOpti ? 1 : 0.45,
+                              cursor: isOpti ? 'pointer' : 'not-allowed'
+                            }}
+                          >
+                            <Search size={12} className={isVerifyingMawm ? 'spin-icon' : ''} />
+                            <span>{!isOpti ? 'Opti Only' : isVerifyingMawm ? 'Checking...' : 'Check Verification (5.4.2)'}</span>
+                          </button>
+
+                          <button
+                            onClick={() => isOpti && handleDispatchMawmNow()}
+                            disabled={isDispatchingMawm || !isOpti}
+                            className="btn-primary"
+                            title={isOpti ? "Redeliver to MAWM Cloud (5.4.1 /asn/save)" : "Rejection: Only Opti ERP is authorized for MAWM Cloud dispatch"}
+                            style={{
+                              padding: '0.35rem 0.75rem',
+                              fontSize: '0.74rem',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              opacity: isOpti ? 1 : 0.45,
+                              cursor: isOpti ? 'pointer' : 'not-allowed',
+                              backgroundColor: !isOpti ? 'rgba(100, 116, 139, 0.2)' : undefined,
+                              borderColor: !isOpti ? 'rgba(100, 116, 139, 0.3)' : undefined,
+                              color: !isOpti ? '#94a3b8' : undefined
+                            }}
+                          >
+                            <Send size={12} className={isDispatchingMawm ? 'spin-icon' : ''} />
+                            <span>{!isOpti ? 'Opti Only' : isDispatchingMawm ? 'Dispatching...' : 'Redeliver to MAWM Cloud'}</span>
+                          </button>
+                        </>
+                      );
+                    })()}
+                  </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.5rem', color: 'var(--text-muted)' }}>
                   <div><strong>HTTP Method:</strong> <code style={{ color: '#10b981' }}>POST</code></div>
@@ -1710,11 +1754,18 @@ export default function JobDetailsPage({ jobId, onBack }) {
                   <div><strong>selectedLocation:</strong> <code style={{ color: '#f59e0b' }}>{job.facilityId || 'Food_Cbe'}</code></div>
                   <div><strong>selectedOrganization:</strong> <code style={{ color: '#f59e0b' }}>{job.facilityId || 'Food_Cbe'}</code></div>
                   <div><strong>selectedBusinessUnit:</strong> <code style={{ color: '#f59e0b' }}>{job.facilityId || 'Food_Cbe'}</code></div>
+                  <div><strong>Created By (User):</strong> <code style={{ color: '#a78bfa' }}>{job.createdBy || 'Default (Property)'}</code></div>
                   <div><strong>Authorization:</strong> <code>Bearer &lt;OAuth2 Cached Token&gt;</code></div>
                   <div>
-                    <strong>Dispatch Status:</strong>{' '}
+                    <strong>Dispatch Status (5.4.1):</strong>{' '}
                     <strong style={{ color: job.dispatchStatus?.includes('200') || job.dispatchStatus?.includes('DELIVERED') ? '#10b981' : (job.dispatchStatus?.includes('FAIL') ? '#ef4444' : '#f59e0b') }}>
                       {job.dispatchStatus || 'PENDING'}
+                    </strong>
+                  </div>
+                  <div>
+                    <strong>MAWM Verification (5.4.2):</strong>{' '}
+                    <strong style={{ color: job.mawmAsnStatus?.includes('8000') || job.mawmAsnStatus?.includes('Verified') ? '#10b981' : '#38bdf8' }}>
+                      {job.mawmAsnStatus || 'NOT VERIFIED'}
                     </strong>
                   </div>
                   <div><strong>Dispatched Timestamp:</strong> <span>{job.dispatchCompletedAt ? new Date(job.dispatchCompletedAt).toLocaleString() : 'N/A'}</span></div>

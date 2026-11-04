@@ -17,6 +17,7 @@ public class MawmProperties {
     private String password;
     private String baseUrl;
     private String asnPath;
+    private String asnSearchPath = "/receiving/api/receiving/asn/search";
     private String poPath;
     private String defaultFacility;
     private String apiKey;
@@ -43,6 +44,9 @@ public class MawmProperties {
 
     public String getAsnPath() { return asnPath; }
     public void setAsnPath(String asnPath) { this.asnPath = asnPath; }
+
+    public String getAsnSearchPath() { return asnSearchPath; }
+    public void setAsnSearchPath(String asnSearchPath) { this.asnSearchPath = asnSearchPath; }
 
     public String getPoPath() { return poPath; }
     public void setPoPath(String poPath) { this.poPath = poPath; }

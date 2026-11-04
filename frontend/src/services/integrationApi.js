@@ -668,5 +668,30 @@ export const integrationApi = {
       throw new Error(err.error || 'Failed to dispatch job to MAWM');
     }
     return res.json();
+  },
+
+  async searchAsnVerification(asnId, facilityId = 'Food_Cbe', username) {
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/search-asn`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ asnId, facilityId, username })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to query MAWM ASN verification search API');
+    }
+    return res.json();
+  },
+
+  async verifyJobAsn(jobId) {
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/verify/${encodeURIComponent(jobId)}`, {
+      method: 'POST'
+    });
+    this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to verify ASN status in MAWM');
+    }
+    return res.json();
   }
 };

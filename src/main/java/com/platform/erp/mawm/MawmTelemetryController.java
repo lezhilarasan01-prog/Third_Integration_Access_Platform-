@@ -40,6 +40,7 @@ public class MawmTelemetryController {
         data.put("baseUrl", mawmProperties.getBaseUrl());
         data.put("authUrl", mawmProperties.getAuthUrl());
         data.put("asnPath", mawmProperties.getAsnPath());
+        data.put("asnSearchPath", mawmProperties.getAsnSearchPath());
         data.put("poPath", mawmProperties.getPoPath());
         data.put("defaultFacility", mawmProperties.getDefaultFacility());
         data.put("username", mawmProperties.getUsername());
@@ -53,9 +54,9 @@ public class MawmTelemetryController {
      * POST /api/v1/erp/mawm/test-connection
      */
     @PostMapping("/test-connection")
-    public ResponseEntity<Map<String, Object>> testConnection() {
+    public ResponseEntity<Map<String, Object>> testConnection(@RequestParam(value = "username", required = false) String username) {
         try {
-            Map<String, Object> result = mawmAuthService.testConnection();
+            Map<String, Object> result = mawmAuthService.testConnection(username);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of(
@@ -63,6 +64,40 @@ public class MawmTelemetryController {
                     "error", e.getMessage()
             ));
         }
+    }
+
+    /**
+     * Search and check live ASN verification status in MAWM Cloud.
+     * POST /api/v1/erp/mawm/search-asn
+     */
+    @PostMapping("/search-asn")
+    public ResponseEntity<Map<String, Object>> searchAsnStatus(
+            @RequestBody(required = false) Map<String, String> body,
+            @RequestParam(value = "asnId", required = false) String paramAsnId,
+            @RequestParam(value = "facilityId", required = false) String paramFacility,
+            @RequestParam(value = "username", required = false) String paramUsername) {
+        String asnId = paramAsnId != null && !paramAsnId.isBlank()
+                ? paramAsnId
+                : (body != null ? body.get("asnId") : null);
+        String facility = paramFacility != null && !paramFacility.isBlank()
+                ? paramFacility
+                : (body != null ? body.get("facilityId") : null);
+        String username = paramUsername != null && !paramUsername.isBlank()
+                ? paramUsername
+                : (body != null ? body.get("username") : null);
+
+        Map<String, Object> result = mawmDispatcherService.searchAsnStatus(asnId, facility, username);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Verify the ASN status for a specific job in PostgreSQL against live MAWM Cloud search.
+     * POST /api/v1/erp/mawm/verify/{jobId}
+     */
+    @PostMapping("/verify/{jobId}")
+    public ResponseEntity<Map<String, Object>> verifyJobAsn(@PathVariable("jobId") String jobId) {
+        Map<String, Object> result = mawmDispatcherService.verifyJobAsn(jobId);
+        return ResponseEntity.ok(result);
     }
 
     /**

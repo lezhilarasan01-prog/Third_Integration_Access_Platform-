@@ -49,14 +49,62 @@ public class FileToJsonTransformer {
         List<Map<String, Object>> records = result.records();
         String detectedFormat = result.detectedFormat();
 
-        log.info("[Intake: {}] Camel detected format '{}' for file '{}' (ERP: {}, DocType: {})", 
-                trackingId, detectedFormat, filename, erpSource, resolvedDocType);
+        // 2. Extract DestinationFacilityId and CreatedBy from unmarshaled records or raw JSON
+        String payloadDestinationFacility = null;
+        String payloadCreatedBy = null;
+
+        if (records != null && !records.isEmpty()) {
+            for (Map<String, Object> r : records) {
+                if (payloadDestinationFacility == null) {
+                    if (r.get("DestinationFacilityId") != null && !String.valueOf(r.get("DestinationFacilityId")).isBlank()) {
+                        payloadDestinationFacility = String.valueOf(r.get("DestinationFacilityId")).trim();
+                    } else if (r.get("destinationFacilityId") != null && !String.valueOf(r.get("destinationFacilityId")).isBlank()) {
+                        payloadDestinationFacility = String.valueOf(r.get("destinationFacilityId")).trim();
+                    }
+                }
+                if (payloadCreatedBy == null) {
+                    if (r.get("CreatedBy") != null && !String.valueOf(r.get("CreatedBy")).isBlank()) {
+                        payloadCreatedBy = String.valueOf(r.get("CreatedBy")).trim();
+                    } else if (r.get("createdBy") != null && !String.valueOf(r.get("createdBy")).isBlank()) {
+                        payloadCreatedBy = String.valueOf(r.get("createdBy")).trim();
+                    }
+                }
+                if (payloadDestinationFacility != null && payloadCreatedBy != null) break;
+            }
+        }
+
+        if ((payloadDestinationFacility == null || payloadCreatedBy == null) && rawPayload != null && rawPayload.length > 0) {
+            try {
+                String str = new String(rawPayload, java.nio.charset.StandardCharsets.UTF_8);
+                if (str.trim().startsWith("{") || str.trim().startsWith("[")) {
+                    com.fasterxml.jackson.databind.JsonNode rootNode = new com.fasterxml.jackson.databind.ObjectMapper().readTree(rawPayload);
+                    if (payloadDestinationFacility == null) {
+                        if (rootNode.has("DestinationFacilityId")) payloadDestinationFacility = rootNode.get("DestinationFacilityId").asText();
+                        else if (rootNode.has("destinationFacilityId")) payloadDestinationFacility = rootNode.get("destinationFacilityId").asText();
+                    }
+                    if (payloadCreatedBy == null) {
+                        if (rootNode.has("CreatedBy")) payloadCreatedBy = rootNode.get("CreatedBy").asText();
+                        else if (rootNode.has("createdBy")) payloadCreatedBy = rootNode.get("createdBy").asText();
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (payloadDestinationFacility != null && !payloadDestinationFacility.isBlank()) {
+            facilityId = payloadDestinationFacility;
+        }
+
+        log.info("[Intake: {}] Camel detected format '{}' for file '{}' (ERP: {}, DocType: {}, Facility: {}, CreatedBy: {})", 
+                trackingId, detectedFormat, filename, erpSource, resolvedDocType, facilityId, payloadCreatedBy);
 
         // 3. Wrap unmarshaled records directly into CanonicalEnvelope
         CanonicalEnvelope envelope = new CanonicalEnvelope(trackingId, erpSource, resolvedDocType, filename, records.size(),
                 Instant.now(), records);
         envelope.setFacilityId(facilityId);
         envelope.setSourceFormat(detectedFormat);
+        if (payloadCreatedBy != null && !payloadCreatedBy.isBlank()) {
+            envelope.setCreatedBy(payloadCreatedBy);
+        }
 
         // 4. Structure into universal MAWM { "Data": [ ... ] } dynamic envelope
         List<Map<String, Object>> mawmData = mawmBuilder.buildMawmData(records, rawPayload, erpSource, resolvedDocType, facilityId);

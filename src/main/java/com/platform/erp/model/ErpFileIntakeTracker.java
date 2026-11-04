@@ -112,6 +112,12 @@ public class ErpFileIntakeTracker {
     @Column(name = "mawm_response", columnDefinition = "TEXT")
     private String mawmResponse;
 
+    @Column(name = "created_by", length = 128)
+    private String createdBy;
+
+    @Column(name = "mawm_asn_status", length = 64)
+    private String mawmAsnStatus;
+
     public ErpFileIntakeTracker() {
     }
 
@@ -406,5 +412,21 @@ public class ErpFileIntakeTracker {
 
     public void setMawmResponse(String mawmResponse) {
         this.mawmResponse = mawmResponse;
+    }
+
+    public String getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(String createdBy) {
+        this.createdBy = createdBy;
+    }
+
+    public String getMawmAsnStatus() {
+        return mawmAsnStatus;
+    }
+
+    public void setMawmAsnStatus(String mawmAsnStatus) {
+        this.mawmAsnStatus = mawmAsnStatus;
     }
 }

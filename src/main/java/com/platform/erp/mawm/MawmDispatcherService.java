@@ -10,7 +10,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -62,22 +64,45 @@ public class MawmDispatcherService {
                 ("ASN".equalsIgnoreCase(envelope.getDocumentType()) ? mawmProperties.getAsnPath() : mawmProperties.getPoPath());
 
         try {
-            // Determine Facility ID (guaranteeing valid MAWM facility, defaulting to Food_Cbe)
-            String configuredFacility = (mawmProperties.getDefaultFacility() != null && !mawmProperties.getDefaultFacility().isBlank())
-                    ? mawmProperties.getDefaultFacility()
-                    : "Food_Cbe";
-            String facilityId = (envelope.getFacilityId() != null && envelope.getFacilityId().equalsIgnoreCase(configuredFacility))
-                    ? envelope.getFacilityId()
-                    : configuredFacility;
+            // Extract DestinationFacilityId directly from data records or envelope (mandatory for MAWM headers)
+            String destinationFacilityId = null;
+            if (envelope.getData() != null && !envelope.getData().isEmpty()) {
+                Map<String, Object> first = envelope.getData().get(0);
+                if (first.get("DestinationFacilityId") != null && !String.valueOf(first.get("DestinationFacilityId")).isBlank()) {
+                    destinationFacilityId = String.valueOf(first.get("DestinationFacilityId")).trim();
+                } else if (first.get("destinationFacilityId") != null && !String.valueOf(first.get("destinationFacilityId")).isBlank()) {
+                    destinationFacilityId = String.valueOf(first.get("destinationFacilityId")).trim();
+                }
+            }
+            if (destinationFacilityId == null && envelope.getRecords() != null && !envelope.getRecords().isEmpty()) {
+                Map<String, Object> first = envelope.getRecords().get(0);
+                if (first.get("DestinationFacilityId") != null && !String.valueOf(first.get("DestinationFacilityId")).isBlank()) {
+                    destinationFacilityId = String.valueOf(first.get("DestinationFacilityId")).trim();
+                } else if (first.get("destinationFacilityId") != null && !String.valueOf(first.get("destinationFacilityId")).isBlank()) {
+                    destinationFacilityId = String.valueOf(first.get("destinationFacilityId")).trim();
+                }
+            }
+            if (destinationFacilityId == null || destinationFacilityId.isBlank()) {
+                destinationFacilityId = (envelope.getFacilityId() != null && !envelope.getFacilityId().isBlank())
+                        ? envelope.getFacilityId().trim()
+                        : (mawmProperties.getDefaultFacility() != null && !mawmProperties.getDefaultFacility().isBlank()
+                            ? mawmProperties.getDefaultFacility().trim()
+                            : "Food_Cbe");
+            }
+
+            // Extract CreatedBy username if present in ingestion payload; else default to app properties
+            String effectiveUsername = (envelope.getCreatedBy() != null && !envelope.getCreatedBy().isBlank())
+                    ? envelope.getCreatedBy().trim()
+                    : mawmProperties.getUsername();
 
             // Prepare payload for MAWM
             // For ASN: MAWM /receiving/api/receiving/asn/save expects the individual ASN object
             Object payloadToSend;
             if (envelope.getData() != null && !envelope.getData().isEmpty()) {
                 Map<String, Object> asnMap = envelope.getData().get(0);
-                // Ensure DestinationFacilityId matches the facility if not already populated
+                // Ensure DestinationFacilityId matches if not already populated
                 if (asnMap.get("DestinationFacilityId") == null || String.valueOf(asnMap.get("DestinationFacilityId")).isBlank()) {
-                    asnMap.put("DestinationFacilityId", facilityId);
+                    asnMap.put("DestinationFacilityId", destinationFacilityId);
                 }
                 payloadToSend = asnMap;
             } else {
@@ -86,11 +111,11 @@ public class MawmDispatcherService {
 
             String jsonPayload = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(payloadToSend);
 
-            log.info("[MAWM Dispatcher] Dispatching converted ASN to MAWM Cloud Endpoint: {} (TrackingId: {}, Facility: {})",
-                    targetEndpoint, trackingId, facilityId);
+            log.info("[MAWM Dispatcher] Dispatching converted ASN to MAWM Cloud Endpoint: {} (TrackingId: {}, DestinationFacilityId: {}, User: {})",
+                    targetEndpoint, trackingId, destinationFacilityId, effectiveUsername);
 
             // Execute HTTP POST with automatic token regeneration & retry on 401/403 (zero process interruption)
-            String responseBody = executeWithAuthRetry(targetEndpoint, facilityId, jsonPayload);
+            String responseBody = executeWithAuthRetry(targetEndpoint, destinationFacilityId, effectiveUsername, jsonPayload);
 
             int count = (envelope.getData() != null && !envelope.getData().isEmpty()) ? envelope.getData().size() : 1;
             log.info("[MAWM Dispatcher] MAWM Cloud acknowledged receipt for TrackingId: {}. Response: {}",
@@ -112,37 +137,187 @@ public class MawmDispatcherService {
     /**
      * Executes HTTP POST to MAWM with zero-interruption automatic token retry.
      * If MAWM rejects the request with 401 or 403 (token expired/revoked),
-     * it immediately invalidates the token, fetches a fresh OAuth2 Bearer token,
+     * it immediately invalidates the token for the user, fetches a fresh OAuth2 Bearer token,
      * and retries the dispatch automatically without failing or interrupting the pipeline.
      */
-    private String executeWithAuthRetry(String targetEndpoint, String facilityId, String jsonPayload) {
-        String bearerToken = mawmAuthService.getAccessToken();
+    private String executeWithAuthRetry(String targetEndpoint, String destinationFacilityId, String username, String jsonPayload) {
+        String bearerToken = mawmAuthService.getAccessToken(username);
         try {
-            return sendToMawm(targetEndpoint, facilityId, bearerToken, jsonPayload);
-        } catch (org.springframework.web.client.RestClientResponseException rcre) {
+            return sendToMawm(targetEndpoint, destinationFacilityId, bearerToken, jsonPayload);
+        } catch (RestClientResponseException rcre) {
             int statusCode = rcre.getStatusCode().value();
             if (statusCode == 401 || statusCode == 403) {
-                log.warn("[MAWM Dispatcher] MAWM Cloud returned HTTP {} Unauthorized (token expired/invalid). " +
-                        "Auto-regenerating token and retrying dispatch without interruption...", statusCode);
-                mawmAuthService.invalidateToken();
-                String freshToken = mawmAuthService.getAccessToken();
-                return sendToMawm(targetEndpoint, facilityId, freshToken, jsonPayload);
+                log.warn("[MAWM Dispatcher] MAWM Cloud returned HTTP {} Unauthorized for user '{}'. " +
+                        "Auto-regenerating token and retrying dispatch without interruption...", statusCode, username);
+                mawmAuthService.invalidateToken(username);
+                String freshToken = mawmAuthService.getAccessToken(username);
+                return sendToMawm(targetEndpoint, destinationFacilityId, freshToken, jsonPayload);
             }
             throw rcre;
         }
     }
 
-    private String sendToMawm(String targetEndpoint, String facilityId, String bearerToken, String jsonPayload) {
+    private String sendToMawm(String targetEndpoint, String destinationFacilityId, String bearerToken, String jsonPayload) {
         return restClient.post()
                 .uri(targetEndpoint)
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("Authorization", "Bearer " + bearerToken)
-                .header("selectedLocation", facilityId)
-                .header("selectedOrganization", facilityId)
-                .header("selectedBusinessUnit", facilityId)
+                .header("selectedLocation", destinationFacilityId)
+                .header("selectedOrganization", destinationFacilityId)
+                .header("selectedBusinessUnit", destinationFacilityId)
                 .body(jsonPayload)
                 .retrieve()
                 .body(String.class);
+    }
+
+    /**
+     * Checks ASN verification status in MAWM Cloud using /receiving/api/receiving/asn/search
+     * Query: AsnId in ('<AsnId>')
+     * Returns: { "data": [ { "AsnId": "...", "AsnStatus": "8000" } ] } where 8000 = Verified
+     */
+    public Map<String, Object> searchAsnStatus(String asnId, String destinationFacilityId, String username) {
+        if (asnId == null || asnId.isBlank()) {
+            return Map.of("success", false, "error", "AsnId is mandatory for verification search");
+        }
+
+        String facility = (destinationFacilityId != null && !destinationFacilityId.isBlank())
+                ? destinationFacilityId.trim()
+                : (mawmProperties.getDefaultFacility() != null ? mawmProperties.getDefaultFacility().trim() : "Food_Cbe");
+
+        String effectiveUsername = (username != null && !username.isBlank())
+                ? username.trim()
+                : mawmProperties.getUsername();
+
+        String searchEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getAsnSearchPath();
+
+        Map<String, Object> requestPayload = Map.of(
+                "Query", "AsnId in ('" + asnId.trim() + "')",
+                "Template", Map.of(
+                        "AsnId", "",
+                        "AsnStatus", ""
+                )
+        );
+
+        try {
+            String jsonPayload = objectMapper.writeValueAsString(requestPayload);
+            log.info("[MAWM Search] Checking verification status for AsnId: '{}' at {} (Facility: {}, User: {})",
+                    asnId, searchEndpoint, facility, effectiveUsername);
+
+            String responseBody = executeWithAuthRetry(searchEndpoint, facility, effectiveUsername, jsonPayload);
+
+            JsonNode rootNode = objectMapper.readTree(responseBody);
+            String asnStatus = null;
+            boolean isVerified = false;
+
+            if (rootNode.has("data") && rootNode.get("data").isArray() && rootNode.get("data").size() > 0) {
+                JsonNode firstMatch = rootNode.get("data").get(0);
+                if (firstMatch.has("AsnStatus")) {
+                    asnStatus = firstMatch.get("AsnStatus").asText();
+                    isVerified = "8000".equals(asnStatus);
+                }
+            }
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("asnId", asnId.trim());
+            result.put("asnStatus", asnStatus != null ? asnStatus : "UNKNOWN");
+            result.put("isVerified", isVerified);
+            result.put("statusDescription", isVerified ? "8000 - Verified in MAWM" : ("Status: " + (asnStatus != null ? asnStatus : "Pending")));
+            result.put("rawResponse", responseBody);
+            result.put("endpoint", searchEndpoint);
+            result.put("facilityId", facility);
+            result.put("username", effectiveUsername);
+            result.put("queryPayload", requestPayload);
+            return result;
+
+        } catch (Exception ex) {
+            log.error("[MAWM Search] Failed searching ASN verification for {}: {}", asnId, ex.getMessage(), ex);
+            return Map.of(
+                    "success", false,
+                    "asnId", asnId,
+                    "error", ex.getMessage() != null ? ex.getMessage() : ex.toString(),
+                    "endpoint", searchEndpoint
+            );
+        }
+    }
+
+    /**
+     * Verifies the ASN status for a specific integration job by inspecting its payload and querying MAWM.
+     */
+    public Map<String, Object> verifyJobAsn(String jobId) {
+        var optTracker = transactionStore.getTracker(jobId);
+        if (optTracker.isEmpty()) {
+            return Map.of("success", false, "error", "Job not found: " + jobId);
+        }
+        var tracker = optTracker.get();
+        String source = tracker.getSourceSystem();
+        boolean isOpti = source != null && ("Opti".equalsIgnoreCase(source) || "OPTI".equalsIgnoreCase(source) || "OTPI".equalsIgnoreCase(source));
+        if (!isOpti) {
+            log.info("[MAWM Search] Live cloud verification is exclusive to Opti ERP feeds. Non-Opti source: '{}', JobId: {}", source, jobId);
+            return Map.of(
+                    "success", true,
+                    "isOptiExclusive", true,
+                    "message", "Conversion active. Live MAWM Cloud search verification is exclusive to Opti ERP.",
+                    "statusDescription", "CONVERTED (Opti Exclusive)"
+            );
+        }
+
+        String outputFiles = tracker.getOutputFiles();
+        String rawContent = tracker.getRawContent();
+
+        String asnId = null;
+        String destinationFacility = tracker.getFacilityId();
+        String createdBy = tracker.getCreatedBy();
+
+        // Extract AsnId and DestinationFacilityId from converted outputFiles
+        if (outputFiles != null && !outputFiles.isBlank() && !outputFiles.startsWith("[CLAIM_CHECK:")) {
+            try {
+                JsonNode root = objectMapper.readTree(outputFiles);
+                JsonNode dataNode = root.has("Data") ? root.get("Data") : (root.has("data") ? root.get("data") : root);
+                if (dataNode.isArray() && dataNode.size() > 0) {
+                    JsonNode first = dataNode.get(0);
+                    if (first.has("AsnId")) asnId = first.get("AsnId").asText();
+                    else if (first.has("asnId")) asnId = first.get("asnId").asText();
+
+                    if (destinationFacility == null || destinationFacility.isBlank()) {
+                        if (first.has("DestinationFacilityId")) destinationFacility = first.get("DestinationFacilityId").asText();
+                    }
+                    if (createdBy == null || createdBy.isBlank()) {
+                        if (first.has("CreatedBy")) createdBy = first.get("CreatedBy").asText();
+                    }
+                } else if (dataNode.isObject()) {
+                    if (dataNode.has("AsnId")) asnId = dataNode.get("AsnId").asText();
+                    else if (dataNode.has("asnId")) asnId = dataNode.get("asnId").asText();
+
+                    if (destinationFacility == null || destinationFacility.isBlank()) {
+                        if (dataNode.has("DestinationFacilityId")) destinationFacility = dataNode.get("DestinationFacilityId").asText();
+                    }
+                    if (createdBy == null || createdBy.isBlank()) {
+                        if (dataNode.has("CreatedBy")) createdBy = dataNode.get("CreatedBy").asText();
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        // Fallback from rawContent
+        if (asnId == null && rawContent != null && !rawContent.isBlank() && !rawContent.startsWith("[CLAIM_CHECK:")) {
+            try {
+                JsonNode root = objectMapper.readTree(rawContent);
+                if (root.has("AsnId")) asnId = root.get("AsnId").asText();
+                else if (root.has("asnId")) asnId = root.get("asnId").asText();
+            } catch (Exception ignored) {}
+        }
+
+        if (asnId == null || asnId.isBlank()) {
+            asnId = tracker.getJobId();
+        }
+
+        Map<String, Object> searchResult = searchAsnStatus(asnId, destinationFacility, createdBy);
+        if (Boolean.TRUE.equals(searchResult.get("success"))) {
+            String statusDesc = (String) searchResult.get("statusDescription");
+            transactionStore.recordMawmAsnStatus(jobId, statusDesc);
+        }
+        return searchResult;
     }
 
     /**
@@ -171,6 +346,7 @@ public class MawmDispatcherService {
             envelope.setDocumentType(tracker.getTransactionType());
             envelope.setFacilityId(tracker.getFacilityId());
             envelope.setErpSource(tracker.getSourceSystem());
+            envelope.setCreatedBy(tracker.getCreatedBy());
 
             JsonNode root = objectMapper.readTree(outputFiles);
             if (root.has("Data") && root.get("Data").isArray()) {

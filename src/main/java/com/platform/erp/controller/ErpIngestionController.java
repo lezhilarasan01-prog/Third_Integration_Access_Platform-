@@ -118,6 +118,8 @@ public class ErpIngestionController {
             @RequestParam(value = "type", required = false) String typeParam,
             @RequestParam(value = "topic", required = false) String customTopic,
             @RequestParam(value = "filename", required = false) String queryFilename,
+            @RequestParam(value = "createdBy", required = false) String paramCreatedBy,
+            @RequestHeader(value = "X-Created-By", required = false) String headerCreatedBy,
             @RequestHeader(value = "X-Filename", required = false) String headerFilename,
             @RequestHeader(value = "X-Document-Type", required = false) String headerDocType,
             @RequestHeader(value = "X-Kafka-Topic", required = false) String headerTopic,
@@ -224,6 +226,11 @@ public class ErpIngestionController {
                     || "PENDING".equalsIgnoreCase(optTracker.get().getDispatchStatus())) {
                 try {
                     CanonicalEnvelope env = transformer.transform(payload, erpSource, docType, ack.getTrackingId(), resolvedFilename);
+                    if (env.getCreatedBy() == null || env.getCreatedBy().isBlank()) {
+                        String userFromReq = (paramCreatedBy != null && !paramCreatedBy.isBlank()) ? paramCreatedBy.trim()
+                                : (headerCreatedBy != null && !headerCreatedBy.isBlank()) ? headerCreatedBy.trim() : null;
+                        if (userFromReq != null) env.setCreatedBy(userFromReq);
+                    }
                     transactionStore.recordConverted(ack.getTrackingId(), erpSource, docType, resolvedFilename, env);
                     if (isOpti) {
                         mawmDispatcherService.dispatch(env);

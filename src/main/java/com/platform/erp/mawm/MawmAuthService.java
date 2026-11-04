@@ -30,8 +30,21 @@ public class MawmAuthService {
     private final RestClient restClient;
     private final ReentrantLock lock = new ReentrantLock();
 
-    private volatile String cachedToken = null;
-    private volatile Instant tokenExpiry = Instant.MIN;
+    private static class TokenEntry {
+        final String token;
+        final Instant expiry;
+
+        TokenEntry(String token, Instant expiry) {
+            this.token = token;
+            this.expiry = expiry;
+        }
+
+        boolean isValid(long bufferSeconds) {
+            return token != null && !token.isBlank() && Instant.now().isBefore(expiry.minusSeconds(bufferSeconds));
+        }
+    }
+
+    private final java.util.concurrent.ConcurrentHashMap<String, TokenEntry> tokenCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     public MawmAuthService(MawmProperties mawmProperties, ObjectMapper objectMapper) {
         this.mawmProperties = mawmProperties;
@@ -40,36 +53,60 @@ public class MawmAuthService {
     }
 
     /**
-     * Retrieves a valid OAuth2 bearer token for MAWM, reusing cached token if valid.
-     * If expired or nearing expiration, thread-safely requests a new token.
+     * Retrieves a valid OAuth2 bearer token for MAWM, using the default configured username.
      */
     public String getAccessToken() {
-        // Fast path without lock if token is valid with at least 90s safety margin
-        if (isTokenValid(90)) {
-            return cachedToken;
+        return getAccessToken(null);
+    }
+
+    /**
+     * Retrieves a valid OAuth2 bearer token for MAWM.
+     * If username (e.g. from incoming CreatedBy payload field) is provided, it is used as the OAuth username.
+     * All credentials (password, basicAuth, authUrl) are read strictly from application properties.
+     */
+    public String getAccessToken(String username) {
+        String effectiveUsername = (username != null && !username.isBlank())
+                ? username.trim()
+                : (mawmProperties.getUsername() != null ? mawmProperties.getUsername() : "lezhilarasan");
+
+        TokenEntry entry = tokenCache.get(effectiveUsername);
+        if (entry != null && entry.isValid(90)) {
+            return entry.token;
         }
 
         lock.lock();
         try {
-            // Double-check after acquiring lock
-            if (isTokenValid(90)) {
-                return cachedToken;
+            entry = tokenCache.get(effectiveUsername);
+            if (entry != null && entry.isValid(90)) {
+                return entry.token;
             }
-            return fetchNewToken();
+            return fetchNewTokenForUser(effectiveUsername);
         } finally {
             lock.unlock();
         }
     }
 
     /**
-     * Forcibly invalidates cached token (e.g. after remote 401 challenge).
+     * Forcibly invalidates cached token for all users.
      */
     public void invalidateToken() {
+        invalidateToken(null);
+    }
+
+    /**
+     * Forcibly invalidates cached token for a specific user (or all if null/blank).
+     */
+    public void invalidateToken(String username) {
         lock.lock();
         try {
-            log.info("[MAWM Auth] Invalidation requested. Resetting cached OAuth2 token.");
-            this.cachedToken = null;
-            this.tokenExpiry = Instant.MIN;
+            if (username == null || username.isBlank()) {
+                log.info("[MAWM Auth] Invalidation requested. Resetting all cached OAuth2 tokens.");
+                tokenCache.clear();
+            } else {
+                String clean = username.trim();
+                log.info("[MAWM Auth] Invalidation requested for user '{}'. Resetting cached token.", clean);
+                tokenCache.remove(clean);
+            }
         } finally {
             lock.unlock();
         }
@@ -77,20 +114,25 @@ public class MawmAuthService {
 
     /**
      * Proactive Background Scheduled Task:
-     * Wakes up every 5 minutes to verify token health. If token expires within 10 minutes
+     * Wakes up every 5 minutes to verify default token health. If token expires within 10 minutes
      * or is not yet loaded, refreshes it automatically so worker threads and Kafka consumers
      * never experience blocking delays or token expiry disruptions.
      */
     @Scheduled(fixedDelay = 300_000, initialDelay = 10_000)
     public void proactiveTokenRefresh() {
         if (!mawmProperties.isEnabled()) return;
-        if (!isTokenValid(600)) {
-            log.info("[MAWM Auth Background] Token approaching expiry or uninitialized. Proactively refreshing...");
+        String defaultUser = mawmProperties.getUsername();
+        if (defaultUser == null || defaultUser.isBlank()) return;
+
+        TokenEntry entry = tokenCache.get(defaultUser);
+        if (entry == null || !entry.isValid(600)) {
+            log.info("[MAWM Auth Background] Token for '{}' approaching expiry or uninitialized. Proactively refreshing...", defaultUser);
             try {
                 lock.lock();
                 try {
-                    if (!isTokenValid(600)) {
-                        fetchNewToken();
+                    TokenEntry cur = tokenCache.get(defaultUser);
+                    if (cur == null || !cur.isValid(600)) {
+                        fetchNewTokenForUser(defaultUser);
                     }
                 } finally {
                     lock.unlock();
@@ -101,17 +143,13 @@ public class MawmAuthService {
         }
     }
 
-    private boolean isTokenValid(long bufferSeconds) {
-        return cachedToken != null && !cachedToken.isBlank() && Instant.now().isBefore(tokenExpiry.minusSeconds(bufferSeconds));
-    }
-
-    private String fetchNewToken() {
-        log.info("[MAWM Auth] Requesting new OAuth2 token from {}", mawmProperties.getAuthUrl());
+    private String fetchNewTokenForUser(String username) {
+        log.info("[MAWM Auth] Requesting new OAuth2 token for user '{}' from {}", username, mawmProperties.getAuthUrl());
 
         try {
             MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
             formData.add("grant_type", "password");
-            formData.add("username", mawmProperties.getUsername());
+            formData.add("username", username);
             formData.add("password", mawmProperties.getPassword());
 
             String responseBody = restClient.post()
@@ -124,18 +162,19 @@ public class MawmAuthService {
 
             JsonNode root = objectMapper.readTree(responseBody);
             if (root.has("access_token")) {
-                this.cachedToken = root.get("access_token").asText();
+                String token = root.get("access_token").asText();
                 long expiresIn = root.has("expires_in") ? root.get("expires_in").asLong() : 3600;
-                this.tokenExpiry = Instant.now().plusSeconds(expiresIn);
-                log.info("[MAWM Auth] Successfully acquired fresh MAWM OAuth2 token (expires in {}s, valid until {})",
-                        expiresIn, tokenExpiry);
-                return this.cachedToken;
+                Instant expiry = Instant.now().plusSeconds(expiresIn);
+                tokenCache.put(username, new TokenEntry(token, expiry));
+                log.info("[MAWM Auth] Successfully acquired fresh MAWM OAuth2 token for user '{}' (expires in {}s, valid until {})",
+                        username, expiresIn, expiry);
+                return token;
             } else {
                 throw new IllegalStateException("OAuth response missing access_token: " + responseBody);
             }
         } catch (Exception e) {
-            log.error("[MAWM Auth] Failed to authenticate with MAWM OAuth server: {}", e.getMessage(), e);
-            throw new RuntimeException("MAWM Authentication failed: " + e.getMessage(), e);
+            log.error("[MAWM Auth] Failed to authenticate user '{}' with MAWM OAuth server: {}", username, e.getMessage(), e);
+            throw new RuntimeException("MAWM Authentication failed for user '" + username + "': " + e.getMessage(), e);
         }
     }
 
@@ -143,12 +182,15 @@ public class MawmAuthService {
      * Exposes auth status information for health checks and testing.
      */
     public Map<String, Object> getAuthStatus() {
-        boolean hasValidToken = isTokenValid(60);
+        String defaultUser = mawmProperties.getUsername() != null ? mawmProperties.getUsername() : "lezhilarasan";
+        TokenEntry entry = tokenCache.get(defaultUser);
+        boolean hasValidToken = entry != null && entry.isValid(60);
         java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("authUrl", mawmProperties.getAuthUrl() != null ? mawmProperties.getAuthUrl() : "");
-        map.put("username", mawmProperties.getUsername() != null ? mawmProperties.getUsername() : "");
+        map.put("username", defaultUser);
         map.put("hasCachedToken", hasValidToken);
-        map.put("tokenExpiresAt", tokenExpiry != null ? tokenExpiry.toString() : "");
+        map.put("tokenExpiresAt", (entry != null && entry.expiry != null) ? entry.expiry.toString() : "");
+        map.put("cachedUsers", tokenCache.keySet());
         return map;
     }
 
@@ -156,16 +198,24 @@ public class MawmAuthService {
      * Actively tests OAuth connection and returns response latency and token validity.
      */
     public Map<String, Object> testConnection() {
+        return testConnection(null);
+    }
+
+    public Map<String, Object> testConnection(String username) {
+        String effectiveUser = (username != null && !username.isBlank()) ? username.trim() : mawmProperties.getUsername();
         long start = System.currentTimeMillis();
-        String token = getAccessToken();
+        String token = getAccessToken(effectiveUser);
         long latency = System.currentTimeMillis() - start;
+        TokenEntry entry = tokenCache.get(effectiveUser);
+
         java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("status", "CONNECTED");
         map.put("latencyMs", latency);
         map.put("authUrl", mawmProperties.getAuthUrl() != null ? mawmProperties.getAuthUrl() : "");
+        map.put("username", effectiveUser);
         map.put("facility", mawmProperties.getDefaultFacility() != null ? mawmProperties.getDefaultFacility() : "Food_Cbe");
         map.put("hasValidToken", token != null && !token.isBlank());
-        map.put("tokenExpiresAt", tokenExpiry != null ? tokenExpiry.toString() : "");
+        map.put("tokenExpiresAt", (entry != null && entry.expiry != null) ? entry.expiry.toString() : "");
         return map;
     }
 }

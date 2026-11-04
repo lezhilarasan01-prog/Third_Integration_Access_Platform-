@@ -20,6 +20,7 @@ public class CanonicalEnvelope {
     private String facilityId;
     private String documentType;
     private String originalFilename;
+    private String createdBy;
 
     @JsonIgnore
     private Integer totalRecords;
@@ -58,6 +59,9 @@ public class CanonicalEnvelope {
 
     public String getOriginalFilename() { return originalFilename; }
     public void setOriginalFilename(String originalFilename) { this.originalFilename = originalFilename; }
+
+    public String getCreatedBy() { return createdBy; }
+    public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
 
     @JsonIgnore
     public Integer getTotalRecords() { return totalRecords != null ? totalRecords : 0; }

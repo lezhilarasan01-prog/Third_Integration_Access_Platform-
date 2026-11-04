@@ -15,11 +15,11 @@ import {
   FileCode2,
   ChevronLeft,
   ChevronRight,
-  RotateCcw,
   UploadCloud,
-  Layers,
-  ArrowUpRight,
-  Calendar
+  Code,
+  CheckCheck,
+  ExternalLink,
+  Filter
 } from 'lucide-react';
 import { integrationApi } from '../../services/integrationApi';
 
@@ -36,7 +36,14 @@ export default function MawmDispatchPage({
   const [testingConnection, setTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [dispatchingJobId, setDispatchingJobId] = useState(null);
+  const [verifyingJobId, setVerifyingJobId] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
+
+  // 5.4.2 Interactive Verification Inspector State
+  const [searchAsnId, setSearchAsnId] = useState('ASN-2026-0001');
+  const [searchFacility, setSearchFacility] = useState('Food_Cbe');
+  const [searchingAsn, setSearchingAsn] = useState(false);
+  const [searchResult, setSearchResult] = useState(null);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -52,7 +59,7 @@ export default function MawmDispatchPage({
 
   // Selected tracker for inspection modal
   const [inspectingJob, setInspectingJob] = useState(null);
-  const [inspectPayloadTab, setInspectPayloadTab] = useState('response'); // 'response' | 'outbound' | 'inbound' | 'error'
+  const [inspectPayloadTab, setInspectPayloadTab] = useState('response'); // 'response' | 'verification' | 'outbound' | 'inbound' | 'error'
 
   const formatPayload = (val) => {
     if (!val) return '';
@@ -69,6 +76,30 @@ export default function MawmDispatchPage({
     } catch (e) {
       return val;
     }
+  };
+
+  const extractAsnId = (job) => {
+    if (!job) return 'ASN-2026-0001';
+    if (job.outputFiles && typeof job.outputFiles === 'string') {
+      try {
+        const parsed = JSON.parse(job.outputFiles);
+        const dataArr = parsed.Data || parsed.data || (Array.isArray(parsed) ? parsed : null);
+        if (Array.isArray(dataArr) && dataArr[0]?.AsnId) return dataArr[0].AsnId;
+        if (parsed.AsnId) return parsed.AsnId;
+      } catch (e) {}
+    }
+    if (job.rawContent && typeof job.rawContent === 'string') {
+      try {
+        const parsed = JSON.parse(job.rawContent);
+        if (parsed.AsnId) return parsed.AsnId;
+        if (parsed.asnId) return parsed.asnId;
+      } catch (e) {}
+    }
+    if (job.originalFilename && job.originalFilename.toUpperCase().includes('ASN')) {
+      const base = job.originalFilename.replace(/\.[^/.]+$/, '');
+      return base;
+    }
+    return job.jobId || 'ASN-2026-0001';
   };
 
   const handleInspectJob = async (row) => {
@@ -96,6 +127,39 @@ export default function MawmDispatchPage({
     }
     if (inspectPayloadTab === 'outbound') {
       return formatPayload(inspectingJob.outputFiles);
+    }
+    if (inspectPayloadTab === 'verification') {
+      if (inspectingJob.verificationResult) {
+        return formatPayload(inspectingJob.verificationResult);
+      }
+      return JSON.stringify({
+        api: "5.4.2 Check ASN Verification Status",
+        endpoint: `${telemetry?.baseUrl || 'https://ncsps.sce.manh.com'}/receiving/api/receiving/asn/search`,
+        method: "POST",
+        headers: {
+          "selectedLocation": inspectingJob.facilityId || "Food_Cbe",
+          "selectedOrganization": inspectingJob.facilityId || "Food_Cbe",
+          "selectedBusinessUnit": inspectingJob.facilityId || "Food_Cbe",
+          "Authorization": "Bearer <OAuth2 Token>",
+          "Content-Type": "application/json"
+        },
+        requestPayload: {
+          "Query": `AsnId in ('${extractAsnId(inspectingJob)}')`,
+          "Template": {
+            "AsnId": "",
+            "AsnStatus": ""
+          }
+        },
+        expectedResponse: {
+          "data": [
+            {
+              "AsnId": extractAsnId(inspectingJob),
+              "AsnStatus": "8000"
+            }
+          ]
+        },
+        note: "Status code 8000 indicates Verified in MAWM (completes verification in Opti ERP). Click 'Verify in MAWM Now' to execute."
+      }, null, 2);
     }
 
     // Default 'response': The actual output response received from MAWM Cloud!
@@ -150,7 +214,7 @@ export default function MawmDispatchPage({
     setTestResult(null);
     try {
       const res = await integrationApi.testMawmConnection();
-      setTestResult({ success: true, message: `Connected in ${res.latencyMs}ms. Token valid.` });
+      setTestResult({ success: true, message: `Connected in ${res.latencyMs}ms. Token valid for user ${res.username || 'lezhilarasan'}.` });
       await loadData(true);
     } catch (err) {
       setTestResult({ success: false, message: err.message || 'Connection test failed' });
@@ -185,6 +249,41 @@ export default function MawmDispatchPage({
     }
   };
 
+  const handleVerifyJob = async (jobId, e) => {
+    if (e) e.stopPropagation();
+    setVerifyingJobId(jobId);
+    try {
+      const res = await integrationApi.verifyJobAsn(jobId);
+      if (inspectingJob && inspectingJob.jobId === jobId) {
+        setInspectingJob((prev) => ({
+          ...prev,
+          mawmAsnStatus: res.statusDescription || res.asnStatus,
+          verificationResult: res
+        }));
+        setInspectPayloadTab('verification');
+      }
+      await loadData(true);
+    } catch (err) {
+      alert('Verification query failed: ' + err.message);
+    } finally {
+      setVerifyingJobId(null);
+    }
+  };
+
+  const handleManualSearchAsn = async () => {
+    if (!searchAsnId.trim()) return;
+    setSearchingAsn(true);
+    setSearchResult(null);
+    try {
+      const res = await integrationApi.searchAsnVerification(searchAsnId.trim(), searchFacility.trim());
+      setSearchResult(res);
+    } catch (err) {
+      setSearchResult({ success: false, error: err.message || 'Failed to query MAWM ASN verification search API' });
+    } finally {
+      setSearchingAsn(false);
+    }
+  };
+
   const handleCopy = (text, id, e) => {
     if (e) e.stopPropagation();
     navigator.clipboard.writeText(text);
@@ -203,6 +302,9 @@ export default function MawmDispatchPage({
       // Status filter
       if (statusFilter === 'DELIVERED') {
         if (!dStatus.includes('DELIVERED') && !dStatus.includes('200')) return false;
+      } else if (statusFilter === 'VERIFIED') {
+        const vStatus = (r.mawmAsnStatus || '').toUpperCase();
+        if (!vStatus.includes('8000') && !vStatus.includes('VERIFIED')) return false;
       } else if (statusFilter === 'PENDING') {
         if (!dStatus.includes('PENDING') && !dStatus.includes('AWAITING') && !dStatus.includes('SAVED')) return false;
       } else if (statusFilter === 'FAILED') {
@@ -266,17 +368,21 @@ export default function MawmDispatchPage({
   // Aggregate stats
   const stats = useMemo(() => {
     let delivered = 0;
+    let verified = 0;
     let pending = 0;
     let failed = 0;
     trackers.forEach((r) => {
       const s = (r.dispatchStatus || '').toUpperCase();
+      const v = (r.mawmAsnStatus || '').toUpperCase();
       if (s.includes('DELIVERED') || s.includes('200')) delivered++;
+      if (v.includes('8000') || v.includes('VERIFIED')) verified++;
       else if (s.includes('FAILED')) failed++;
       else if (s.includes('PENDING') || s.includes('AWAITING') || s.includes('SAVED')) pending++;
     });
     return {
       total: delivered + pending + failed,
       delivered,
+      verified,
       pending,
       failed
     };
@@ -288,8 +394,8 @@ export default function MawmDispatchPage({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div style={{
-            width: 38,
-            height: 38,
+            width: 40,
+            height: 40,
             borderRadius: '10px',
             backgroundColor: 'rgba(16, 185, 129, 0.15)',
             display: 'flex',
@@ -298,19 +404,22 @@ export default function MawmDispatchPage({
             color: '#10b981',
             border: '1px solid rgba(16, 185, 129, 0.3)'
           }}>
-            <Radio size={20} className="pulse-icon" />
+            <Radio size={22} className="pulse-icon" />
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
               <h1 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                MAWM Delivery Monitoring
+                MAWM ASN Dispatch & Verification Hub
               </h1>
-              <span className="badge badge-success" style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.04em' }}>
+              <span className="badge badge-success" style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.04em', backgroundColor: 'rgba(16, 185, 129, 0.2)', border: '1px solid #10b981' }}>
+                OPTI EXCLUSIVE DISPATCH
+              </span>
+              <span className="badge" style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.04em', backgroundColor: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
                 LIVE CLOUD
               </span>
             </div>
-            <p style={{ margin: '0.15rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Manhattan Active® WMS REST API dispatch telemetry, OAuth2 Bearer token lifecycle, and delivery tracking.
+            <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              Manhattan Active® WMS 5.4 ASN Ingestion (<code style={{ color: '#10b981' }}>/asn/save</code>) & 5.4.2 Verification (<code style={{ color: '#38bdf8' }}>/asn/search</code>) dedicated exclusively to Opti ERP feeds.
             </p>
           </div>
         </div>
@@ -323,7 +432,7 @@ export default function MawmDispatchPage({
             style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.42rem 0.85rem', fontSize: '0.8rem' }}
           >
             <ShieldCheck size={14} color="#10b981" />
-            <span>{testingConnection ? 'Testing...' : 'Test Connection'}</span>
+            <span>{testingConnection ? 'Testing...' : 'Test OAuth Connection'}</span>
           </button>
 
           <button
@@ -343,7 +452,7 @@ export default function MawmDispatchPage({
               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.42rem 0.95rem', fontSize: '0.8rem' }}
             >
               <UploadCloud size={14} />
-              <span>Test Upload</span>
+              <span>Test Opti ASN Upload</span>
             </button>
           )}
         </div>
@@ -369,18 +478,196 @@ export default function MawmDispatchPage({
         </div>
       )}
 
-      {/* 2. Top Metric Cards (Responsive Grid) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
+      {/* 2. Top Specifications Card & Architecture Overview */}
+      <div className="card" style={{
+        padding: '0.9rem 1.25rem',
+        marginBottom: '1.25rem',
+        borderRadius: '10px',
+        border: '1px solid rgba(16, 185, 129, 0.25)',
+        backgroundColor: 'rgba(15, 23, 42, 0.65)'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Server size={15} color="#10b981" />
+            <strong style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+              5.4 Manhattan Active® WMS (MAWM) ASN Integration Specifications (Opti Exclusive)
+            </strong>
+          </div>
+          <span style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600, backgroundColor: 'rgba(16, 185, 129, 0.12)', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
+            Direct Endpoints Active
+          </span>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.75rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+          {/* Save ASN API */}
+          <div style={{ padding: '0.6rem 0.85rem', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', border: '1px solid var(--border-default)' }}>
+            <div style={{ color: '#10b981', fontWeight: 700, marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <Send size={12} />
+              <span>5.4.1 Create / Save ASN API</span>
+            </div>
+            <div><strong>Endpoint:</strong> <code style={{ color: '#38bdf8' }}>POST /receiving/api/receiving/asn/save</code></div>
+            <div><strong>Controller:</strong> <code style={{ color: '#f59e0b' }}>POST /create-asn-active</code></div>
+            <div><strong>Expected Response:</strong> <span style={{ color: '#10b981', fontWeight: 700 }}>200 OK</span></div>
+          </div>
+
+          {/* Check Verification Status */}
+          <div style={{ padding: '0.6rem 0.85rem', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', border: '1px solid var(--border-default)' }}>
+            <div style={{ color: '#38bdf8', fontWeight: 700, marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <Search size={12} />
+              <span>5.4.2 Check ASN Verification Status</span>
+            </div>
+            <div><strong>Endpoint:</strong> <code style={{ color: '#38bdf8' }}>POST /receiving/api/receiving/asn/search</code></div>
+            <div><strong>Query:</strong> <code style={{ color: '#f59e0b' }}>AsnId in ('...')</code></div>
+            <div><strong>Verified Code:</strong> <span style={{ color: '#10b981', fontWeight: 700 }}>8000 (Verified in MAWM)</span></div>
+          </div>
+
+          {/* Dynamic Header & Auth Config */}
+          <div style={{ padding: '0.6rem 0.85rem', backgroundColor: 'var(--bg-surface)', borderRadius: '6px', border: '1px solid var(--border-default)' }}>
+            <div style={{ color: '#f59e0b', fontWeight: 700, marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <ShieldCheck size={12} />
+              <span>Dynamic Routing & Auth Headers</span>
+            </div>
+            <div><strong>Facility Headers:</strong> <code style={{ color: '#10b981' }}>selectedLocation</code>, <code style={{ color: '#10b981' }}>selectedOrganization</code>, <code style={{ color: '#10b981' }}>selectedBusinessUnit</code> &rarr; derived from <strong>DestinationFacilityId</strong> (<code style={{ color: '#f59e0b' }}>Food_Cbe</code>)</div>
+            <div><strong>Token Credentials:</strong> Read from properties; username overridden by <strong>CreatedBy</strong> in payload if present.</div>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Interactive ASN Verification Status Checker (5.4.2 /search Tool) */}
+      <div className="card" style={{
+        padding: '0.85rem 1.25rem',
+        marginBottom: '1.25rem',
+        borderRadius: '10px',
+        border: '1px solid rgba(56, 189, 248, 0.25)',
+        backgroundColor: 'rgba(15, 23, 42, 0.5)'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+            <Search size={15} color="#38bdf8" />
+            <strong style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+              Interactive MAWM ASN Verification Search (5.4.2 Live Query Tool)
+            </strong>
+          </div>
+          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+            Query: <code style={{ color: '#38bdf8' }}>POST /receiving/api/receiving/asn/search</code>
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flex: 1, minWidth: '220px' }}>
+            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>AsnId:</label>
+            <input
+              type="text"
+              value={searchAsnId}
+              onChange={(e) => setSearchAsnId(e.target.value)}
+              placeholder="e.g. ASN-2026-0001"
+              style={{
+                flex: 1,
+                padding: '0.35rem 0.65rem',
+                fontSize: '0.8rem',
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--border-default)',
+                borderRadius: '6px',
+                color: 'var(--text-primary)',
+                fontFamily: 'var(--font-mono, monospace)'
+              }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: '180px' }}>
+            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Facility:</label>
+            <input
+              type="text"
+              value={searchFacility}
+              onChange={(e) => setSearchFacility(e.target.value)}
+              placeholder="Food_Cbe"
+              style={{
+                width: '120px',
+                padding: '0.35rem 0.65rem',
+                fontSize: '0.8rem',
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--border-default)',
+                borderRadius: '6px',
+                color: 'var(--text-primary)',
+                fontFamily: 'var(--font-mono, monospace)'
+              }}
+            />
+          </div>
+
+          <button
+            onClick={handleManualSearchAsn}
+            disabled={searchingAsn || !searchAsnId.trim()}
+            className="btn-primary"
+            style={{
+              padding: '0.4rem 1rem',
+              fontSize: '0.78rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              backgroundColor: '#0284c7',
+              borderColor: '#0284c7'
+            }}
+          >
+            <Search size={13} className={searchingAsn ? 'spin-icon' : ''} />
+            <span>{searchingAsn ? 'Querying MAWM...' : 'Check Verification Status'}</span>
+          </button>
+        </div>
+
+        {/* Live Search Result Output */}
+        {searchResult && (
+          <div style={{
+            marginTop: '0.75rem',
+            padding: '0.75rem 1rem',
+            borderRadius: '6px',
+            backgroundColor: searchResult.isVerified ? 'rgba(16, 185, 129, 0.12)' : (searchResult.success ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.12)'),
+            border: `1px solid ${searchResult.isVerified ? '#10b981' : (searchResult.success ? '#f59e0b' : '#ef4444')}`,
+            fontSize: '0.78rem'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                {searchResult.isVerified ? <CheckCheck size={16} color="#10b981" /> : (searchResult.success ? <Clock size={16} color="#f59e0b" /> : <AlertTriangle size={16} color="#ef4444" />)}
+                <strong style={{ color: searchResult.isVerified ? '#10b981' : (searchResult.success ? '#f59e0b' : '#ef4444') }}>
+                  {searchResult.isVerified ? 'Status 8000: Verified in MAWM (Completed in Opti ERP)' : (searchResult.statusDescription || searchResult.error)}
+                </strong>
+              </div>
+              <span style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                Target: {searchResult.endpoint}
+              </span>
+            </div>
+            {searchResult.rawResponse && (
+              <pre style={{
+                margin: '0.35rem 0 0',
+                padding: '0.5rem',
+                backgroundColor: 'rgba(0,0,0,0.3)',
+                borderRadius: '4px',
+                maxHeight: '130px',
+                overflowY: 'auto',
+                fontFamily: 'var(--font-mono, monospace)',
+                fontSize: '0.72rem',
+                color: 'var(--text-primary)'
+              }}>
+                {formatPayload(searchResult.rawResponse)}
+              </pre>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 4. Top Metric Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
         {/* Endpoint Card */}
         <div className="card" style={{ padding: '0.85rem 1rem', borderRadius: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.04em' }}>MAWM ENDPOINT</span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.04em' }}>MAWM TARGET HOST</span>
             <span style={{ fontSize: '0.68rem', color: '#10b981', fontWeight: 700, backgroundColor: 'rgba(16, 185, 129, 0.12)', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
               ONLINE
             </span>
           </div>
-          <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {telemetry?.baseUrl || 'https://ncsps.sce.manh.com'}
+          </div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+            Save: <code style={{ color: '#10b981' }}>{telemetry?.asnPath || '/receiving/api/receiving/asn/save'}</code>
           </div>
         </div>
 
@@ -389,21 +676,21 @@ export default function MawmDispatchPage({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
             <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.04em' }}>OAUTH2 TOKEN</span>
             <span style={{ fontSize: '0.68rem', color: '#38bdf8', fontWeight: 700, backgroundColor: 'rgba(56, 189, 248, 0.12)', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
-              12H CACHED
+              AUTO REFRESH
             </span>
           </div>
-          <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+          <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)' }}>
             User: {telemetry?.username || 'lezhilarasan'}
           </div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-            Default Facility: <strong style={{ color: '#10b981' }}>{telemetry?.defaultFacility || 'Food_Cbe'}</strong>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+            Dynamic User: <strong style={{ color: '#f59e0b' }}>CreatedBy</strong> key in payload
           </div>
         </div>
 
         {/* Delivered Metric */}
         <div className="card" style={{ padding: '0.85rem 1rem', borderRadius: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.04em' }}>DELIVERED</span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.04em' }}>DELIVERED (5.4.1)</span>
             <CheckCircle2 size={15} color="#10b981" />
           </div>
           <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#10b981', lineHeight: 1.2 }}>
@@ -411,6 +698,20 @@ export default function MawmDispatchPage({
           </div>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
             Status: <span style={{ color: '#10b981', fontWeight: 600 }}>200 OK</span>
+          </div>
+        </div>
+
+        {/* Verified Metric (5.4.2) */}
+        <div className="card" style={{ padding: '0.85rem 1rem', borderRadius: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.04em' }}>VERIFIED (5.4.2)</span>
+            <CheckCheck size={15} color="#38bdf8" />
+          </div>
+          <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#38bdf8', lineHeight: 1.2 }}>
+            {stats.verified}
+          </div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+            MAWM Status: <strong style={{ color: '#38bdf8' }}>8000</strong>
           </div>
         </div>
 
@@ -424,26 +725,12 @@ export default function MawmDispatchPage({
             {stats.pending}
           </div>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-            Converted & ready in DB
-          </div>
-        </div>
-
-        {/* Failed Metric */}
-        <div className="card" style={{ padding: '0.85rem 1rem', borderRadius: '8px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.04em' }}>FAILED</span>
-            <AlertTriangle size={15} color={stats.failed > 0 ? '#ef4444' : 'var(--text-muted)'} />
-          </div>
-          <div style={{ fontSize: '1.5rem', fontWeight: 800, color: stats.failed > 0 ? '#ef4444' : 'var(--text-muted)', lineHeight: 1.2 }}>
-            {stats.failed}
-          </div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-            Retryable via one-click
+            Converted in PostgreSQL
           </div>
         </div>
       </div>
 
-      {/* 3. Search & Filter Bar */}
+      {/* 5. Search & Filter Bar */}
       <div className="card" style={{ padding: '0.75rem 1rem', marginBottom: '0.85rem', display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', borderRadius: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flex: 1, minWidth: '260px', flexWrap: 'wrap' }}>
           {/* Search Box */}
@@ -451,190 +738,106 @@ export default function MawmDispatchPage({
             <Search size={14} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input
               type="text"
-              placeholder="Search Tracking ID, File, Facility..."
+              placeholder="Filter by Job ID, ASN ID, File..."
               value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.35rem 0.65rem 0.35rem 2rem',
+                fontSize: '0.8rem',
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--border-default)',
+                borderRadius: '6px',
+                color: 'var(--text-primary)'
               }}
-              className="input-search"
-              style={{ paddingLeft: '2rem', width: '100%', height: '32px', fontSize: '0.8rem', borderRadius: '6px' }}
             />
           </div>
 
-          {/* Status Filter Tabs */}
-          <div className="table-filters" style={{ display: 'flex', gap: '0.35rem' }}>
-            <button
-              className={`filter-pill ${statusFilter === 'ALL' ? 'active' : ''}`}
-              onClick={() => { setStatusFilter('ALL'); setCurrentPage(1); }}
-              style={{ padding: '0.25rem 0.65rem', fontSize: '0.75rem' }}
-            >
-              All ({trackers.length})
-            </button>
-            <button
-              className={`filter-pill ${statusFilter === 'DELIVERED' ? 'active' : ''}`}
-              onClick={() => { setStatusFilter('DELIVERED'); setCurrentPage(1); }}
-              style={{ padding: '0.25rem 0.65rem', fontSize: '0.75rem' }}
-            >
-              Delivered ({stats.delivered})
-            </button>
-            <button
-              className={`filter-pill ${statusFilter === 'PENDING' ? 'active' : ''}`}
-              onClick={() => { setStatusFilter('PENDING'); setCurrentPage(1); }}
-              style={{ padding: '0.25rem 0.65rem', fontSize: '0.75rem' }}
-            >
-              Awaiting ({stats.pending})
-            </button>
-            <button
-              className={`filter-pill ${statusFilter === 'FAILED' ? 'active' : ''}`}
-              onClick={() => { setStatusFilter('FAILED'); setCurrentPage(1); }}
-              style={{ padding: '0.25rem 0.65rem', fontSize: '0.75rem' }}
-            >
-              Failed ({stats.failed})
-            </button>
-          </div>
-
-          {/* Type Dropdown */}
+          {/* Status Filter */}
           <select
-            value={typeFilter}
-            onChange={(e) => { setTypeFilter(e.target.value); setCurrentPage(1); }}
-            className="form-select-theme"
-            style={{ height: '32px', padding: '0 0.5rem', fontSize: '0.75rem' }}
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            style={{
+              padding: '0.35rem 0.65rem',
+              fontSize: '0.8rem',
+              backgroundColor: 'var(--bg-surface)',
+              border: '1px solid var(--border-default)',
+              borderRadius: '6px',
+              color: 'var(--text-primary)'
+            }}
           >
-            <option value="ALL">All Types</option>
-            <option value="ASN">ASN</option>
-            <option value="PO">PO</option>
+            <option value="ALL">All Statuses</option>
+            <option value="DELIVERED">Delivered (200 OK)</option>
+            <option value="VERIFIED">Verified in MAWM (8000)</option>
+            <option value="PENDING">Awaiting Dispatch</option>
+            <option value="FAILED">Failed</option>
           </select>
 
-          {/* Date & Time Range Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-            <Calendar size={14} style={{ color: '#60a5fa' }} />
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>Date &amp; Time:</span>
-            <select
-              value={dateRange}
-              onChange={(e) => { setDateRange(e.target.value); setCurrentPage(1); }}
-              className="form-select-theme"
-              style={{ height: '32px', padding: '0 0.5rem', fontSize: '0.75rem' }}
-            >
-              <option value="7d">Last 7 Days</option>
-              <option value="today">Today</option>
-              <option value="24h">Last 24 Hours</option>
-              <option value="30d">Last 30 Days</option>
-              <option value="custom">Custom Range...</option>
-            </select>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-              <input
-                type="datetime-local"
-                value={customStartDateTime}
-                onChange={(e) => {
-                  setCustomStartDateTime(e.target.value);
-                  setDateRange('custom');
-                  setCurrentPage(1);
-                }}
-                className="form-select-theme"
-                style={{ height: '32px', fontSize: '0.72rem', padding: '0 0.4rem', borderRadius: '6px' }}
-                title="Start Date &amp; Time"
-              />
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>to</span>
-              <input
-                type="datetime-local"
-                value={customEndDateTime}
-                onChange={(e) => {
-                  setCustomEndDateTime(e.target.value);
-                  setDateRange('custom');
-                  setCurrentPage(1);
-                }}
-                className="form-select-theme"
-                style={{ height: '32px', fontSize: '0.72rem', padding: '0 0.4rem', borderRadius: '6px' }}
-                title="End Date &amp; Time"
-              />
-            </div>
-          </div>
-
-          {(searchQuery || statusFilter !== 'ALL' || typeFilter !== 'ALL' || dateRange !== '7d' || customStartDateTime || customEndDateTime) && (
-            <button
-              onClick={() => {
-                setSearchQuery('');
-                setStatusFilter('ALL');
-                setTypeFilter('ALL');
-                setDateRange('7d');
-                setCustomStartDateTime('');
-                setCustomEndDateTime('');
-                setCurrentPage(1);
-              }}
-              className="btn-secondary"
-              style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-            >
-              <RotateCcw size={11} />
-              <span>Reset</span>
-            </button>
-          )}
+          {/* Date Range Filter */}
+          <select
+            value={dateRange}
+            onChange={(e) => setDateRange(e.target.value)}
+            style={{
+              padding: '0.35rem 0.65rem',
+              fontSize: '0.8rem',
+              backgroundColor: 'var(--bg-surface)',
+              border: '1px solid var(--border-default)',
+              borderRadius: '6px',
+              color: 'var(--text-primary)'
+            }}
+          >
+            <option value="today">Today</option>
+            <option value="24h">Past 24 Hours</option>
+            <option value="7d">Past 7 Days</option>
+            <option value="30d">Past 30 Days</option>
+            <option value="custom">Custom Range</option>
+          </select>
         </div>
 
-        {/* Page Size Selector */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-          <span>Show:</span>
-          <select
-            value={pageSize}
-            onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
-            className="form-select-theme"
-            style={{ padding: '0.15rem 0.4rem', fontSize: '0.72rem', height: '28px' }}
-          >
-            <option value={10}>10</option>
-            <option value={20}>20</option>
-            <option value={50}>50</option>
-          </select>
+        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+          Showing <strong>{filteredRows.length}</strong> matching transaction(s)
         </div>
       </div>
 
-      {/* 4. Responsive Enterprise Data Table */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden', borderRadius: '8px' }}>
-        <div className="table-responsive">
-          <table className="enterprise-table" style={{ width: '100%', tableLayout: 'auto' }}>
+      {/* 6. Jobs Table */}
+      <div className="card" style={{ padding: 0, overflow: 'hidden', borderRadius: '10px' }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8rem' }}>
             <thead>
-              <tr>
-                <th style={{ width: 140 }}>Tracking ID</th>
-                <th style={{ width: 110 }}>Source ERP</th>
-                <th style={{ width: 85 }}>Doc Type</th>
-                <th style={{ width: 115 }}>Facility</th>
-                <th>Original File</th>
-                <th style={{ width: 80, textAlign: 'center' }}>Records</th>
-                <th style={{ width: 165 }}>MAWM Status</th>
-                <th style={{ width: 110 }}>Timestamp</th>
-                <th style={{ width: 165, textAlign: 'right', paddingRight: '1.25rem' }}>Actions</th>
+              <tr style={{ backgroundColor: 'var(--bg-surface-elevated)', borderBottom: '1px solid var(--border-default)', color: 'var(--text-muted)' }}>
+                <th style={{ padding: '0.75rem 1rem' }}>Tracking ID</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Source ERP</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Document</th>
+                <th style={{ padding: '0.75rem 1rem' }}>DestinationFacilityId</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Original Filename</th>
+                <th style={{ padding: '0.75rem 1rem' }}>MAWM Dispatch (5.4.1)</th>
+                <th style={{ padding: '0.75rem 1rem' }}>MAWM Verification (5.4.2)</th>
+                <th style={{ padding: '0.75rem 1rem', textAlign: 'right', paddingRight: '1.25rem' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {paginatedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem' }}>
-                      <Radio size={28} style={{ opacity: 0.35 }} />
-                      <div style={{ fontWeight: 600, fontSize: '0.92rem', color: 'var(--text-primary)' }}>No dispatch transactions found</div>
-                      <p style={{ margin: 0, fontSize: '0.8rem' }}>
-                        Inbound files from ERP sources will automatically appear here once converted.
-                      </p>
-                    </div>
+                  <td colSpan={8} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    No matching transactions found.
                   </td>
                 </tr>
               ) : (
                 paginatedRows.map((row) => {
-                  const dStatus = (row.dispatchStatus || '').toUpperCase();
-                  const isDelivered = dStatus.includes('DELIVERED') || dStatus.includes('200');
-                  const isFailed = dStatus.includes('FAILED');
-                  const facilityDisplay = row.facilityId && row.facilityId !== 'UNKNOWN' && !row.facilityId.includes(' ')
-                    ? row.facilityId
-                    : (telemetry?.defaultFacility || 'Food_Cbe');
+                  const isOptiRow = row.sourceSystem?.toUpperCase() === 'OPTI' || row.sourceSystem?.toUpperCase() === 'OTPI';
+                  const isDelivered = (row.dispatchStatus || '').includes('200') || (row.dispatchStatus || '').includes('DELIVERED');
+                  const isFailed = (row.dispatchStatus || '').includes('FAILED');
+                  const isVerified = (row.mawmAsnStatus || '').includes('8000') || (row.mawmAsnStatus || '').includes('Verified');
+                  const facilityDisplay = row.facilityId || 'Food_Cbe';
 
                   return (
                     <tr
                       key={row.jobId}
-                      style={{ cursor: 'pointer' }}
+                      style={{ borderBottom: '1px solid var(--border-default)', cursor: 'pointer' }}
                       onClick={() => handleInspectJob(row)}
                     >
                       {/* Tracking ID */}
-                      <td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                           <span className="mono-job-id" title={row.jobId}>
                             {row.jobId.slice(0, 8)}...
@@ -650,28 +853,40 @@ export default function MawmDispatchPage({
                       </td>
 
                       {/* Source ERP */}
-                      <td>
-                        <span className="badge" style={{
-                          backgroundColor: 'rgba(56, 189, 248, 0.1)',
-                          color: '#38bdf8',
-                          border: '1px solid rgba(56, 189, 248, 0.25)',
-                          fontSize: '0.72rem',
-                          padding: '0.15rem 0.45rem',
-                          fontWeight: 600
-                        }}>
-                          {row.sourceSystem?.toUpperCase() === 'OTPI' || row.sourceSystem?.toUpperCase() === 'OPTI' ? 'Opti' : (row.sourceSystem || 'HOST')}
-                        </span>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        {isOptiRow ? (
+                          <span className="badge" style={{
+                            backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                            color: '#10b981',
+                            border: '1px solid #10b981',
+                            fontSize: '0.72rem',
+                            padding: '0.15rem 0.45rem',
+                            fontWeight: 700
+                          }}>
+                            Opti (Active)
+                          </span>
+                        ) : (
+                          <span className="badge" style={{
+                            backgroundColor: 'rgba(100, 116, 139, 0.15)',
+                            color: '#94a3b8',
+                            border: '1px solid rgba(100, 116, 139, 0.3)',
+                            fontSize: '0.72rem',
+                            padding: '0.15rem 0.45rem'
+                          }} title="Live MAWM Cloud dispatch is exclusive to Opti feeds">
+                            {row.sourceSystem || 'HOST'} (Converted)
+                          </span>
+                        )}
                       </td>
 
                       {/* Doc Type */}
-                      <td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
                         <span style={{ fontWeight: 700, fontSize: '0.78rem', color: '#38bdf8' }}>
                           {row.transactionType || 'ASN'}
                         </span>
                       </td>
 
-                      {/* Facility */}
-                      <td>
+                      {/* DestinationFacilityId */}
+                      <td style={{ padding: '0.75rem 1rem' }}>
                         <span style={{
                           fontFamily: 'var(--font-mono, monospace)',
                           fontSize: '0.75rem',
@@ -686,22 +901,15 @@ export default function MawmDispatchPage({
                         </span>
                       </td>
 
-                      {/* Original File */}
-                      <td style={{ maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.originalFilename}>
+                      {/* Original Filename */}
+                      <td style={{ padding: '0.75rem 1rem', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.originalFilename}>
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}>
-                          {row.originalFilename || 'inbound_file.json'}
+                          {row.originalFilename || 'opti_payload.json'}
                         </span>
                       </td>
 
-                      {/* Records */}
-                      <td style={{ textAlign: 'center' }}>
-                        <span style={{ fontWeight: 700, fontSize: '0.82rem', color: 'var(--text-primary)' }}>
-                          {row.dispatchedRecords != null && row.dispatchedRecords > 0 ? row.dispatchedRecords : (row.totalRecords || 1)}
-                        </span>
-                      </td>
-
-                      {/* MAWM Status */}
-                      <td>
+                      {/* MAWM Dispatch (5.4.1) */}
+                      <td style={{ padding: '0.75rem 1rem' }}>
                         {isDelivered ? (
                           <span style={{
                             display: 'inline-flex',
@@ -736,6 +944,17 @@ export default function MawmDispatchPage({
                             <AlertTriangle size={12} />
                             FAILED
                           </span>
+                        ) : !isOptiRow ? (
+                          <span style={{
+                            fontSize: '0.72rem',
+                            color: 'var(--text-muted)',
+                            backgroundColor: 'rgba(100, 116, 139, 0.12)',
+                            padding: '0.18rem 0.5rem',
+                            borderRadius: '999px',
+                            border: '1px solid rgba(100, 116, 139, 0.25)'
+                          }}>
+                            Opti Exclusive
+                          </span>
                         ) : (
                           <span style={{
                             display: 'inline-flex',
@@ -756,15 +975,45 @@ export default function MawmDispatchPage({
                         )}
                       </td>
 
-                      {/* Timestamp */}
-                      <td style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                        {row.dispatchCompletedAt
-                          ? new Date(row.dispatchCompletedAt).toLocaleTimeString()
-                          : (row.receivedAt ? new Date(row.receivedAt).toLocaleTimeString() : 'N/A')}
+                      {/* MAWM Verification (5.4.2) */}
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        {isVerified ? (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                            color: '#38bdf8',
+                            border: '1px solid #38bdf8',
+                            padding: '0.18rem 0.55rem',
+                            borderRadius: '999px',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            whiteSpace: 'nowrap'
+                          }}>
+                            <CheckCheck size={12} />
+                            8000 VERIFIED
+                          </span>
+                        ) : isOptiRow ? (
+                          <button
+                            onClick={(e) => handleVerifyJob(row.jobId, e)}
+                            disabled={verifyingJobId === row.jobId}
+                            className="btn-secondary"
+                            title="Query MAWM /receiving/api/receiving/asn/search live"
+                            style={{ padding: '0.2rem 0.55rem', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                          >
+                            <Search size={11} className={verifyingJobId === row.jobId ? 'spin-icon' : ''} />
+                            <span>{verifyingJobId === row.jobId ? 'Checking...' : 'Check Status'}</span>
+                          </button>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>
+                            Opti Only
+                          </span>
+                        )}
                       </td>
 
                       {/* Actions */}
-                      <td style={{ textAlign: 'right', paddingRight: '1.25rem' }}>
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right', paddingRight: '1.25rem' }}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
                           <button
                             onClick={(e) => {
@@ -779,32 +1028,27 @@ export default function MawmDispatchPage({
                             <span>Inspect</span>
                           </button>
 
-                          {(() => {
-                            const isOptiRow = row.sourceSystem?.toUpperCase() === 'OPTI' || row.sourceSystem?.toUpperCase() === 'OTPI';
-                            return (
-                              <button
-                                onClick={(e) => isOptiRow && handleDispatchJob(row.jobId, e)}
-                                disabled={dispatchingJobId === row.jobId || !isOptiRow}
-                                className="btn-primary"
-                                title={isOptiRow ? "Dispatch payload to MAWM Cloud" : "Rejection: Only Opti ERP is authorized to dispatch to MAWM Cloud"}
-                                style={{
-                                  padding: '0.25rem 0.6rem',
-                                  fontSize: '0.75rem',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '0.3rem',
-                                  opacity: isOptiRow ? 1 : 0.45,
-                                  cursor: isOptiRow ? 'pointer' : 'not-allowed',
-                                  backgroundColor: !isOptiRow ? 'rgba(100, 116, 139, 0.2)' : isDelivered ? 'rgba(16, 185, 129, 0.2)' : 'var(--primary-color)',
-                                  borderColor: !isOptiRow ? 'rgba(100, 116, 139, 0.3)' : isDelivered ? '#10b981' : 'transparent',
-                                  color: !isOptiRow ? '#94a3b8' : isDelivered ? '#10b981' : '#ffffff'
-                                }}
-                              >
-                                <Send size={11} className={dispatchingJobId === row.jobId ? 'spin-icon' : ''} />
-                                <span>{!isOptiRow ? 'Opti Only' : dispatchingJobId === row.jobId ? 'Sending...' : (isDelivered ? 'Redeliver' : 'Dispatch')}</span>
-                              </button>
-                            );
-                          })()}
+                          <button
+                            onClick={(e) => isOptiRow && handleDispatchJob(row.jobId, e)}
+                            disabled={dispatchingJobId === row.jobId || !isOptiRow}
+                            className="btn-primary"
+                            title={isOptiRow ? "Dispatch payload to MAWM Cloud" : "Rejection: Only Opti ERP is authorized to dispatch to MAWM Cloud"}
+                            style={{
+                              padding: '0.25rem 0.6rem',
+                              fontSize: '0.75rem',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              opacity: isOptiRow ? 1 : 0.45,
+                              cursor: isOptiRow ? 'pointer' : 'not-allowed',
+                              backgroundColor: !isOptiRow ? 'rgba(100, 116, 139, 0.2)' : isDelivered ? 'rgba(16, 185, 129, 0.2)' : 'var(--primary-color)',
+                              borderColor: !isOptiRow ? 'rgba(100, 116, 139, 0.3)' : isDelivered ? '#10b981' : 'transparent',
+                              color: !isOptiRow ? '#94a3b8' : isDelivered ? '#10b981' : '#ffffff'
+                            }}
+                          >
+                            <Send size={11} className={dispatchingJobId === row.jobId ? 'spin-icon' : ''} />
+                            <span>{!isOptiRow ? 'Opti Only' : dispatchingJobId === row.jobId ? 'Sending...' : (isDelivered ? 'Redeliver' : 'Dispatch')}</span>
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -815,7 +1059,7 @@ export default function MawmDispatchPage({
           </table>
         </div>
 
-        {/* 5. Pagination Footer */}
+        {/* 7. Pagination Footer */}
         {totalItems > 0 && (
           <div style={{
             padding: '0.75rem 1.25rem',
@@ -861,7 +1105,7 @@ export default function MawmDispatchPage({
         )}
       </div>
 
-      {/* 6. Inspection Modal */}
+      {/* 8. Inspection Modal */}
       {inspectingJob && (
         <div style={{
           position: 'fixed',
@@ -878,7 +1122,7 @@ export default function MawmDispatchPage({
         }}>
           <div className="card" style={{
             width: '100%',
-            maxWidth: '860px',
+            maxWidth: '900px',
             maxHeight: '90vh',
             display: 'flex',
             flexDirection: 'column',
@@ -898,14 +1142,14 @@ export default function MawmDispatchPage({
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    MAWM Dispatch Telemetry Inspector
+                    MAWM ASN Dispatch & Verification Telemetry
                   </h3>
                   <span className="mono-job-id" style={{ fontSize: '0.72rem' }}>
                     {inspectingJob.jobId}
                   </span>
                 </div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-                  File: {inspectingJob.originalFilename} • Facility: {inspectingJob.facilityId || telemetry?.defaultFacility || 'Food_Cbe'}
+                  File: {inspectingJob.originalFilename} • Facility: <strong style={{ color: '#10b981' }}>{inspectingJob.facilityId || 'Food_Cbe'}</strong>
                 </div>
               </div>
 
@@ -928,18 +1172,58 @@ export default function MawmDispatchPage({
                 marginBottom: '1rem',
                 fontSize: '0.8rem'
               }}>
-                <div style={{ fontWeight: 700, marginBottom: '0.4rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <Server size={14} color="#10b981" />
-                  <span>Outbound HTTP Dispatch Specification</span>
+                <div style={{ fontWeight: 700, marginBottom: '0.4rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <Server size={14} color="#10b981" />
+                    <span>Outbound MAWM Cloud HTTP Specifications (Derived from DestinationFacilityId)</span>
+                  </div>
+                  {(() => {
+                    const isOptiInspect = inspectingJob.sourceSystem?.toUpperCase() === 'OPTI' || inspectingJob.sourceSystem?.toUpperCase() === 'OTPI';
+                    return (
+                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        {isOptiInspect && (
+                          <button
+                            onClick={() => handleVerifyJob(inspectingJob.jobId)}
+                            disabled={verifyingJobId === inspectingJob.jobId}
+                            className="btn-secondary"
+                            style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                          >
+                            <Search size={12} className={verifyingJobId === inspectingJob.jobId ? 'spin-icon' : ''} />
+                            <span>{verifyingJobId === inspectingJob.jobId ? 'Verifying...' : 'Verify in MAWM (5.4.2)'}</span>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => isOptiInspect && handleDispatchJob(inspectingJob.jobId)}
+                          disabled={dispatchingJobId === inspectingJob.jobId || !isOptiInspect}
+                          className="btn-primary"
+                          style={{
+                            padding: '0.3rem 0.75rem',
+                            fontSize: '0.75rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            opacity: isOptiInspect ? 1 : 0.45,
+                            cursor: isOptiInspect ? 'pointer' : 'not-allowed'
+                          }}
+                        >
+                          <Send size={12} />
+                          <span>{!isOptiInspect ? 'Opti Exclusive' : dispatchingJobId === inspectingJob.jobId ? 'Dispatching...' : 'Dispatch to Live Cloud'}</span>
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.4rem', color: 'var(--text-muted)' }}>
                   <div><strong>HTTP Method:</strong> <code style={{ color: '#10b981' }}>POST</code></div>
                   <div><strong>Target Host:</strong> <code style={{ color: '#38bdf8' }}>{telemetry?.baseUrl || 'https://ncsps.sce.manh.com'}</code></div>
-                  <div><strong>selectedLocation:</strong> <code style={{ color: '#f59e0b' }}>{telemetry?.defaultFacility || 'Food_Cbe'}</code></div>
-                  <div><strong>selectedOrganization:</strong> <code style={{ color: '#f59e0b' }}>{telemetry?.defaultFacility || 'Food_Cbe'}</code></div>
-                  <div><strong>selectedBusinessUnit:</strong> <code style={{ color: '#f59e0b' }}>{telemetry?.defaultFacility || 'Food_Cbe'}</code></div>
+                  <div><strong>selectedLocation:</strong> <code style={{ color: '#f59e0b' }}>{inspectingJob.facilityId || 'Food_Cbe'}</code></div>
+                  <div><strong>selectedOrganization:</strong> <code style={{ color: '#f59e0b' }}>{inspectingJob.facilityId || 'Food_Cbe'}</code></div>
+                  <div><strong>selectedBusinessUnit:</strong> <code style={{ color: '#f59e0b' }}>{inspectingJob.facilityId || 'Food_Cbe'}</code></div>
                   <div><strong>Authorization:</strong> <code>Bearer &lt;OAuth2 Cached Token&gt;</code></div>
+                  <div><strong>User:</strong> <strong style={{ color: '#38bdf8' }}>{inspectingJob.createdBy || telemetry?.username || 'lezhilarasan'}</strong></div>
                   <div><strong>Dispatch Status:</strong> <strong style={{ color: inspectingJob.dispatchStatus?.includes('200') ? '#10b981' : (inspectingJob.dispatchStatus?.includes('FAILED') ? '#ef4444' : '#f59e0b') }}>{inspectingJob.dispatchStatus || 'PENDING'}</strong></div>
+                  <div><strong>MAWM AsnStatus:</strong> <strong style={{ color: inspectingJob.mawmAsnStatus?.includes('8000') ? '#10b981' : '#f59e0b' }}>{inspectingJob.mawmAsnStatus || 'Not Checked'}</strong></div>
                 </div>
               </div>
 
@@ -951,141 +1235,80 @@ export default function MawmDispatchPage({
                     <button
                       onClick={() => setInspectPayloadTab('response')}
                       className={`filter-pill ${inspectPayloadTab === 'response' ? 'active' : ''}`}
-                      style={{ padding: '0.2rem 0.65rem', fontSize: '0.74rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                      style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
                     >
-                      <CheckCircle2 size={12} color="#10b981" />
-                      <span>MAWM Cloud Response {inspectingJob.mawmResponse ? '✓' : ''}</span>
+                      5.4.1 Save ASN Response (200 OK)
+                    </button>
+                    <button
+                      onClick={() => setInspectPayloadTab('verification')}
+                      className={`filter-pill ${inspectPayloadTab === 'verification' ? 'active' : ''}`}
+                      style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
+                    >
+                      5.4.2 Verification Search (/search)
                     </button>
                     <button
                       onClick={() => setInspectPayloadTab('outbound')}
                       className={`filter-pill ${inspectPayloadTab === 'outbound' ? 'active' : ''}`}
-                      style={{ padding: '0.2rem 0.65rem', fontSize: '0.74rem' }}
+                      style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
                     >
-                      Converted Request Payload {inspectingJob.outputFiles ? '✓' : ''}
+                      Converted Request Payload
                     </button>
-                    {inspectingJob.rawContent && (
-                      <button
-                        onClick={() => setInspectPayloadTab('inbound')}
-                        className={`filter-pill ${inspectPayloadTab === 'inbound' ? 'active' : ''}`}
-                        style={{ padding: '0.2rem 0.65rem', fontSize: '0.74rem' }}
-                      >
-                        Inbound ERP Source
-                      </button>
-                    )}
+                    <button
+                      onClick={() => setInspectPayloadTab('inbound')}
+                      className={`filter-pill ${inspectPayloadTab === 'inbound' ? 'active' : ''}`}
+                      style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
+                    >
+                      Inbound Raw File
+                    </button>
                     {inspectingJob.processingErrorMessage && (
                       <button
                         onClick={() => setInspectPayloadTab('error')}
                         className={`filter-pill ${inspectPayloadTab === 'error' ? 'active' : ''}`}
-                        style={{ padding: '0.2rem 0.65rem', fontSize: '0.74rem', color: '#ef4444', borderColor: '#ef4444' }}
+                        style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem', color: '#ef4444' }}
                       >
-                        Error Log
+                        Errors
                       </button>
                     )}
                   </div>
 
-                  {/* Actions */}
                   <div style={{ display: 'flex', gap: '0.4rem' }}>
                     {onOpenBeautifier && activePayloadText && (
                       <button
-                        onClick={() => {
-                          onOpenBeautifier(activePayloadText);
-                          setInspectingJob(null);
-                        }}
+                        onClick={() => onOpenBeautifier(activePayloadText)}
                         className="btn-secondary"
-                        style={{ padding: '0.18rem 0.5rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                        style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
                       >
                         <FileCode2 size={12} />
-                        <span>Beautify</span>
+                        <span>Beautifier</span>
                       </button>
                     )}
                     <button
-                      onClick={(e) => handleCopy(activePayloadText || '{}', 'modal-json', e)}
+                      onClick={() => handleCopy(activePayloadText, 'modal_payload')}
                       className="btn-secondary"
-                      style={{ padding: '0.18rem 0.5rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                      style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
                     >
-                      {copiedId === 'modal-json' ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
-                      <span>Copy</span>
+                      {copiedId === 'modal_payload' ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
+                      <span>{copiedId === 'modal_payload' ? 'Copied' : 'Copy'}</span>
                     </button>
                   </div>
                 </div>
 
-                {inspectingJob.isLoadingPayload ? (
-                  <div style={{
-                    padding: '2.5rem',
-                    textAlign: 'center',
-                    backgroundColor: 'var(--bg-surface-elevated)',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border-default)',
-                    color: 'var(--text-muted)'
-                  }}>
-                    <RefreshCw size={22} className="spin-icon" style={{ marginBottom: '0.5rem' }} />
-                    <div style={{ fontSize: '0.82rem' }}>Loading Canonical JSON payload from database...</div>
-                  </div>
-                ) : (
-                  <pre style={{
-                    backgroundColor: 'var(--bg-surface-elevated)',
-                    border: '1px solid var(--border-default)',
-                    borderRadius: '8px',
-                    padding: '0.85rem',
-                    fontFamily: 'monospace',
-                    fontSize: '0.78rem',
-                    color: inspectPayloadTab === 'error'
-                      ? '#f87171'
-                      : (inspectPayloadTab === 'response' ? '#34d399' : (inspectPayloadTab === 'outbound' ? '#38bdf8' : '#e2e8f0')),
-                    maxHeight: '340px',
-                    overflow: 'auto',
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-all'
-                  }}>
-                    {activePayloadText || 'No content available'}
-                  </pre>
-                )}
+                <pre style={{
+                  margin: 0,
+                  padding: '1rem',
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: '8px',
+                  maxHeight: '380px',
+                  overflowY: 'auto',
+                  fontSize: '0.78rem',
+                  fontFamily: 'var(--font-mono, monospace)',
+                  color: 'var(--text-primary)',
+                  lineHeight: 1.5
+                }}>
+                  {activePayloadText || '// No payload available for selected tab'}
+                </pre>
               </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div style={{
-              padding: '0.75rem 1.25rem',
-              borderTop: '1px solid var(--border-default)',
-              display: 'flex',
-              justifyContent: 'flex-end',
-              gap: '0.65rem',
-              backgroundColor: 'var(--bg-surface)'
-            }}>
-              <button
-                onClick={() => setInspectingJob(null)}
-                className="btn-secondary"
-                style={{ padding: '0.4rem 1rem', fontSize: '0.8rem' }}
-              >
-                Close
-              </button>
-
-              {(() => {
-                const isOptiInspect = inspectingJob?.sourceSystem?.toUpperCase() === 'OPTI' || inspectingJob?.sourceSystem?.toUpperCase() === 'OTPI';
-                return (
-                  <button
-                    onClick={() => isOptiInspect && handleDispatchJob(inspectingJob.jobId)}
-                    disabled={dispatchingJobId === inspectingJob.jobId || !isOptiInspect}
-                    className="btn-primary"
-                    title={isOptiInspect ? "Dispatch to Live Cloud" : "Rejection: Only Opti ERP is authorized to dispatch to MAWM Cloud"}
-                    style={{
-                      padding: '0.4rem 1.15rem',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.35rem',
-                      fontSize: '0.8rem',
-                      opacity: isOptiInspect ? 1 : 0.45,
-                      cursor: isOptiInspect ? 'pointer' : 'not-allowed',
-                      backgroundColor: !isOptiInspect ? 'rgba(100, 116, 139, 0.2)' : undefined,
-                      borderColor: !isOptiInspect ? 'rgba(100, 116, 139, 0.3)' : undefined,
-                      color: !isOptiInspect ? '#94a3b8' : undefined
-                    }}
-                  >
-                    <Send size={13} />
-                    <span>{!isOptiInspect ? 'Rejected (Opti Only)' : dispatchingJobId === inspectingJob.jobId ? 'Dispatching...' : 'Dispatch to Live Cloud'}</span>
-                  </button>
-                );
-              })()}
             </div>
           </div>
         </div>
