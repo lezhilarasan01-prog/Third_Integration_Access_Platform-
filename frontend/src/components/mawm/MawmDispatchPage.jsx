@@ -6,14 +6,8 @@ import {
   Clock,
   RefreshCw,
   Search,
-  Eye,
-  Send,
   ShieldCheck,
-  Copy,
   Check,
-  ChevronLeft,
-  ChevronRight,
-  Code,
   CheckCheck,
   ExternalLink,
   ArrowRight
@@ -32,9 +26,6 @@ export default function MawmDispatchPage({
   const [refreshing, setRefreshing] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState(null);
-  const [dispatchingJobId, setDispatchingJobId] = useState(null);
-  const [verifyingJobId, setVerifyingJobId] = useState(null);
-  const [copiedId, setCopiedId] = useState(null);
 
   // 5.4.2 Verification Search Tool State - Starts empty (no hardcoded ASN)
   const [searchAsnId, setSearchAsnId] = useState('');
@@ -42,15 +33,6 @@ export default function MawmDispatchPage({
   const [searchingAsn, setSearchingAsn] = useState(false);
   const [searchResult, setSearchResult] = useState(null);
   const [showRawSearchJson, setShowRawSearchJson] = useState(false);
-
-  // Opti Registry Filter & Pagination
-  const [registryQuery, setRegistryQuery] = useState('');
-  const [registryPage, setRegistryPage] = useState(1);
-  const [registryPageSize, setRegistryPageSize] = useState(10);
-
-  // Inspection modal
-  const [inspectingJob, setInspectingJob] = useState(null);
-  const [inspectPayloadTab, setInspectPayloadTab] = useState('response'); // 'response' | 'verification'
 
   const formatPayload = (val) => {
     if (!val) return '';
@@ -67,29 +49,6 @@ export default function MawmDispatchPage({
     } catch (e) {
       return val;
     }
-  };
-
-  const extractAsnId = (job) => {
-    if (!job) return '';
-    if (job.outputFiles && typeof job.outputFiles === 'string') {
-      try {
-        const parsed = JSON.parse(job.outputFiles);
-        const dataArr = parsed.Data || parsed.data || (Array.isArray(parsed) ? parsed : null);
-        if (Array.isArray(dataArr) && dataArr[0]?.AsnId) return dataArr[0].AsnId;
-        if (parsed.AsnId) return parsed.AsnId;
-      } catch (e) {}
-    }
-    if (job.rawContent && typeof job.rawContent === 'string') {
-      try {
-        const parsed = JSON.parse(job.rawContent);
-        if (parsed.AsnId) return parsed.AsnId;
-        if (parsed.asnId) return parsed.asnId;
-      } catch (e) {}
-    }
-    if (job.originalFilename && job.originalFilename.toUpperCase().includes('ASN')) {
-      return job.originalFilename.replace(/\.[^/.]+$/, '');
-    }
-    return job.jobId || '';
   };
 
   const loadData = useCallback(async (isSilent = false) => {
@@ -151,89 +110,17 @@ export default function MawmDispatchPage({
         statusCode: 500,
         cleanError: err.message || 'Failed to query MAWM ASN verification search API',
         error: err.message || 'Failed to query MAWM ASN verification search API',
-        facilityId: targetFac,
-        endpoint: `${telemetry?.baseUrl || 'https://ncsps.sce.manh.com'}/receiving/api/receiving/asn/search`
+        facilityId: targetFac
       });
     } finally {
       setSearchingAsn(false);
     }
   };
 
-  const handleVerifyJob = async (jobId, e) => {
-    if (e) e.stopPropagation();
-    setVerifyingJobId(jobId);
-    try {
-      const res = await integrationApi.verifyJobAsn(jobId);
-      if (inspectingJob && inspectingJob.jobId === jobId) {
-        setInspectingJob((prev) => ({
-          ...prev,
-          mawmAsnStatus: res.statusDescription || res.asnStatus,
-          verificationResult: res
-        }));
-        setInspectPayloadTab('verification');
-      }
-      await loadData(true);
-    } catch (err) {
-      alert('Verification query failed: ' + err.message);
-    } finally {
-      setVerifyingJobId(null);
-    }
-  };
-
-  const handleDispatchJob = async (jobId, e) => {
-    if (e) e.stopPropagation();
-    setDispatchingJobId(jobId);
-    try {
-      const res = await integrationApi.dispatchMawmJob(jobId);
-      if (res.success) {
-        if (inspectingJob && inspectingJob.jobId === jobId) {
-          setInspectingJob((prev) => ({
-            ...prev,
-            dispatchStatus: res.dispatchStatus || 'DELIVERED_TO_MAWM (200 OK)',
-            mawmResponse: res.mawmResponse || prev.mawmResponse
-          }));
-          setInspectPayloadTab('response');
-        }
-        await loadData(true);
-      } else {
-        alert(res.error || 'Dispatch returned failure status');
-      }
-    } catch (err) {
-      alert('Error triggering dispatch: ' + err.message);
-    } finally {
-      setDispatchingJobId(null);
-    }
-  };
-
-  // Strictly filter for OPTI ERP feeds only (no non-opti jobs shown here)
-  const optiAsnTrackers = useMemo(() => {
-    return trackers.filter((r) => {
-      const src = (r.sourceSystem || '').toUpperCase();
-      const isOpti = src === 'OPTI' || src === 'OTPI';
-      if (!isOpti) return false;
-
-      if (registryQuery.trim()) {
-        const q = registryQuery.toLowerCase().trim();
-        const asn = extractAsnId(r).toLowerCase();
-        const fac = (r.facilityId || '').toLowerCase();
-        const jId = (r.jobId || '').toLowerCase();
-        if (!asn.includes(q) && !fac.includes(q) && !jId.includes(q)) return false;
-      }
-      return true;
-    });
-  }, [trackers, registryQuery]);
-
-  const totalRegistryPages = Math.ceil(optiAsnTrackers.length / registryPageSize) || 1;
-  const paginatedOptiAsns = useMemo(() => {
-    const start = (registryPage - 1) * registryPageSize;
-    return optiAsnTrackers.slice(start, start + registryPageSize);
-  }, [optiAsnTrackers, registryPage, registryPageSize]);
-
   // Aggregate stats for Opti
   const stats = useMemo(() => {
     let delivered = 0;
     let verified = 0;
-    let pending = 0;
     trackers.forEach((r) => {
       const src = (r.sourceSystem || '').toUpperCase();
       const isOpti = src === 'OPTI' || src === 'OTPI';
@@ -242,13 +129,12 @@ export default function MawmDispatchPage({
       const v = (r.mawmAsnStatus || '').toUpperCase();
       if (s.includes('DELIVERED') || s.includes('200')) delivered++;
       if (v.includes('8000') || v.includes('VERIFIED')) verified++;
-      else if (s.includes('PENDING') || s.includes('AWAITING') || s.includes('SAVED')) pending++;
     });
-    return { delivered, verified, pending };
+    return { delivered, verified };
   }, [trackers]);
 
   return (
-    <div className="page-container" style={{ padding: '1.25rem 1.75rem', maxWidth: '1600px', margin: '0 auto' }}>
+    <div className="page-container" style={{ padding: '1.25rem 1.75rem', maxWidth: '1400px', margin: '0 auto' }}>
       {/* 1. Header & Actions Bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -268,17 +154,17 @@ export default function MawmDispatchPage({
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
               <h1 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                MAWM ASN Dispatch & Verification Hub
+                MAWM ASN Verification Hub
               </h1>
               <span className="badge badge-success" style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.04em', backgroundColor: 'rgba(16, 185, 129, 0.2)', border: '1px solid #10b981' }}>
-                OPTI EXCLUSIVE DISPATCH
+                OPTI EXCLUSIVE
               </span>
               <span className="badge" style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.04em', backgroundColor: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
                 LIVE CLOUD
               </span>
             </div>
             <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Dedicated Manhattan Active® WMS Cloud Integration: 5.4.1 Save ASN (<code style={{ color: '#10b981' }}>/asn/save</code>) & 5.4.2 Verification Query (<code style={{ color: '#38bdf8' }}>/asn/search</code>).
+              Manhattan Active® WMS Automated Ingestion & Receipt Verification Hub for Opti ERP feeds.
             </p>
           </div>
         </div>
@@ -337,61 +223,61 @@ export default function MawmDispatchPage({
         </div>
       )}
 
-      {/* 2. Top Metric KPI Summary Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
+      {/* 2. Top Metric KPI Summary Cards (Clean: NO target host displayed!) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
         <div className="card" style={{ padding: '0.85rem 1rem', borderRadius: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>MAWM TARGET HOST</span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>WMS CLOUD INTEGRATION</span>
             <span style={{ fontSize: '0.68rem', color: '#10b981', fontWeight: 700, backgroundColor: 'rgba(16, 185, 129, 0.12)', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
               ONLINE
             </span>
           </div>
-          <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {telemetry?.baseUrl || 'https://ncsps.sce.manh.com'}
+          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+            Active & Connected
           </div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-            Auth: <code style={{ color: '#38bdf8' }}>OAuth2 Bearer (Cached)</code>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+            Token Status: <strong style={{ color: '#10b981' }}>OAuth2 Valid</strong>
           </div>
         </div>
 
         <div className="card" style={{ padding: '0.85rem 1rem', borderRadius: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>DYNAMIC HEADERS & USER</span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>FACILITY & USER</span>
             <span style={{ fontSize: '0.68rem', color: '#f59e0b', fontWeight: 700, backgroundColor: 'rgba(245, 158, 11, 0.12)', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
-              AUTO-ROUTING
+              ROUTING
             </span>
           </div>
-          <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-            Facility: <code style={{ color: '#10b981' }}>{telemetry?.defaultFacility || 'Food_Cbe'}</code>
+          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+            {telemetry?.defaultFacility || 'Food_Cbe'}
           </div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
             User: <strong style={{ color: '#a78bfa' }}>{telemetry?.username || 'lezhilarasan'}</strong>
           </div>
         </div>
 
         <div className="card" style={{ padding: '0.85rem 1rem', borderRadius: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>DELIVERED TO CLOUD (5.4.1)</span>
-            <CheckCircle2 size={15} color="#10b981" />
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>VERIFIED RECEIPTS</span>
+            <CheckCheck size={16} color="#38bdf8" />
           </div>
-          <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#10b981', lineHeight: 1.2 }}>
-            {stats.delivered}
+          <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#38bdf8', lineHeight: 1.2 }}>
+            {stats.verified}
           </div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-            HTTP Status: <span style={{ color: '#10b981', fontWeight: 600 }}>200 OK</span>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+            Status Code: <strong style={{ color: '#38bdf8' }}>8000 Verified</strong>
           </div>
         </div>
 
         <div className="card" style={{ padding: '0.85rem 1rem', borderRadius: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>VERIFIED IN MAWM (5.4.2)</span>
-            <CheckCheck size={15} color="#38bdf8" />
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>TOTAL DELIVERED</span>
+            <CheckCircle2 size={16} color="#10b981" />
           </div>
-          <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#38bdf8', lineHeight: 1.2 }}>
-            {stats.verified}
+          <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#10b981', lineHeight: 1.2 }}>
+            {stats.delivered}
           </div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-            MAWM Status Code: <strong style={{ color: '#38bdf8' }}>8000</strong>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+            Status: <span style={{ color: '#10b981', fontWeight: 600 }}>200 OK</span>
           </div>
         </div>
       </div>
@@ -409,26 +295,12 @@ export default function MawmDispatchPage({
         flexWrap: 'wrap',
         gap: '0.75rem'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <div style={{
-            width: 32,
-            height: 32,
-            borderRadius: '6px',
-            backgroundColor: 'rgba(56, 189, 248, 0.15)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#38bdf8'
-          }}>
-            <Code size={16} />
+        <div>
+          <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+            All Ingestion Files & Transformation Jobs
           </div>
-          <div>
-            <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-              Looking for full file intake logs, S3 claim checks, or Kafka events?
-            </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              All raw file uploads and full transformation audit logs are centralized in <strong>File Tracker & API Audit</strong>.
-            </div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+            Detailed file tracking, S3 claim checks, Kafka topics, and full audit logs are managed in the central File Tracker & API Audit engine.
           </div>
         </div>
 
@@ -453,21 +325,21 @@ export default function MawmDispatchPage({
       </div>
 
       {/* =========================================================================
-          5.4.2 Interactive ASN Verification Search Console
+          4. Interactive ASN Verification Search Console (Clean: NO Target Host or API!)
          ========================================================================= */}
-      <div className="card" style={{ padding: '1.25rem 1.5rem', borderRadius: '10px', marginBottom: '1.5rem', border: '1px solid rgba(56, 189, 248, 0.3)', backgroundColor: 'rgba(15, 23, 42, 0.65)' }}>
+      <div className="card" style={{ padding: '1.25rem 1.5rem', borderRadius: '10px', border: '1px solid rgba(56, 189, 248, 0.3)', backgroundColor: 'rgba(15, 23, 42, 0.65)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div>
             <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <Search size={16} />
-              <span>5.4.2 Live ASN Verification Status Query Console</span>
+              <span>ASN Verification Status Query Console</span>
             </h3>
             <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              Target: <code style={{ color: '#38bdf8' }}>POST https://ncsps.sce.manh.com/receiving/api/receiving/asn/search</code> | Verified Code: <strong style={{ color: '#10b981' }}>8000</strong>
+              Query real-time receipt verification status in Manhattan Active WMS (Verified Code: <strong style={{ color: '#10b981' }}>8000</strong>)
             </p>
           </div>
           <span style={{ fontSize: '0.72rem', color: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '0.2rem 0.55rem', borderRadius: '4px', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
-            Template: AsnId, AsnStatus
+            Status: 8000 = Verified
           </span>
         </div>
 
@@ -497,7 +369,7 @@ export default function MawmDispatchPage({
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
               <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                Destination Facility (selectedLocation):
+                Destination Facility:
               </label>
               <div style={{ display: 'flex', gap: '0.3rem' }}>
                 <button
@@ -576,7 +448,7 @@ export default function MawmDispatchPage({
           </div>
         </div>
 
-        {/* Formatted Search Output Container (Properly bounded, NO throwing out of the box!) */}
+        {/* Formatted Search Output Container (Properly bounded, NO target host displayed!) */}
         {searchResult && (
           <div style={{
             marginTop: '1rem',
@@ -674,7 +546,7 @@ export default function MawmDispatchPage({
                 flexWrap: 'wrap'
               }}>
                 <div style={{ fontSize: '0.76rem', color: '#38bdf8' }}>
-                  <strong>Access Tip:</strong> User <code>{searchResult.username || 'lezhilarasan'}</code> is assigned to <strong>Food_Cbe</strong>.
+                  <strong>Access Tip:</strong> User <code>{telemetry?.username || 'lezhilarasan'}</code> is assigned to <strong>Food_Cbe</strong>.
                 </div>
                 <button
                   onClick={() => {
@@ -743,363 +615,6 @@ export default function MawmDispatchPage({
           </div>
         )}
       </div>
-
-      {/* =========================================================================
-          Opti Dispatched ASN Registry Table
-         ========================================================================= */}
-      <div className="card" style={{ padding: '1.25rem 1.5rem', borderRadius: '10px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-              Opti ERP Live ASN Registry ({optiAsnTrackers.length})
-            </h3>
-            <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              Tracks Opti ASN deliveries (5.4.1) and verification states (5.4.2) in Manhattan Active WMS Cloud.
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <input
-              type="text"
-              value={registryQuery}
-              onChange={(e) => {
-                setRegistryQuery(e.target.value);
-                setRegistryPage(1);
-              }}
-              placeholder="Filter by AsnId or Facility..."
-              className="input-field"
-              style={{ padding: '0.35rem 0.65rem', fontSize: '0.78rem', width: '220px' }}
-            />
-          </div>
-        </div>
-
-        {/* Clean ASN Table: Strictly NO Original Filename, NO Source ERP, NO Document! */}
-        <div className="table-responsive" style={{ overflowX: 'auto' }}>
-          <table className="data-table" style={{ width: '100%', fontSize: '0.8rem' }}>
-            <thead>
-              <tr>
-                <th style={{ padding: '0.65rem 1rem' }}>AsnId</th>
-                <th style={{ padding: '0.65rem 1rem' }}>Destination Facility</th>
-                <th style={{ padding: '0.65rem 1rem' }}>5.4.1 Save Status</th>
-                <th style={{ padding: '0.65rem 1rem' }}>5.4.2 Verification (8000)</th>
-                <th style={{ padding: '0.65rem 1rem' }}>Dispatched Time</th>
-                <th style={{ padding: '0.65rem 1rem', textAlign: 'right', paddingRight: '1.25rem' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedOptiAsns.length > 0 ? (
-                paginatedOptiAsns.map((row) => {
-                  const rowAsnId = extractAsnId(row);
-                  const facilityDisplay = row.facilityId || telemetry?.defaultFacility || 'Food_Cbe';
-                  const isDelivered = row.dispatchStatus && (row.dispatchStatus.includes('DELIVERED') || row.dispatchStatus.includes('200'));
-                  const isVerified = row.mawmAsnStatus && (row.mawmAsnStatus.includes('8000') || row.mawmAsnStatus.includes('VERIFIED') || row.mawmAsnStatus.includes('Verified'));
-
-                  return (
-                    <tr key={row.jobId} style={{ borderBottom: '1px solid var(--border-default)' }}>
-                      {/* AsnId */}
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <span
-                          onClick={() => {
-                            if (rowAsnId) {
-                              setSearchAsnId(rowAsnId);
-                              if (row.facilityId) setSearchFacility(row.facilityId);
-                              window.scrollTo({ top: 300, behavior: 'smooth' });
-                            }
-                          }}
-                          title="Click to load this AsnId into 5.4.2 Verification Search"
-                          style={{
-                            fontFamily: 'var(--font-mono, monospace)',
-                            fontWeight: 700,
-                            color: '#38bdf8',
-                            cursor: 'pointer',
-                            textDecoration: 'underline'
-                          }}
-                        >
-                          {rowAsnId || row.jobId}
-                        </span>
-                      </td>
-
-                      {/* Destination Facility */}
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <span style={{
-                          fontFamily: 'var(--font-mono, monospace)',
-                          fontSize: '0.75rem',
-                          backgroundColor: 'rgba(16, 185, 129, 0.08)',
-                          color: '#10b981',
-                          padding: '0.15rem 0.45rem',
-                          borderRadius: '4px',
-                          border: '1px solid rgba(16, 185, 129, 0.2)',
-                          fontWeight: 600
-                        }}>
-                          {facilityDisplay}
-                        </span>
-                      </td>
-
-                      {/* 5.4.1 Save Status */}
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        {isDelivered ? (
-                          <span style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.3rem',
-                            backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                            color: '#10b981',
-                            border: '1px solid #10b981',
-                            padding: '0.18rem 0.55rem',
-                            borderRadius: '999px',
-                            fontSize: '0.72rem',
-                            fontWeight: 700
-                          }}>
-                            <CheckCircle2 size={12} />
-                            DELIVERED (200 OK)
-                          </span>
-                        ) : (
-                          <span style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.3rem',
-                            backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                            color: '#f59e0b',
-                            border: '1px solid #f59e0b',
-                            padding: '0.18rem 0.55rem',
-                            borderRadius: '999px',
-                            fontSize: '0.72rem',
-                            fontWeight: 700
-                          }}>
-                            <Clock size={12} />
-                            {row.dispatchStatus || 'AWAITING'}
-                          </span>
-                        )}
-                      </td>
-
-                      {/* 5.4.2 Verification (8000) */}
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        {isVerified ? (
-                          <span style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.3rem',
-                            backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                            color: '#38bdf8',
-                            border: '1px solid #38bdf8',
-                            padding: '0.18rem 0.55rem',
-                            borderRadius: '999px',
-                            fontSize: '0.72rem',
-                            fontWeight: 700
-                          }}>
-                            <CheckCheck size={12} />
-                            8000 VERIFIED
-                          </span>
-                        ) : (
-                          <button
-                            onClick={(e) => handleVerifyJob(row.jobId, e)}
-                            disabled={verifyingJobId === row.jobId}
-                            className="btn-secondary"
-                            style={{ padding: '0.2rem 0.55rem', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
-                          >
-                            <Search size={11} className={verifyingJobId === row.jobId ? 'spin-icon' : ''} />
-                            <span>{verifyingJobId === row.jobId ? 'Checking...' : 'Check Status'}</span>
-                          </button>
-                        )}
-                      </td>
-
-                      {/* Dispatched Time */}
-                      <td style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                        {row.dispatchCompletedAt ? new Date(row.dispatchCompletedAt).toLocaleTimeString() : 'Recent'}
-                      </td>
-
-                      {/* Actions */}
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right', paddingRight: '1.25rem' }}>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setInspectingJob(row);
-                            }}
-                            className="btn-secondary"
-                            style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
-                          >
-                            <Eye size={12} />
-                            <span>Inspect</span>
-                          </button>
-
-                          <button
-                            onClick={(e) => handleDispatchJob(row.jobId, e)}
-                            disabled={dispatchingJobId === row.jobId}
-                            className="btn-primary"
-                            style={{
-                              padding: '0.25rem 0.6rem',
-                              fontSize: '0.75rem',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.3rem',
-                              backgroundColor: isDelivered ? 'rgba(16, 185, 129, 0.2)' : 'var(--primary-color)',
-                              borderColor: isDelivered ? '#10b981' : 'transparent',
-                              color: isDelivered ? '#10b981' : '#ffffff'
-                            }}
-                          >
-                            <Send size={11} className={dispatchingJobId === row.jobId ? 'spin-icon' : ''} />
-                            <span>{dispatchingJobId === row.jobId ? 'Sending...' : (isDelivered ? 'Redeliver' : 'Dispatch')}</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-                    No Opti ASN records found. Ingest an Opti payload to track it here.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        {totalRegistryPages > 1 && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem' }}>
-            <button
-              onClick={() => setRegistryPage((p) => Math.max(p - 1, 1))}
-              disabled={registryPage <= 1}
-              className="btn-secondary"
-              style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-            >
-              <ChevronLeft size={14} />
-            </button>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Page {registryPage} of {totalRegistryPages}
-            </span>
-            <button
-              onClick={() => setRegistryPage((p) => Math.min(p + 1, totalRegistryPages))}
-              disabled={registryPage >= totalRegistryPages}
-              className="btn-secondary"
-              style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-            >
-              <ChevronRight size={14} />
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* =========================================================================
-          INSPECTION MODAL
-         ========================================================================= */}
-      {inspectingJob && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.75)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-          padding: '1.5rem',
-          backdropFilter: 'blur(4px)'
-        }}>
-          <div style={{
-            backgroundColor: 'var(--bg-surface)',
-            border: '1px solid var(--border-default)',
-            borderRadius: '12px',
-            width: '100%',
-            maxWidth: '850px',
-            maxHeight: '90vh',
-            display: 'flex',
-            flexDirection: 'column',
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)'
-          }}>
-            <div style={{
-              padding: '1rem 1.25rem',
-              borderBottom: '1px solid var(--border-default)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Inspect MAWM Payload & Verification: {extractAsnId(inspectingJob)}
-                </h3>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-                  Facility: <strong>{inspectingJob.facilityId || 'Food_Cbe'}</strong> | Document: <strong>ASN</strong>
-                </div>
-              </div>
-              <button
-                onClick={() => setInspectingJob(null)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}
-              >
-                ✕
-              </button>
-            </div>
-
-            <div style={{ padding: '1rem 1.25rem', flex: 1, overflowY: 'auto' }}>
-              <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.75rem' }}>
-                <button
-                  onClick={() => setInspectPayloadTab('response')}
-                  className={`filter-pill ${inspectPayloadTab === 'response' ? 'active' : ''}`}
-                  style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
-                >
-                  Live Cloud Response (200 OK)
-                </button>
-                <button
-                  onClick={() => setInspectPayloadTab('verification')}
-                  className={`filter-pill ${inspectPayloadTab === 'verification' ? 'active' : ''}`}
-                  style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
-                >
-                  5.4.2 Verification (/asn/search)
-                </button>
-              </div>
-
-              <pre style={{
-                backgroundColor: 'rgba(0,0,0,0.4)',
-                border: '1px solid var(--border-default)',
-                borderRadius: '8px',
-                padding: '0.85rem',
-                fontFamily: 'var(--font-mono, monospace)',
-                fontSize: '0.76rem',
-                color: inspectPayloadTab === 'response' ? '#34d399' : '#38bdf8',
-                maxHeight: '380px',
-                overflow: 'auto',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-                overflowWrap: 'anywhere'
-              }}>
-                {inspectPayloadTab === 'response'
-                  ? formatPayload(inspectingJob.mawmResponse || 'No direct response captured yet')
-                  : formatPayload(inspectingJob.verificationResult || {
-                      api: "5.4.2 Check ASN Verification Status",
-                      endpoint: `${telemetry?.baseUrl || 'https://ncsps.sce.manh.com'}/receiving/api/receiving/asn/search`,
-                      method: "POST",
-                      requestPayload: {
-                        "Query": `AsnId in ('${extractAsnId(inspectingJob)}')`,
-                        "Template": { "AsnId": "", "AsnStatus": "" }
-                      },
-                      expectedVerifiedCode: "8000"
-                    })}
-              </pre>
-            </div>
-
-            <div style={{
-              padding: '0.75rem 1.25rem',
-              borderTop: '1px solid var(--border-default)',
-              display: 'flex',
-              justifyContent: 'flex-end',
-              gap: '0.65rem'
-            }}>
-              <button
-                onClick={() => setInspectingJob(null)}
-                className="btn-secondary"
-                style={{ padding: '0.4rem 1rem', fontSize: '0.8rem' }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
