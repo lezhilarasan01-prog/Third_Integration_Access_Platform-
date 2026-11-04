@@ -25,25 +25,29 @@ import {
 } from 'lucide-react';
 import { integrationApi } from '../../services/integrationApi';
 
-const DEFAULT_ASN_SAVE_PAYLOAD = {
-  "AsnId": "ASN-2026-0001",
-  "AsnOriginTypeId": "S",
-  "DestinationFacilityId": "Food_Cbe",
-  "OriginFacilityId": "SUPPLIER_PLANT",
-  "EstimatedDeliveryDate": "2026-11-03",
-  "AsnLevelId": "ITEM",
-  "VendorId": "VEND-DAIRY-01",
-  "AsnLine": [
-    {
-      "AsnLineId": "1",
-      "ItemId": "SKU-MILK-1001",
-      "PurchaseOrderId": "PO-2026-0001",
-      "PurchaseOrderLineId": "1",
-      "QuantityUomId": "EA",
-      "ShippedQuantity": 1200,
-      "Canceled": false
-    }
-  ]
+const createInitialAsnSavePayload = () => {
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const randNum = Math.floor(1000 + Math.random() * 9000);
+  return {
+    "AsnId": `ASN-${dateStr.replace(/-/g, '')}-${randNum}`,
+    "AsnOriginTypeId": "S",
+    "DestinationFacilityId": "Food_Cbe",
+    "OriginFacilityId": "SUPPLIER_PLANT",
+    "EstimatedDeliveryDate": dateStr,
+    "AsnLevelId": "ITEM",
+    "VendorId": "VEND-DAIRY-01",
+    "AsnLine": [
+      {
+        "AsnLineId": "1",
+        "ItemId": "SKU-MILK-1001",
+        "PurchaseOrderId": `PO-${dateStr.replace(/-/g, '')}-${randNum}`,
+        "PurchaseOrderLineId": "1",
+        "QuantityUomId": "EA",
+        "ShippedQuantity": 1200,
+        "Canceled": false
+      }
+    ]
+  };
 };
 
 export default function MawmDispatchPage({
@@ -65,15 +69,15 @@ export default function MawmDispatchPage({
   // Active Hub Tab: '542_search' | '541_save' | 'registry'
   const [activeTab, setActiveTab] = useState('542_search');
 
-  // 5.4.2 Verification Search Tool State
-  const [searchAsnId, setSearchAsnId] = useState('ASN-2026-0001');
+  // 5.4.2 Verification Search Tool State - Starts empty (no hardcoded ASN)
+  const [searchAsnId, setSearchAsnId] = useState('');
   const [searchFacility, setSearchFacility] = useState('Food_Cbe');
   const [searchingAsn, setSearchingAsn] = useState(false);
   const [searchResult, setSearchResult] = useState(null);
   const [showRawSearchJson, setShowRawSearchJson] = useState(false);
 
   // 5.4.1 Direct Save ASN Tool State
-  const [saveJsonInput, setSaveJsonInput] = useState(JSON.stringify(DEFAULT_ASN_SAVE_PAYLOAD, null, 2));
+  const [saveJsonInput, setSaveJsonInput] = useState(() => JSON.stringify(createInitialAsnSavePayload(), null, 2));
   const [savingAsn, setSavingAsn] = useState(false);
   const [saveResult, setSaveResult] = useState(null);
   const [showRawSaveJson, setShowRawSaveJson] = useState(false);
@@ -105,7 +109,7 @@ export default function MawmDispatchPage({
   };
 
   const extractAsnId = (job) => {
-    if (!job) return 'ASN-2026-0001';
+    if (!job) return '';
     if (job.outputFiles && typeof job.outputFiles === 'string') {
       try {
         const parsed = JSON.parse(job.outputFiles);
@@ -124,7 +128,7 @@ export default function MawmDispatchPage({
     if (job.originalFilename && job.originalFilename.toUpperCase().includes('ASN')) {
       return job.originalFilename.replace(/\.[^/.]+$/, '');
     }
-    return job.jobId ? `ASN-${job.jobId.slice(0, 8)}` : 'ASN-2026-0001';
+    return job.jobId || '';
   };
 
   const loadData = useCallback(async (isSilent = false) => {
@@ -292,6 +296,19 @@ export default function MawmDispatchPage({
       return true;
     });
   }, [trackers, registryQuery]);
+
+  // Extract unique real AsnIds from ingested Opti records for quick selection
+  const recentAsnIds = useMemo(() => {
+    const ids = [];
+    trackers.forEach((r) => {
+      const src = (r.sourceSystem || '').toUpperCase();
+      if (src === 'OPTI' || src === 'OTPI') {
+        const id = extractAsnId(r);
+        if (id && !ids.includes(id)) ids.push(id);
+      }
+    });
+    return ids;
+  }, [trackers]);
 
   const totalRegistryPages = Math.ceil(optiAsnTrackers.length / registryPageSize) || 1;
   const paginatedOptiAsns = useMemo(() => {
@@ -575,14 +592,21 @@ export default function MawmDispatchPage({
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', alignItems: 'flex-end' }}>
             {/* AsnId Input */}
             <div>
-              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
-                AsnId to Search:
-              </label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                  AsnId to Search:
+                </label>
+                {recentAsnIds.length > 0 && (
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                    {recentAsnIds.length} ingested
+                  </span>
+                )}
+              </div>
               <input
                 type="text"
                 value={searchAsnId}
                 onChange={(e) => setSearchAsnId(e.target.value)}
-                placeholder="e.g. ASN-2026-0001"
+                placeholder="Enter AsnId to query..."
                 className="input-field"
                 style={{
                   width: '100%',
@@ -592,6 +616,31 @@ export default function MawmDispatchPage({
                   boxSizing: 'border-box'
                 }}
               />
+              {recentAsnIds.length > 0 && (
+                <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', marginTop: '0.35rem', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Recent Opti:</span>
+                  {recentAsnIds.slice(0, 4).map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setSearchAsnId(id)}
+                      style={{
+                        background: searchAsnId === id ? 'rgba(56, 189, 248, 0.25)' : 'rgba(56, 189, 248, 0.1)',
+                        border: searchAsnId === id ? '1px solid #38bdf8' : '1px solid rgba(56, 189, 248, 0.25)',
+                        borderRadius: '4px',
+                        color: '#38bdf8',
+                        fontSize: '0.68rem',
+                        padding: '0.08rem 0.35rem',
+                        cursor: 'pointer',
+                        fontFamily: 'var(--font-mono, monospace)'
+                      }}
+                      title={`Select ${id}`}
+                    >
+                      {id}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Destination Facility Input with Quick Presets */}
@@ -1066,8 +1115,24 @@ export default function MawmDispatchPage({
                       <tr key={row.jobId} style={{ borderBottom: '1px solid var(--border-default)' }}>
                         {/* AsnId */}
                         <td style={{ padding: '0.75rem 1rem' }}>
-                          <span style={{ fontFamily: 'var(--font-mono, monospace)', fontWeight: 700, color: '#38bdf8' }}>
-                            {rowAsnId}
+                          <span
+                            onClick={() => {
+                              if (rowAsnId) {
+                                setSearchAsnId(rowAsnId);
+                                if (row.facilityId) setSearchFacility(row.facilityId);
+                                setActiveTab('542_search');
+                              }
+                            }}
+                            title="Click to query this AsnId in 5.4.2 Search"
+                            style={{
+                              fontFamily: 'var(--font-mono, monospace)',
+                              fontWeight: 700,
+                              color: '#38bdf8',
+                              cursor: 'pointer',
+                              textDecoration: 'underline'
+                            }}
+                          >
+                            {rowAsnId || row.jobId}
                           </span>
                         </td>
 
