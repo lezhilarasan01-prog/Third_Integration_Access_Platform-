@@ -821,9 +821,6 @@ export default function MawmDispatchPage({
                 {filteredTrackers.length} Records
               </span>
             </div>
-            <p style={{ margin: '0.15rem 0 0', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-              Tracks ASN deliveries (5.4.1) and verification states (5.4.2) in Manhattan Active WMS Cloud.
-            </p>
           </div>
 
           {/* ERP Source Selector Dropdown (No ALL ERP option, dropdown type) */}
