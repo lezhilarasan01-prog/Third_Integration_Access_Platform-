@@ -678,7 +678,24 @@ export const integrationApi = {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || 'Failed to query MAWM ASN verification search API');
+      throw new Error(err.cleanError || err.error || 'Failed to query MAWM ASN verification search API');
+    }
+    return res.json();
+  },
+
+  async saveAsnDirect(payload, username) {
+    const url = username
+      ? `${BASE_URL}/api/v1/erp/mawm/save-asn?username=${encodeURIComponent(username)}`
+      : `${BASE_URL}/api/v1/erp/mawm/save-asn`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to save ASN directly to MAWM');
     }
     return res.json();
   },

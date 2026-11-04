@@ -67,6 +67,18 @@ public class MawmTelemetryController {
     }
 
     /**
+     * Directly create / save an ASN to MAWM Cloud (5.4.1 /receiving/api/receiving/asn/save)
+     * POST /api/v1/erp/mawm/save-asn
+     */
+    @PostMapping("/save-asn")
+    public ResponseEntity<Map<String, Object>> saveAsn(
+            @RequestBody Map<String, Object> payload,
+            @RequestParam(value = "username", required = false) String username) {
+        Map<String, Object> result = mawmDispatcherService.saveAsnDirect(payload, username);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
      * Search and check live ASN verification status in MAWM Cloud.
      * POST /api/v1/erp/mawm/search-asn
      */

@@ -232,13 +232,115 @@ public class MawmDispatcherService {
 
         } catch (Exception ex) {
             log.error("[MAWM Search] Failed searching ASN verification for {}: {}", asnId, ex.getMessage(), ex);
-            return Map.of(
-                    "success", false,
-                    "asnId", asnId,
-                    "error", ex.getMessage() != null ? ex.getMessage() : ex.toString(),
-                    "endpoint", searchEndpoint
-            );
+            int statusCode = 500;
+            String rawErrorBody = null;
+            if (ex instanceof RestClientResponseException rcre) {
+                statusCode = rcre.getStatusCode().value();
+                rawErrorBody = rcre.getResponseBodyAsString();
+            }
+            String cleanMessage = extractCleanErrorMessage(rawErrorBody, statusCode, facility, effectiveUsername);
+            Map<String, Object> errResult = new LinkedHashMap<>();
+            errResult.put("success", false);
+            errResult.put("asnId", asnId);
+            errResult.put("statusCode", statusCode);
+            errResult.put("error", cleanMessage);
+            errResult.put("cleanError", cleanMessage);
+            errResult.put("endpoint", searchEndpoint);
+            errResult.put("facilityId", facility);
+            errResult.put("username", effectiveUsername);
+            if (rawErrorBody != null && !rawErrorBody.isBlank()) {
+                errResult.put("rawResponse", rawErrorBody);
+            }
+            return errResult;
         }
+    }
+
+    /**
+     * Directly creates / saves an ASN in MAWM Cloud (5.4.1 /receiving/api/receiving/asn/save)
+     */
+    public Map<String, Object> saveAsnDirect(Map<String, Object> asnPayload, String username) {
+        String targetEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getAsnPath();
+        String facility = null;
+        if (asnPayload != null && asnPayload.get("DestinationFacilityId") != null) {
+            facility = String.valueOf(asnPayload.get("DestinationFacilityId")).trim();
+        }
+        if (facility == null || facility.isBlank()) {
+            facility = mawmProperties.getDefaultFacility() != null ? mawmProperties.getDefaultFacility().trim() : "Food_Cbe";
+        }
+        String effectiveUsername = (username != null && !username.isBlank())
+                ? username.trim()
+                : (asnPayload != null && asnPayload.get("CreatedBy") != null
+                    ? String.valueOf(asnPayload.get("CreatedBy")).trim()
+                    : mawmProperties.getUsername());
+
+        try {
+            String jsonPayload = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(asnPayload);
+            log.info("[MAWM Direct Save] Saving ASN to {} (Facility: {}, User: {})", targetEndpoint, facility, effectiveUsername);
+            String responseBody = executeWithAuthRetry(targetEndpoint, facility, effectiveUsername, jsonPayload);
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("endpoint", targetEndpoint);
+            result.put("facilityId", facility);
+            result.put("username", effectiveUsername);
+            result.put("message", "200 OK - ASN Saved Successfully in MAWM");
+            result.put("rawResponse", responseBody);
+            return result;
+        } catch (Exception ex) {
+            log.error("[MAWM Direct Save] Failed saving ASN to {}: {}", targetEndpoint, ex.getMessage(), ex);
+            int statusCode = 500;
+            String rawErrorBody = null;
+            if (ex instanceof RestClientResponseException rcre) {
+                statusCode = rcre.getStatusCode().value();
+                rawErrorBody = rcre.getResponseBodyAsString();
+            }
+            String cleanMessage = extractCleanErrorMessage(rawErrorBody, statusCode, facility, effectiveUsername);
+            Map<String, Object> errResult = new LinkedHashMap<>();
+            errResult.put("success", false);
+            errResult.put("statusCode", statusCode);
+            errResult.put("error", cleanMessage);
+            errResult.put("cleanError", cleanMessage);
+            errResult.put("endpoint", targetEndpoint);
+            errResult.put("facilityId", facility);
+            errResult.put("username", effectiveUsername);
+            if (rawErrorBody != null && !rawErrorBody.isBlank()) {
+                errResult.put("rawResponse", rawErrorBody);
+            }
+            return errResult;
+        }
+    }
+
+    public String extractCleanErrorMessage(String rawErrorBody, int statusCode, String facility, String username) {
+        if (rawErrorBody == null || rawErrorBody.isBlank()) {
+            return "HTTP " + statusCode + " error from MAWM Cloud (" + (facility != null ? facility : "default") + ").";
+        }
+        try {
+            JsonNode root = objectMapper.readTree(rawErrorBody);
+            if (root.has("exceptions") && root.get("exceptions").isArray() && root.get("exceptions").size() > 0) {
+                JsonNode exc = root.get("exceptions").get(0);
+                if (exc.has("message") && !exc.get("message").asText().isBlank()) {
+                    String msg = exc.get("message").asText();
+                    if (msg.contains("ManhRuntimeException:")) {
+                        return msg.substring(msg.indexOf("ManhRuntimeException:") + "ManhRuntimeException:".length()).trim();
+                    }
+                    if (msg.contains("Exception:")) {
+                        return msg.substring(msg.indexOf("Exception:") + "Exception:".length()).trim();
+                    }
+                    return msg.trim();
+                }
+            }
+            if (root.has("errors") && root.get("errors").isArray() && root.get("errors").size() > 0) {
+                JsonNode err = root.get("errors").get(0);
+                if (err.has("Description") && !err.get("Description").asText().isBlank()) return err.get("Description").asText().trim();
+                if (err.has("description") && !err.get("description").asText().isBlank()) return err.get("description").asText().trim();
+                if (err.has("message") && !err.get("message").asText().isBlank()) return err.get("message").asText().trim();
+            }
+            if (root.has("message") && !root.get("message").asText().isBlank() && !"error.500".equals(root.get("message").asText())) {
+                return root.get("message").asText().trim();
+            }
+        } catch (Exception ignored) {}
+
+        return "HTTP " + statusCode + " response from MAWM Cloud (" + (facility != null ? facility : "default") + ").";
     }
 
     /**
