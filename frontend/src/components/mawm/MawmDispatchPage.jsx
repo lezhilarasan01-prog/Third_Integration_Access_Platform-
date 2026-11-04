@@ -327,18 +327,16 @@ export default function MawmDispatchPage({
                     Boolean(r.dispatchStatus);
       if (!isAsn) return false;
 
-      // 2. ERP Source Filter
-      if (selectedErp !== 'ALL') {
-        const src = (r.sourceSystem || '').toUpperCase();
-        if (selectedErp === 'OPTI') {
-          if (!src.includes('OPTI') && !src.includes('OTPI') && !src.includes('OPI')) return false;
-        } else if (selectedErp === 'SAP') {
-          if (!src.includes('SAP')) return false;
-        } else if (selectedErp === 'HM') {
-          if (!src.includes('HM') && !src.includes('H&M')) return false;
-        } else if (selectedErp === 'OTHER') {
-          if (src.includes('OPTI') || src.includes('OTPI') || src.includes('OPI') || src.includes('SAP') || src.includes('HM')) return false;
-        }
+      // 2. ERP Source Filter (Dropdown selection: OPTI, SAP, HM, OTHER - No ALL ERP option)
+      const src = (r.sourceSystem || '').toUpperCase();
+      if (selectedErp === 'OPTI') {
+        if (!src.includes('OPTI') && !src.includes('OTPI') && !src.includes('OPI')) return false;
+      } else if (selectedErp === 'SAP') {
+        if (!src.includes('SAP')) return false;
+      } else if (selectedErp === 'HM') {
+        if (!src.includes('HM') && !src.includes('H&M')) return false;
+      } else if (selectedErp === 'OTHER') {
+        if (src.includes('OPTI') || src.includes('OTPI') || src.includes('OPI') || src.includes('SAP') || src.includes('HM')) return false;
       }
 
       // 3. Search query filter
@@ -828,40 +826,38 @@ export default function MawmDispatchPage({
             </p>
           </div>
 
-          {/* ERP Source Selector Pills */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.25rem', marginRight: '0.2rem' }}>
-              <Filter size={12} /> ERP Source:
-            </span>
-            {[
-              { id: 'ALL', label: 'All ERPs' },
-              { id: 'OPTI', label: 'Opti ERP' },
-              { id: 'SAP', label: 'SAP ERP' },
-              { id: 'HM', label: 'H&M' },
-              { id: 'OTHER', label: 'Other' }
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => {
-                  setSelectedErp(tab.id);
-                  setCurrentPage(1);
-                }}
-                className={`filter-pill ${selectedErp === tab.id ? 'active' : ''}`}
-                style={{
-                  fontSize: '0.75rem',
-                  padding: '0.25rem 0.65rem',
-                  borderRadius: '20px',
-                  border: selectedErp === tab.id ? '1px solid #10b981' : '1px solid var(--border-default)',
-                  backgroundColor: selectedErp === tab.id ? 'rgba(16, 185, 129, 0.18)' : 'transparent',
-                  color: selectedErp === tab.id ? '#10b981' : 'var(--text-muted)',
-                  fontWeight: selectedErp === tab.id ? 700 : 500,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                {tab.label}
-              </button>
-            ))}
+          {/* ERP Source Selector Dropdown (No ALL ERP option, dropdown type) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+            <label htmlFor="erp-source-select" style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+              <Filter size={13} color="#10b981" />
+              <span>ERP Source:</span>
+            </label>
+            <select
+              id="erp-source-select"
+              value={selectedErp}
+              onChange={(e) => {
+                setSelectedErp(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="input-field"
+              style={{
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                padding: '0.35rem 0.75rem',
+                borderRadius: '6px',
+                backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                color: selectedErp === 'OPTI' ? '#10b981' : '#38bdf8',
+                border: '1px solid var(--border-default)',
+                cursor: 'pointer',
+                outline: 'none',
+                minWidth: '135px'
+              }}
+            >
+              <option value="OPTI" style={{ backgroundColor: '#0f172a', color: '#10b981', fontWeight: 600 }}>Opti ERP</option>
+              <option value="SAP" style={{ backgroundColor: '#0f172a', color: '#e2e8f0' }}>SAP ERP</option>
+              <option value="HM" style={{ backgroundColor: '#0f172a', color: '#e2e8f0' }}>H&M</option>
+              <option value="OTHER" style={{ backgroundColor: '#0f172a', color: '#e2e8f0' }}>Other ERP</option>
+            </select>
           </div>
 
           {/* Quick Search */}
@@ -894,18 +890,18 @@ export default function MawmDispatchPage({
         ) : filteredTrackers.length === 0 ? (
           <div style={{ padding: '3rem 1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
             <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
-              No dispatch records found for {selectedErp === 'ALL' ? 'selected filters' : selectedErp}
+              No dispatch records found for {selectedErp} ERP
             </div>
             <div style={{ fontSize: '0.78rem' }}>
-              Select "All ERPs" or "Opti ERP" to view active dispatch logs, or ingest a new ASN file.
+              Select "Opti ERP" to view active dispatch logs, or ingest a new ASN file.
             </div>
-            {selectedErp !== 'ALL' && (
+            {selectedErp !== 'OPTI' && (
               <button
-                onClick={() => setSelectedErp('ALL')}
+                onClick={() => setSelectedErp('OPTI')}
                 className="btn-secondary"
-                style={{ marginTop: '0.85rem', fontSize: '0.76rem', padding: '0.3rem 0.75rem' }}
+                style={{ marginTop: '0.85rem', fontSize: '0.76rem', padding: '0.3rem 0.75rem', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}
               >
-                View All ERP Records
+                Switch to Opti ERP
               </button>
             )}
           </div>
