@@ -268,62 +268,6 @@ public class MawmDispatcherService {
     }
 
     /**
-     * Directly creates / saves an ASN in MAWM Cloud (5.4.1 /receiving/api/receiving/asn/save)
-     */
-    public Map<String, Object> saveAsnDirect(Map<String, Object> asnPayload, String username) {
-        String targetEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getAsnPath();
-        String facility = null;
-        if (asnPayload != null && asnPayload.get("DestinationFacilityId") != null) {
-            facility = String.valueOf(asnPayload.get("DestinationFacilityId")).trim();
-        }
-        if (facility == null || facility.isBlank()) {
-            facility = mawmProperties.getDefaultFacility() != null ? mawmProperties.getDefaultFacility().trim() : "Food_Cbe";
-        }
-        String effectiveUsername = (username != null && !username.isBlank())
-                ? username.trim()
-                : (asnPayload != null && asnPayload.get("CreatedBy") != null
-                    ? String.valueOf(asnPayload.get("CreatedBy")).trim()
-                    : mawmProperties.getUsername());
-
-        try {
-            String jsonPayload = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(asnPayload);
-            log.info("[MAWM Direct Save] Saving ASN to {} (Facility: {}, User: {})", targetEndpoint, facility, effectiveUsername);
-            String responseBody = executeWithAuthRetry(targetEndpoint, facility, effectiveUsername, jsonPayload);
-
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("success", true);
-            result.put("endpoint", targetEndpoint);
-            result.put("facilityId", facility);
-            result.put("username", effectiveUsername);
-            result.put("message", "200 OK - ASN Saved Successfully in MAWM");
-            result.put("rawResponse", responseBody);
-            return result;
-        } catch (Exception ex) {
-            log.error("[MAWM Direct Save] Failed saving ASN to {}: {}", targetEndpoint, ex.getMessage(), ex);
-            int statusCode = 500;
-            String rawErrorBody = null;
-            if (ex instanceof RestClientResponseException rcre) {
-                statusCode = rcre.getStatusCode().value();
-                rawErrorBody = rcre.getResponseBodyAsString();
-            }
-            String cleanMessage = extractCleanErrorMessage(rawErrorBody, statusCode, facility, effectiveUsername);
-            Map<String, Object> errResult = new LinkedHashMap<>();
-            errResult.put("success", false);
-            errResult.put("statusCode", statusCode);
-            errResult.put("error", cleanMessage);
-            errResult.put("cleanError", cleanMessage);
-            errResult.put("endpoint", targetEndpoint);
-            errResult.put("facilityId", facility);
-            errResult.put("username", effectiveUsername);
-            if (rawErrorBody != null && !rawErrorBody.isBlank()) {
-                errResult.put("rawResponse", rawErrorBody);
-            }
-            return errResult;
-        }
-    }
-
-    
-    /**
      * Directly creates / saves a Purchase Order in MAWM Cloud (5.3.1 /receiving/api/receiving/purchaseOrder/save)
      */
     public Map<String, Object> savePoDirect(Map<String, Object> poPayload, String username) {
@@ -613,6 +557,61 @@ public class MawmDispatcherService {
             errResult.put("error", cleanMessage);
             errResult.put("cleanError", cleanMessage);
             errResult.put("endpoint", searchEndpoint);
+            errResult.put("facilityId", facility);
+            errResult.put("username", effectiveUsername);
+            if (rawErrorBody != null && !rawErrorBody.isBlank()) {
+                errResult.put("rawResponse", rawErrorBody);
+            }
+            return errResult;
+        }
+    }
+
+    /**
+     * Directly creates / saves an ASN in MAWM Cloud (5.4.1 /receiving/api/receiving/asn/save)
+     */
+    public Map<String, Object> saveAsnDirect(Map<String, Object> asnPayload, String username) {
+        String targetEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getAsnPath();
+        String facility = null;
+        if (asnPayload != null && asnPayload.get("DestinationFacilityId") != null) {
+            facility = String.valueOf(asnPayload.get("DestinationFacilityId")).trim();
+        }
+        if (facility == null || facility.isBlank()) {
+            facility = mawmProperties.getDefaultFacility() != null ? mawmProperties.getDefaultFacility().trim() : "Food_Cbe";
+        }
+        String effectiveUsername = (username != null && !username.isBlank())
+                ? username.trim()
+                : (asnPayload != null && asnPayload.get("CreatedBy") != null
+                    ? String.valueOf(asnPayload.get("CreatedBy")).trim()
+                    : mawmProperties.getUsername());
+
+        try {
+            String jsonPayload = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(asnPayload);
+            log.info("[MAWM Direct Save] Saving ASN to {} (Facility: {}, User: {})", targetEndpoint, facility, effectiveUsername);
+            String responseBody = executeWithAuthRetry(targetEndpoint, facility, effectiveUsername, jsonPayload);
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("endpoint", targetEndpoint);
+            result.put("facilityId", facility);
+            result.put("username", effectiveUsername);
+            result.put("message", "200 OK - ASN Saved Successfully in MAWM");
+            result.put("rawResponse", responseBody);
+            return result;
+        } catch (Exception ex) {
+            log.error("[MAWM Direct Save] Failed saving ASN to {}: {}", targetEndpoint, ex.getMessage(), ex);
+            int statusCode = 500;
+            String rawErrorBody = null;
+            if (ex instanceof RestClientResponseException rcre) {
+                statusCode = rcre.getStatusCode().value();
+                rawErrorBody = rcre.getResponseBodyAsString();
+            }
+            String cleanMessage = extractCleanErrorMessage(rawErrorBody, statusCode, facility, effectiveUsername);
+            Map<String, Object> errResult = new LinkedHashMap<>();
+            errResult.put("success", false);
+            errResult.put("statusCode", statusCode);
+            errResult.put("error", cleanMessage);
+            errResult.put("cleanError", cleanMessage);
+            errResult.put("endpoint", targetEndpoint);
             errResult.put("facilityId", facility);
             errResult.put("username", effectiveUsername);
             if (rawErrorBody != null && !rawErrorBody.isBlank()) {
