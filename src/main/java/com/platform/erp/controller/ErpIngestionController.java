@@ -194,13 +194,23 @@ public class ErpIngestionController {
                 resolvedFilename = extractFilenameFromContentDisposition(contentDisposition);
             }
 
-            // 5. Dynamic Document Type Resolution (Resolves PO or ASN; returns null if neither)
+            // 5. Document Type Resolution (Read strictly from docType: PO or ASN, else null)
             String requestedDocType = (docTypeParam != null && !docTypeParam.isBlank()) ? docTypeParam
-                    : (typeParam != null && !typeParam.isBlank()) ? typeParam : headerDocType;
-            String docType = resolveDocType(requestedDocType, resolvedFilename, payload);
+                    : (typeParam != null && !typeParam.isBlank()) ? typeParam
+                    : (headerDocType != null && !headerDocType.isBlank()) ? headerDocType
+                    : (customTopic != null && !customTopic.isBlank()) ? customTopic
+                    : headerTopic;
+            String docType = resolveDocType(requestedDocType);
+
+            if (docType == null) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                        "error", "INVALID_DOCUMENT_TYPE",
+                        "message", "Document type is invalid or missing. Must be either 'PO' or 'ASN'."
+                ));
+            }
 
             String destination = (customTopic != null && !customTopic.isBlank()) ? customTopic.trim()
-                    : ((headerTopic != null && !headerTopic.isBlank()) ? headerTopic.trim() : (docType != null ? docType : "UNKNOWN"));
+                    : ((headerTopic != null && !headerTopic.isBlank()) ? headerTopic.trim() : docType);
 
             log.info("[Universal Ingestion] Accepted from ERP: '{}', Target: '{}', Filename: '{}', Size: {} bytes",
                     erpSource, destination, resolvedFilename, payload.length);
@@ -289,31 +299,13 @@ public class ErpIngestionController {
         }
     }
 
-    private String resolveDocType(String requestedDocType, String filename, byte[] payload) {
+    private String resolveDocType(String requestedDocType) {
         if (requestedDocType != null && !requestedDocType.isBlank()) {
             String upper = requestedDocType.trim().toUpperCase();
             if (upper.contains("ASN") || upper.contains("DESADV") || upper.contains("SHIP")) {
                 return "ASN";
             }
             if (upper.contains("PO") || upper.contains("ORDER") || upper.contains("PURCHASE")) {
-                return "PO";
-            }
-        }
-        if (filename != null && !filename.isBlank()) {
-            String upper = filename.toUpperCase();
-            if (upper.contains("ASN") || upper.contains("DESADV") || upper.contains("SHIP")) {
-                return "ASN";
-            }
-            if (upper.contains("PO") || upper.contains("ORDER") || upper.contains("PURCHASE")) {
-                return "PO";
-            }
-        }
-        if (payload != null && payload.length > 0) {
-            String sample = new String(payload, 0, Math.min(payload.length, 2048), java.nio.charset.StandardCharsets.UTF_8);
-            if (sample.contains("AsnId") || sample.contains("asnId") || sample.contains("inboundDelivery") || sample.contains("asn") || sample.contains("ASN")) {
-                return "ASN";
-            }
-            if (sample.contains("PurchaseOrderId") || sample.contains("purchaseOrder") || sample.contains("purchaseOrderId") || sample.contains("poNumber") || sample.contains("orders")) {
                 return "PO";
             }
         }
