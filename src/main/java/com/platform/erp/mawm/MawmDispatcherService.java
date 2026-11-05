@@ -322,6 +322,406 @@ public class MawmDispatcherService {
         }
     }
 
+    
+    /**
+     * Directly creates / saves a Purchase Order in MAWM Cloud (5.3.1 /receiving/api/receiving/purchaseOrder/save)
+     */
+    public Map<String, Object> savePoDirect(Map<String, Object> poPayload, String username) {
+        String targetEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getPoPath();
+        String facility = null;
+        if (poPayload != null && poPayload.get("DestinationFacilityId") != null) {
+            facility = String.valueOf(poPayload.get("DestinationFacilityId")).trim();
+        }
+        if (facility == null || facility.isBlank()) {
+            facility = mawmProperties.getDefaultFacility() != null ? mawmProperties.getDefaultFacility().trim() : "Food_Cbe";
+        }
+        String effectiveUsername = (username != null && !username.isBlank())
+                ? username.trim()
+                : (poPayload != null && poPayload.get("CreatedBy") != null
+                    ? String.valueOf(poPayload.get("CreatedBy")).trim()
+                    : mawmProperties.getUsername());
+
+        try {
+            String jsonPayload = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(poPayload);
+            log.info("[MAWM Direct PO Save] Saving PO to {} (Facility: {}, User: {})", targetEndpoint, facility, effectiveUsername);
+            String responseBody = executeWithAuthRetry(targetEndpoint, facility, effectiveUsername, jsonPayload);
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("endpoint", targetEndpoint);
+            result.put("facilityId", facility);
+            result.put("username", effectiveUsername);
+            result.put("message", "200 OK - Purchase Order Saved Successfully in MAWM");
+            result.put("rawResponse", responseBody);
+            try {
+                result.put("data", objectMapper.readTree(responseBody));
+            } catch (Exception ignored) {}
+            return result;
+        } catch (Exception ex) {
+            log.error("[MAWM Direct PO Save] Failed saving PO to {}: {}", targetEndpoint, ex.getMessage(), ex);
+            int statusCode = 500;
+            String rawErrorBody = null;
+            if (ex instanceof RestClientResponseException rcre) {
+                statusCode = rcre.getStatusCode().value();
+                rawErrorBody = rcre.getResponseBodyAsString();
+            }
+            String cleanMessage = extractCleanErrorMessage(rawErrorBody, statusCode, facility, effectiveUsername);
+            Map<String, Object> errResult = new LinkedHashMap<>();
+            errResult.put("success", false);
+            errResult.put("statusCode", statusCode);
+            errResult.put("error", cleanMessage);
+            errResult.put("cleanError", cleanMessage);
+            errResult.put("endpoint", targetEndpoint);
+            errResult.put("facilityId", facility);
+            errResult.put("username", effectiveUsername);
+            if (rawErrorBody != null && !rawErrorBody.isBlank()) {
+                errResult.put("rawResponse", rawErrorBody);
+            }
+            return errResult;
+        }
+    }
+
+    /**
+     * Checks Purchase Order Status in MAWM Cloud (5.3.2 /receiving/api/receiving/purchaseOrder/search)
+     */
+    public Map<String, Object> searchPoStatus(String purchaseOrderId, String destinationFacilityId, String username) {
+        if (purchaseOrderId == null || purchaseOrderId.isBlank()) {
+            return Map.of("success", false, "error", "PurchaseOrderId is mandatory for status search");
+        }
+
+        String facility = (destinationFacilityId != null && !destinationFacilityId.isBlank())
+                ? destinationFacilityId.trim()
+                : (mawmProperties.getDefaultFacility() != null ? mawmProperties.getDefaultFacility().trim() : "Food_Cbe");
+
+        String effectiveUsername = (username != null && !username.isBlank())
+                ? username.trim()
+                : mawmProperties.getUsername();
+
+        String searchEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getPoSearchPath();
+
+        Map<String, Object> requestPayload = Map.of(
+                "Query", "PurchaseOrderId='" + purchaseOrderId.trim() + "'",
+                "Template", Map.of(
+                        "PurchaseOrderId", "",
+                        "PurchaseOrderStatus", "",
+                        "PurchaseOrderStatusDescription", ""
+                )
+        );
+
+        try {
+            String jsonPayload = objectMapper.writeValueAsString(requestPayload);
+            log.info("[MAWM PO Search] Querying PO status for '{}' at {} (Facility: {}, User: {})",
+                    purchaseOrderId, searchEndpoint, facility, effectiveUsername);
+
+            String responseBody = executeWithAuthRetry(searchEndpoint, facility, effectiveUsername, jsonPayload);
+
+            JsonNode rootNode = objectMapper.readTree(responseBody);
+            String poStatus = null;
+            String poStatusDescription = null;
+
+            if (rootNode.has("data") && rootNode.get("data").isArray() && rootNode.get("data").size() > 0) {
+                JsonNode firstMatch = rootNode.get("data").get(0);
+                if (firstMatch.has("PurchaseOrderStatus")) {
+                    poStatus = firstMatch.get("PurchaseOrderStatus").asText();
+                }
+                if (firstMatch.has("purchaseOrderStatusDescription")) {
+                    poStatusDescription = firstMatch.get("purchaseOrderStatusDescription").asText();
+                } else if (firstMatch.has("PurchaseOrderStatusDescription")) {
+                    poStatusDescription = firstMatch.get("PurchaseOrderStatusDescription").asText();
+                } else {
+                    poStatusDescription = poStatus;
+                }
+            }
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("purchaseOrderId", purchaseOrderId.trim());
+            result.put("purchaseOrderStatus", poStatus != null ? poStatus : "UNKNOWN");
+            result.put("purchaseOrderStatusDescription", poStatusDescription != null ? poStatusDescription : (poStatus != null ? poStatus : "NO_RECORD_FOUND"));
+            result.put("statusDescription", poStatusDescription != null ? poStatusDescription : (poStatus != null ? poStatus : "NO_RECORD_FOUND"));
+            result.put("rawResponse", responseBody);
+            result.put("endpoint", searchEndpoint);
+            result.put("facilityId", facility);
+            result.put("username", effectiveUsername);
+            result.put("queryPayload", requestPayload);
+            try {
+                if (rootNode.has("data")) {
+                    result.put("data", rootNode.get("data"));
+                }
+            } catch (Exception ignored) {}
+            return result;
+
+        } catch (Exception ex) {
+            log.error("[MAWM PO Search] Failed querying PO status for {}: {}", purchaseOrderId, ex.getMessage(), ex);
+            int statusCode = 500;
+            String rawErrorBody = null;
+            if (ex instanceof RestClientResponseException rcre) {
+                statusCode = rcre.getStatusCode().value();
+                rawErrorBody = rcre.getResponseBodyAsString();
+            }
+            String cleanMessage = extractCleanErrorMessage(rawErrorBody, statusCode, facility, effectiveUsername);
+            Map<String, Object> errResult = new LinkedHashMap<>();
+            errResult.put("success", false);
+            errResult.put("purchaseOrderId", purchaseOrderId);
+            errResult.put("statusCode", statusCode);
+            errResult.put("error", cleanMessage);
+            errResult.put("cleanError", cleanMessage);
+            errResult.put("endpoint", searchEndpoint);
+            errResult.put("facilityId", facility);
+            errResult.put("username", effectiveUsername);
+            if (rawErrorBody != null && !rawErrorBody.isBlank()) {
+                errResult.put("rawResponse", rawErrorBody);
+            }
+            return errResult;
+        }
+    }
+
+    /**
+     * Queries Purchase Order Lines from MAWM Cloud (5.3.3 /receiving/api/receiving/purchaseOrderLine/search)
+     */
+    public Map<String, Object> searchPoLines(String purchaseOrderId, String destinationFacilityId, String username) {
+        if (purchaseOrderId == null || purchaseOrderId.isBlank()) {
+            return Map.of("success", false, "error", "PurchaseOrderId is mandatory for PO lines search");
+        }
+
+        String facility = (destinationFacilityId != null && !destinationFacilityId.isBlank())
+                ? destinationFacilityId.trim()
+                : (mawmProperties.getDefaultFacility() != null ? mawmProperties.getDefaultFacility().trim() : "Food_Cbe");
+
+        String effectiveUsername = (username != null && !username.isBlank())
+                ? username.trim()
+                : mawmProperties.getUsername();
+
+        String searchEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getPoLineSearchPath();
+
+        Map<String, Object> requestPayload = Map.of(
+                "Query", "PurchaseOrderId ='" + purchaseOrderId.trim() + "'",
+                "Template", Map.of(
+                        "PurchaseOrderLineId", "",
+                        "ShippedQuantity", "",
+                        "ReceivedQuantity", "",
+                        "PoLineStatus", ""
+                )
+        );
+
+        try {
+            String jsonPayload = objectMapper.writeValueAsString(requestPayload);
+            log.info("[MAWM PO Lines] Querying lines for '{}' at {} (Facility: {}, User: {})",
+                    purchaseOrderId, searchEndpoint, facility, effectiveUsername);
+
+            String responseBody = executeWithAuthRetry(searchEndpoint, facility, effectiveUsername, jsonPayload);
+            JsonNode rootNode = objectMapper.readTree(responseBody);
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("purchaseOrderId", purchaseOrderId.trim());
+            result.put("rawResponse", responseBody);
+            result.put("endpoint", searchEndpoint);
+            result.put("facilityId", facility);
+            result.put("username", effectiveUsername);
+            result.put("queryPayload", requestPayload);
+            if (rootNode.has("data")) {
+                result.put("data", rootNode.get("data"));
+            }
+            return result;
+        } catch (Exception ex) {
+            log.error("[MAWM PO Lines] Failed querying PO lines for {}: {}", purchaseOrderId, ex.getMessage(), ex);
+            int statusCode = 500;
+            String rawErrorBody = null;
+            if (ex instanceof RestClientResponseException rcre) {
+                statusCode = rcre.getStatusCode().value();
+                rawErrorBody = rcre.getResponseBodyAsString();
+            }
+            String cleanMessage = extractCleanErrorMessage(rawErrorBody, statusCode, facility, effectiveUsername);
+            Map<String, Object> errResult = new LinkedHashMap<>();
+            errResult.put("success", false);
+            errResult.put("purchaseOrderId", purchaseOrderId);
+            errResult.put("statusCode", statusCode);
+            errResult.put("error", cleanMessage);
+            errResult.put("cleanError", cleanMessage);
+            errResult.put("endpoint", searchEndpoint);
+            errResult.put("facilityId", facility);
+            errResult.put("username", effectiveUsername);
+            if (rawErrorBody != null && !rawErrorBody.isBlank()) {
+                errResult.put("rawResponse", rawErrorBody);
+            }
+            return errResult;
+        }
+    }
+
+    /**
+     * Queries ASN details associated with a PO from MAWM Cloud (5.3.4 /receiving/api/receiving/asnLine/search)
+     */
+    public Map<String, Object> searchPoAsnLines(String purchaseOrderId, String destinationFacilityId, String username) {
+        if (purchaseOrderId == null || purchaseOrderId.isBlank()) {
+            return Map.of("success", false, "error", "PurchaseOrderId is mandatory for associated ASN lines search");
+        }
+
+        String facility = (destinationFacilityId != null && !destinationFacilityId.isBlank())
+                ? destinationFacilityId.trim()
+                : (mawmProperties.getDefaultFacility() != null ? mawmProperties.getDefaultFacility().trim() : "Food_Cbe");
+
+        String effectiveUsername = (username != null && !username.isBlank())
+                ? username.trim()
+                : mawmProperties.getUsername();
+
+        String searchEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getAsnLineSearchPath();
+
+        Map<String, Object> requestPayload = Map.of(
+                "Query", "PurchaseOrderId ='" + purchaseOrderId.trim() + "'",
+                "Template", Map.of(
+                        "AsnId", "",
+                        "ItemId", "",
+                        "ShippedQuantity", "",
+                        "PurchaseOrderLineId", ""
+                )
+        );
+
+        try {
+            String jsonPayload = objectMapper.writeValueAsString(requestPayload);
+            log.info("[MAWM PO ASN Lines] Querying associated ASN lines for '{}' at {} (Facility: {}, User: {})",
+                    purchaseOrderId, searchEndpoint, facility, effectiveUsername);
+
+            String responseBody = executeWithAuthRetry(searchEndpoint, facility, effectiveUsername, jsonPayload);
+            JsonNode rootNode = objectMapper.readTree(responseBody);
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("purchaseOrderId", purchaseOrderId.trim());
+            result.put("rawResponse", responseBody);
+            result.put("endpoint", searchEndpoint);
+            result.put("facilityId", facility);
+            result.put("username", effectiveUsername);
+            result.put("queryPayload", requestPayload);
+            if (rootNode.has("data")) {
+                result.put("data", rootNode.get("data"));
+            }
+            return result;
+        } catch (Exception ex) {
+            log.error("[MAWM PO ASN Lines] Failed querying ASN lines for PO {}: {}", purchaseOrderId, ex.getMessage(), ex);
+            int statusCode = 500;
+            String rawErrorBody = null;
+            if (ex instanceof RestClientResponseException rcre) {
+                statusCode = rcre.getStatusCode().value();
+                rawErrorBody = rcre.getResponseBodyAsString();
+            }
+            String cleanMessage = extractCleanErrorMessage(rawErrorBody, statusCode, facility, effectiveUsername);
+            Map<String, Object> errResult = new LinkedHashMap<>();
+            errResult.put("success", false);
+            errResult.put("purchaseOrderId", purchaseOrderId);
+            errResult.put("statusCode", statusCode);
+            errResult.put("error", cleanMessage);
+            errResult.put("cleanError", cleanMessage);
+            errResult.put("endpoint", searchEndpoint);
+            errResult.put("facilityId", facility);
+            errResult.put("username", effectiveUsername);
+            if (rawErrorBody != null && !rawErrorBody.isBlank()) {
+                errResult.put("rawResponse", rawErrorBody);
+            }
+            return errResult;
+        }
+    }
+
+    /**
+     * Checks PO status for a specific job and updates the DB tracker row
+     */
+    public Map<String, Object> verifyJobPo(String jobId) {
+        var optTracker = transactionStore.getTracker(jobId);
+        if (optTracker.isEmpty()) {
+            return Map.of("success", false, "error", "Job not found: " + jobId);
+        }
+        var tracker = optTracker.get();
+        String outputFiles = tracker.getOutputFiles();
+        String rawContent = tracker.getRawContent();
+        String purchaseOrderId = null;
+        String destinationFacility = tracker.getFacilityId();
+        String createdBy = tracker.getCreatedBy();
+
+        if (outputFiles != null && !outputFiles.isBlank() && !outputFiles.startsWith("[CLAIM_CHECK:")) {
+            try {
+                JsonNode root = objectMapper.readTree(outputFiles);
+                JsonNode dataNode = root.has("Data") ? root.get("Data") : (root.has("data") ? root.get("data") : root);
+                if (dataNode.isArray() && dataNode.size() > 0) {
+                    JsonNode first = dataNode.get(0);
+                    if (first.has("PurchaseOrderId")) purchaseOrderId = first.get("PurchaseOrderId").asText();
+                    else if (first.has("purchaseOrderId")) purchaseOrderId = first.get("purchaseOrderId").asText();
+                    if (first.has("DestinationFacilityId")) destinationFacility = first.get("DestinationFacilityId").asText();
+                    if (createdBy == null || createdBy.isBlank()) {
+                        if (first.has("CreatedBy")) createdBy = first.get("CreatedBy").asText();
+                    }
+                } else if (dataNode.isObject()) {
+                    if (dataNode.has("PurchaseOrderId")) purchaseOrderId = dataNode.get("PurchaseOrderId").asText();
+                    else if (dataNode.has("purchaseOrderId")) purchaseOrderId = dataNode.get("purchaseOrderId").asText();
+                    if (dataNode.has("DestinationFacilityId")) destinationFacility = dataNode.get("DestinationFacilityId").asText();
+                    if (createdBy == null || createdBy.isBlank()) {
+                        if (dataNode.has("CreatedBy")) createdBy = dataNode.get("CreatedBy").asText();
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (rawContent != null && !rawContent.isBlank() && !rawContent.startsWith("[CLAIM_CHECK:")) {
+            try {
+                JsonNode root = objectMapper.readTree(rawContent);
+                if (destinationFacility == null && root.has("DestinationFacilityId")) {
+                    destinationFacility = root.get("DestinationFacilityId").asText();
+                }
+                if (purchaseOrderId == null) {
+                    if (root.has("PurchaseOrderId")) purchaseOrderId = root.get("PurchaseOrderId").asText();
+                    else if (root.has("purchaseOrderId")) purchaseOrderId = root.get("purchaseOrderId").asText();
+                }
+                if (createdBy == null || createdBy.isBlank()) {
+                    if (root.has("CreatedBy")) createdBy = root.get("CreatedBy").asText();
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (purchaseOrderId == null && tracker.getMawmResponse() != null && !tracker.getMawmResponse().isBlank()) {
+            try {
+                JsonNode root = objectMapper.readTree(tracker.getMawmResponse());
+                JsonNode dataNode = root.has("data") ? root.get("data") : root;
+                if (dataNode != null) {
+                    if (dataNode.has("PurchaseOrderId")) purchaseOrderId = dataNode.get("PurchaseOrderId").asText();
+                    else if (dataNode.has("purchaseOrderId")) purchaseOrderId = dataNode.get("purchaseOrderId").asText();
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (destinationFacility == null || destinationFacility.isBlank() || "OPTI".equalsIgnoreCase(destinationFacility) || "SAMPLE".equalsIgnoreCase(destinationFacility)) {
+            destinationFacility = tracker.getFacilityId();
+        }
+        if (destinationFacility == null || destinationFacility.isBlank() || "OPTI".equalsIgnoreCase(destinationFacility) || "SAMPLE".equalsIgnoreCase(destinationFacility)) {
+            destinationFacility = mawmProperties.getDefaultFacility() != null && !mawmProperties.getDefaultFacility().isBlank()
+                    ? mawmProperties.getDefaultFacility() : "Food_Cbe";
+        }
+
+        if (purchaseOrderId == null || purchaseOrderId.isBlank()) {
+            purchaseOrderId = tracker.getJobId();
+        }
+
+        Map<String, Object> searchResult = searchPoStatus(purchaseOrderId, destinationFacility, createdBy);
+        if (Boolean.TRUE.equals(searchResult.get("success"))) {
+            String statusDesc = (String) searchResult.get("statusDescription");
+            transactionStore.recordMawmAsnStatus(jobId, statusDesc);
+        }
+        return searchResult;
+    }
+
+    /**
+     * Unified job verification for both ASN and PO jobs
+     */
+    public Map<String, Object> verifyJob(String jobId) {
+        var optTracker = transactionStore.getTracker(jobId);
+        if (optTracker.isPresent()) {
+            var t = optTracker.get();
+            if ("PO".equalsIgnoreCase(t.getTransactionType()) ||
+                    (t.getOriginalFilename() != null && t.getOriginalFilename().toUpperCase().contains("PO"))) {
+                return verifyJobPo(jobId);
+            }
+        }
+        return verifyJobAsn(jobId);
+    }
+
     public String extractCleanErrorMessage(String rawErrorBody, int statusCode, String facility, String username) {
         if (rawErrorBody == null || rawErrorBody.isBlank()) {
             return "HTTP " + statusCode + " error from MAWM Cloud (" + (facility != null ? facility : "default") + ").";

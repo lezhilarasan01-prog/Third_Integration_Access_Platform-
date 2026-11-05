@@ -18,7 +18,10 @@ public class MawmProperties {
     private String baseUrl;
     private String asnPath;
     private String asnSearchPath = "/receiving/api/receiving/asn/search";
-    private String poPath;
+    private String poPath = "/receiving/api/receiving/purchaseOrder/save";
+    private String poSearchPath = "/receiving/api/receiving/purchaseOrder/search";
+    private String poLineSearchPath = "/receiving/api/receiving/purchaseOrderLine/search";
+    private String asnLineSearchPath = "/receiving/api/receiving/asnLine/search";
     private String defaultFacility;
     private String apiKey;
     private String verifiedStatus = "8000";
@@ -51,6 +54,15 @@ public class MawmProperties {
 
     public String getPoPath() { return poPath; }
     public void setPoPath(String poPath) { this.poPath = poPath; }
+
+    public String getPoSearchPath() { return poSearchPath; }
+    public void setPoSearchPath(String poSearchPath) { this.poSearchPath = poSearchPath; }
+
+    public String getPoLineSearchPath() { return poLineSearchPath; }
+    public void setPoLineSearchPath(String poLineSearchPath) { this.poLineSearchPath = poLineSearchPath; }
+
+    public String getAsnLineSearchPath() { return asnLineSearchPath; }
+    public void setAsnLineSearchPath(String asnLineSearchPath) { this.asnLineSearchPath = asnLineSearchPath; }
 
     public String getDefaultFacility() { return defaultFacility; }
     public void setDefaultFacility(String defaultFacility) { this.defaultFacility = defaultFacility; }

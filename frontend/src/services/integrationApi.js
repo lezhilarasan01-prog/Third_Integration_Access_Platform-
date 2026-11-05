@@ -710,5 +710,85 @@ export const integrationApi = {
       throw new Error(err.error || 'Failed to verify ASN status in MAWM');
     }
     return res.json();
+  },
+
+  async savePoDirect(payload, username) {
+    const url = username
+      ? `${BASE_URL}/api/v1/erp/mawm/save-po?username=${encodeURIComponent(username)}`
+      : `${BASE_URL}/api/v1/erp/mawm/save-po`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to save PO directly to MAWM');
+    }
+    return res.json();
+  },
+
+  async searchPoStatus(purchaseOrderId, facilityId = 'Food_Cbe', username) {
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/search-po`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ purchaseOrderId, facilityId, username })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to query MAWM PO status search API');
+    }
+    return res.json();
+  },
+
+  async searchPoLines(purchaseOrderId, facilityId = 'Food_Cbe', username) {
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/search-po-lines`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ purchaseOrderId, facilityId, username })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to query MAWM PO lines search API');
+    }
+    return res.json();
+  },
+
+  async searchPoAsnLines(purchaseOrderId, facilityId = 'Food_Cbe', username) {
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/search-po-asn-lines`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ purchaseOrderId, facilityId, username })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to query MAWM PO ASN lines search API');
+    }
+    return res.json();
+  },
+
+  async verifyJobPo(jobId) {
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/verify-po/${encodeURIComponent(jobId)}`, {
+      method: 'POST'
+    });
+    this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to verify PO status in MAWM');
+    }
+    return res.json();
+  },
+
+  async verifyJob(jobId) {
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/verify/${encodeURIComponent(jobId)}`, {
+      method: 'POST'
+    });
+    this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to verify job status in MAWM');
+    }
+    return res.json();
   }
 };

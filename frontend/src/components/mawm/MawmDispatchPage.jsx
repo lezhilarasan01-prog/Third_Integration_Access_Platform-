@@ -9,15 +9,63 @@ import {
   ShieldCheck,
   Check,
   CheckCheck,
-  ExternalLink,
   ArrowRight,
   Eye,
   Send,
   ChevronLeft,
   ChevronRight,
-  Filter
+  Filter,
+  FileText,
+  Truck,
+  ListOrdered,
+  Layers,
+  Database
 } from 'lucide-react';
 import { integrationApi } from '../../services/integrationApi';
+
+const DEFAULT_PO_SAMPLE = {
+  PurchaseOrderId: "PO-2026-0001",
+  purchaseOrderType: "Standard",
+  DeliveryStartDate: "2026-11-01",
+  DeliveryEndDate: "2026-11-15",
+  VendorId: "VEND-DAIRY-01",
+  OriginFacilityId: "SUPPLIER_PLANT",
+  DestinationFacilityId: "Food_Cbe",
+  PurchaseOrderStatus: "Open",
+  CreatedBy: "kabil",
+  PurchaseOrderLine: [
+    {
+      PurchaseOrderLineId: "1",
+      ItemId: "SKU-MILK-1001",
+      OrderQuantity: 1200,
+      QuantityUomId: "EA",
+      ShippedQuantity: 0,
+      ReceivedQuantity: 0,
+      Canceled: false
+    }
+  ]
+};
+
+const DEFAULT_ASN_SAMPLE = {
+  AsnId: "ASN-2026-0001",
+  AsnOriginTypeId: "S",
+  DestinationFacilityId: "Food_Cbe",
+  OriginFacilityId: "SUPPLIER_PLANT",
+  EstimatedDeliveryDate: "2026-11-03",
+  AsnLevelId: "ITEM",
+  VendorId: "VEND-DAIRY-01",
+  AsnLine: [
+    {
+      AsnLineId: "1",
+      ItemId: "SKU-MILK-1001",
+      PurchaseOrderId: "PO-2026-0001",
+      PurchaseOrderLineId: "1",
+      QuantityUomId: "EA",
+      ShippedQuantity: 1200,
+      Canceled: false
+    }
+  ]
+};
 
 export default function MawmDispatchPage({
   onReturnOverview,
@@ -32,15 +80,48 @@ export default function MawmDispatchPage({
   const [testingConnection, setTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState(null);
 
-  // 5.4.2 Verification Search Tool State - Starts empty (no hardcoded ASN)
-  const [searchAsnId, setSearchAsnId] = useState('');
+  // Active Query Console Tool Tab: 'PO_STATUS' | 'PO_LINES' | 'PO_ASN' | 'ASN_STATUS' | 'PO_SAVE' | 'ASN_SAVE'
+  const [activeConsoleTab, setActiveConsoleTab] = useState('PO_STATUS');
+
+  // Shared Facility & Username
   const [searchFacility, setSearchFacility] = useState('Food_Cbe');
+  const [searchUsername, setSearchUsername] = useState('kabil');
+
+  // 5.3.2 PO Status State
+  const [poSearchId, setPoSearchId] = useState('PO-2026-0001');
+  const [searchingPoStatus, setSearchingPoStatus] = useState(false);
+  const [poStatusResult, setPoStatusResult] = useState(null);
+
+  // 5.3.3 PO Lines State
+  const [poLinesSearchId, setPoLinesSearchId] = useState('PO-2026-0001');
+  const [searchingPoLines, setSearchingPoLines] = useState(false);
+  const [poLinesResult, setPoLinesResult] = useState(null);
+
+  // 5.3.4 PO Associated ASNs State
+  const [poAsnSearchId, setPoAsnSearchId] = useState('PO-2026-0001');
+  const [searchingPoAsn, setSearchingPoAsn] = useState(false);
+  const [poAsnResult, setPoAsnResult] = useState(null);
+
+  // 5.4.2 ASN Verification Search State
+  const [searchAsnId, setSearchAsnId] = useState('');
   const [searchingAsn, setSearchingAsn] = useState(false);
-  const [searchResult, setSearchResult] = useState(null);
-  const [showRawSearchJson, setShowRawSearchJson] = useState(false);
+  const [asnSearchResult, setAsnSearchResult] = useState(null);
+
+  // 5.3.1 Direct PO Save State
+  const [directPoJson, setDirectPoJson] = useState(JSON.stringify(DEFAULT_PO_SAMPLE, null, 2));
+  const [savingPoDirect, setSavingPoDirect] = useState(false);
+  const [directPoResult, setDirectPoResult] = useState(null);
+
+  // 5.4.1 Direct ASN Save State
+  const [directAsnJson, setDirectAsnJson] = useState(JSON.stringify(DEFAULT_ASN_SAMPLE, null, 2));
+  const [savingAsnDirect, setSavingAsnDirect] = useState(false);
+  const [directAsnResult, setDirectAsnResult] = useState(null);
+
+  const [showRawJsonMap, setShowRawJsonMap] = useState({});
 
   // MAWM Dispatch Details Filtering & Pagination
-  const [selectedErp, setSelectedErp] = useState('OPTI'); // Default to OPTI as requested
+  const [selectedErp, setSelectedErp] = useState('OPTI'); // Dropdown type, default to OPTI
+  const [selectedDocTypeFilter, setSelectedDocTypeFilter] = useState('ALL'); // 'ALL' | 'PO' | 'ASN'
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
@@ -52,7 +133,8 @@ export default function MawmDispatchPage({
 
   // Inspection modal
   const [inspectingJob, setInspectingJob] = useState(null);
-  const [inspectPayloadTab, setInspectPayloadTab] = useState('response'); // 'response' | 'verification' | 'raw'
+  const [inspectPayloadTab, setInspectPayloadTab] = useState('response'); // 'response' | 'status' | 'lines' | 'asns' | 'raw'
+  const [inspectingDetails, setInspectingDetails] = useState({ lines: null, asns: null, status: null });
 
   const formatPayload = (val) => {
     if (!val) return '';
@@ -71,10 +153,64 @@ export default function MawmDispatchPage({
     }
   };
 
-  // Robust ASN ID extraction from mawmResponse, outputFiles, rawContent, or filename
+  const isPoRecord = useCallback((job) => {
+    if (!job) return false;
+    const type = (job.transactionType || '').toUpperCase();
+    if (type === 'PO' || type.includes('PURCHASE') || type.includes('ORDER')) return true;
+    const fn = (job.originalFilename || '').toUpperCase();
+    if (fn.includes('PO') || fn.includes('ORDER') || fn.includes('PURCHASE')) return true;
+    if (job.rawContent && (job.rawContent.includes('PurchaseOrderId') || job.rawContent.includes('purchaseOrder'))) return true;
+    if (job.outputFiles && (job.outputFiles.includes('PurchaseOrderId') || job.outputFiles.includes('purchaseOrder'))) return true;
+    if (job.mawmResponse && (job.mawmResponse.includes('PurchaseOrderId') || job.mawmResponse.includes('purchaseOrder'))) return true;
+    return false;
+  }, []);
+
+  // Robust PO ID extraction
+  const extractPoId = useCallback((job) => {
+    if (!job) return '';
+    if (job.mawmResponse && typeof job.mawmResponse === 'string') {
+      try {
+        const parsed = JSON.parse(job.mawmResponse);
+        const data = parsed.data || parsed.Data || parsed;
+        if (data?.PurchaseOrderId) return String(data.PurchaseOrderId);
+        if (Array.isArray(data) && data[0]?.PurchaseOrderId) return String(data[0].PurchaseOrderId);
+      } catch (e) {}
+      const m = job.mawmResponse.match(/"PurchaseOrderId"\s*:\s*"([^"]+)"/i) || job.mawmResponse.match(/"purchaseOrderId"\s*:\s*"([^"]+)"/i);
+      if (m && m[1]) return m[1];
+    }
+    if (job.outputFiles && typeof job.outputFiles === 'string') {
+      try {
+        const parsed = JSON.parse(job.outputFiles);
+        const dataArr = parsed.Data || parsed.data || (Array.isArray(parsed) ? parsed : null);
+        if (Array.isArray(dataArr) && dataArr[0]?.PurchaseOrderId) return String(dataArr[0].PurchaseOrderId);
+        if (parsed.PurchaseOrderId) return String(parsed.PurchaseOrderId);
+        if (parsed.purchaseOrderId) return String(parsed.purchaseOrderId);
+      } catch (e) {}
+      const m = job.outputFiles.match(/"PurchaseOrderId"\s*:\s*"([^"]+)"/i);
+      if (m && m[1]) return m[1];
+    }
+    if (job.rawContent && typeof job.rawContent === 'string') {
+      try {
+        const parsed = JSON.parse(job.rawContent);
+        if (parsed.PurchaseOrderId) return String(parsed.PurchaseOrderId);
+        if (parsed.purchaseOrderId) return String(parsed.purchaseOrderId);
+      } catch (e) {}
+      const m = job.rawContent.match(/"PurchaseOrderId"\s*:\s*"([^"]+)"/i);
+      if (m && m[1]) return m[1];
+    }
+    if (job.originalFilename) {
+      const m = job.originalFilename.match(/(PO[-_A-Za-z0-9]+)/i);
+      if (m && m[1]) return m[1];
+    }
+    if (job.jobId) {
+      return `PO-${job.jobId.slice(0, 8).toUpperCase()}`;
+    }
+    return 'PO-RECORD';
+  }, []);
+
+  // Robust ASN ID extraction
   const extractAsnId = useCallback((job) => {
     if (!job) return '';
-    // 1. From mawmResponse
     if (job.mawmResponse && typeof job.mawmResponse === 'string') {
       try {
         const parsed = JSON.parse(job.mawmResponse);
@@ -82,12 +218,10 @@ export default function MawmDispatchPage({
         if (data?.AsnId) return String(data.AsnId);
         if (data?.Asn?.AsnId) return String(data.Asn.AsnId);
         if (Array.isArray(data?.AsnLine) && data.AsnLine[0]?.AsnId) return String(data.AsnLine[0].AsnId);
-        if (Array.isArray(data?.AsnLine) && data.AsnLine[0]?.Asn?.AsnId) return String(data.AsnLine[0].Asn.AsnId);
       } catch (e) {}
       const m = job.mawmResponse.match(/"AsnId"\s*:\s*"([^"]+)"/i) || job.mawmResponse.match(/"asnId"\s*:\s*"([^"]+)"/i);
       if (m && m[1]) return m[1];
     }
-    // 2. From outputFiles
     if (job.outputFiles && typeof job.outputFiles === 'string') {
       try {
         const parsed = JSON.parse(job.outputFiles);
@@ -99,7 +233,6 @@ export default function MawmDispatchPage({
       const m = job.outputFiles.match(/"AsnId"\s*:\s*"([^"]+)"/i);
       if (m && m[1]) return m[1];
     }
-    // 3. From rawContent
     if (job.rawContent && typeof job.rawContent === 'string') {
       try {
         const parsed = JSON.parse(job.rawContent);
@@ -109,21 +242,24 @@ export default function MawmDispatchPage({
       const m = job.rawContent.match(/"AsnId"\s*:\s*"([^"]+)"/i);
       if (m && m[1]) return m[1];
     }
-    // 4. Regex for ASN pattern in filename or errors
     if (job.originalFilename) {
       const m = job.originalFilename.match(/(ASN[A-Za-z0-9_-]+)/i);
       if (m && m[1]) return m[1];
     }
-    if (job.processingErrorMessage) {
-      const m = job.processingErrorMessage.match(/(ASN[A-Za-z0-9_-]+)/i);
-      if (m && m[1]) return m[1];
-    }
-    // 5. Fallback clean tag (never a raw UUID)
     if (job.jobId) {
       return `ASN-${job.jobId.slice(0, 8).toUpperCase()}`;
     }
     return 'ASN-RECORD';
   }, []);
+
+  // Unified Document ID extraction
+  const extractDocId = useCallback((job) => {
+    if (!job) return { id: '', type: 'ASN' };
+    if (isPoRecord(job)) {
+      return { id: extractPoId(job), type: 'PO' };
+    }
+    return { id: extractAsnId(job), type: 'ASN' };
+  }, [isPoRecord, extractPoId, extractAsnId]);
 
   // Robust Destination Facility extraction
   const extractFacility = useCallback((job) => {
@@ -149,8 +285,8 @@ export default function MawmDispatchPage({
     return 'Food_Cbe';
   }, []);
 
-  // Extract verification status code directly from actual API response fact
-  const extractVerificationStatus = useCallback((job) => {
+  // Extract status directly from actual API response fact
+  const extractLiveStatus = useCallback((job) => {
     if (!job) return null;
     if (rowStatusMap[job.jobId]) return rowStatusMap[job.jobId];
     if (job.mawmAsnStatus) return job.mawmAsnStatus;
@@ -158,6 +294,13 @@ export default function MawmDispatchPage({
       try {
         const parsed = JSON.parse(job.mawmResponse);
         const data = parsed.data || parsed.Data;
+        if (Array.isArray(data) && data[0]) {
+          if (data[0].PurchaseOrderStatus) return String(data[0].PurchaseOrderStatus);
+          if (data[0].purchaseOrderStatusDescription) return String(data[0].purchaseOrderStatusDescription);
+          if (data[0].AsnStatus) return String(data[0].AsnStatus);
+        }
+        if (data?.PurchaseOrderStatus) return String(data.PurchaseOrderStatus);
+        if (data?.purchaseOrderStatusDescription) return String(data.purchaseOrderStatusDescription);
         if (data?.AsnStatus) return String(data.AsnStatus);
         if (data?.StatusDescription) return String(data.StatusDescription);
       } catch (e) {}
@@ -196,7 +339,7 @@ export default function MawmDispatchPage({
       const res = await integrationApi.testMawmConnection();
       setTestResult({
         success: true,
-        message: `Connected in ${res.latencyMs}ms. OAuth Bearer token active for user "${res.username || 'lezhilarasan'}".`
+        message: `Connected in ${res.latencyMs}ms. OAuth Bearer token active for user "${res.username || 'kabil'}".`
       });
       await loadData(true);
     } catch (err) {
@@ -207,18 +350,90 @@ export default function MawmDispatchPage({
     }
   };
 
-  // 5.4.2 Interactive Verification Search
-  const handleManualSearchAsn = async (overrideFacility) => {
-    const targetAsn = searchAsnId.trim();
-    const targetFac = (overrideFacility || searchFacility).trim();
+  // 5.3.2 Query PO Status
+  const handleQueryPoStatus = async (overridePoId, overrideFac) => {
+    const targetPo = (overridePoId || poSearchId).trim();
+    const targetFac = (overrideFac || searchFacility).trim();
+    if (!targetPo) return;
+    setSearchingPoStatus(true);
+    setPoStatusResult(null);
+    try {
+      const res = await integrationApi.searchPoStatus(targetPo, targetFac, searchUsername);
+      setPoStatusResult(res);
+      if (res.statusDescription || res.purchaseOrderStatus) {
+        const val = res.statusDescription || res.purchaseOrderStatus;
+        trackers.forEach(t => {
+          if (extractPoId(t) === targetPo) {
+            setRowStatusMap(prev => ({ ...prev, [t.jobId]: val }));
+          }
+        });
+      }
+    } catch (err) {
+      setPoStatusResult({
+        success: false,
+        statusCode: 500,
+        cleanError: err.message || 'Failed to query MAWM PO status API',
+        facilityId: targetFac
+      });
+    } finally {
+      setSearchingPoStatus(false);
+    }
+  };
+
+  // 5.3.3 Query PO Lines
+  const handleQueryPoLines = async (overridePoId, overrideFac) => {
+    const targetPo = (overridePoId || poLinesSearchId).trim();
+    const targetFac = (overrideFac || searchFacility).trim();
+    if (!targetPo) return;
+    setSearchingPoLines(true);
+    setPoLinesResult(null);
+    try {
+      const res = await integrationApi.searchPoLines(targetPo, targetFac, searchUsername);
+      setPoLinesResult(res);
+    } catch (err) {
+      setPoLinesResult({
+        success: false,
+        statusCode: 500,
+        cleanError: err.message || 'Failed to query MAWM PO lines API',
+        facilityId: targetFac
+      });
+    } finally {
+      setSearchingPoLines(false);
+    }
+  };
+
+  // 5.3.4 Query PO Associated ASNs
+  const handleQueryPoAsnLines = async (overridePoId, overrideFac) => {
+    const targetPo = (overridePoId || poAsnSearchId).trim();
+    const targetFac = (overrideFac || searchFacility).trim();
+    if (!targetPo) return;
+    setSearchingPoAsn(true);
+    setPoAsnResult(null);
+    try {
+      const res = await integrationApi.searchPoAsnLines(targetPo, targetFac, searchUsername);
+      setPoAsnResult(res);
+    } catch (err) {
+      setPoAsnResult({
+        success: false,
+        statusCode: 500,
+        cleanError: err.message || 'Failed to query MAWM PO ASN lines API',
+        facilityId: targetFac
+      });
+    } finally {
+      setSearchingPoAsn(false);
+    }
+  };
+
+  // 5.4.2 ASN Verification Search
+  const handleManualSearchAsn = async (overrideAsn, overrideFac) => {
+    const targetAsn = (overrideAsn || searchAsnId).trim();
+    const targetFac = (overrideFac || searchFacility).trim();
     if (!targetAsn) return;
     setSearchingAsn(true);
-    setSearchResult(null);
-    setShowRawSearchJson(false);
+    setAsnSearchResult(null);
     try {
-      const res = await integrationApi.searchAsnVerification(targetAsn, targetFac);
-      setSearchResult(res);
-      // If we queried a known ASN, update its status in rowStatusMap
+      const res = await integrationApi.searchAsnVerification(targetAsn, targetFac, searchUsername);
+      setAsnSearchResult(res);
       if (res.asnStatus) {
         trackers.forEach(t => {
           if (extractAsnId(t) === targetAsn) {
@@ -227,11 +442,10 @@ export default function MawmDispatchPage({
         });
       }
     } catch (err) {
-      setSearchResult({
+      setAsnSearchResult({
         success: false,
         statusCode: 500,
-        cleanError: err.message || 'Failed to query MAWM ASN verification search API',
-        error: err.message || 'Failed to query MAWM ASN verification search API',
+        cleanError: err.message || 'Failed to query MAWM ASN verification API',
         facilityId: targetFac
       });
     } finally {
@@ -239,11 +453,73 @@ export default function MawmDispatchPage({
     }
   };
 
-  // Click an AsnId to load it directly into the 5.4.2 console
-  const handleSelectAsnForQuery = (targetAsn, targetFac) => {
-    if (!targetAsn) return;
-    setSearchAsnId(targetAsn);
-    if (targetFac) setSearchFacility(targetFac);
+  // 5.3.1 Direct Save PO Action
+  const handleDirectPoSave = async () => {
+    setSavingPoDirect(true);
+    setDirectPoResult(null);
+    try {
+      let parsed;
+      try {
+        parsed = JSON.parse(directPoJson);
+      } catch (jsonErr) {
+        throw new Error('Invalid JSON format: ' + jsonErr.message);
+      }
+      const res = await integrationApi.savePoDirect(parsed, searchUsername);
+      setDirectPoResult(res);
+      await loadData(true);
+    } catch (err) {
+      setDirectPoResult({
+        success: false,
+        statusCode: 500,
+        cleanError: err.message || 'Direct PO save failed'
+      });
+    } finally {
+      setSavingPoDirect(false);
+    }
+  };
+
+  // 5.4.1 Direct Save ASN Action
+  const handleDirectAsnSave = async () => {
+    setSavingAsnDirect(true);
+    setDirectAsnResult(null);
+    try {
+      let parsed;
+      try {
+        parsed = JSON.parse(directAsnJson);
+      } catch (jsonErr) {
+        throw new Error('Invalid JSON format: ' + jsonErr.message);
+      }
+      const res = await integrationApi.saveAsnDirect(parsed, searchUsername);
+      setDirectAsnResult(res);
+      await loadData(true);
+    } catch (err) {
+      setDirectAsnResult({
+        success: false,
+        statusCode: 500,
+        cleanError: err.message || 'Direct ASN save failed'
+      });
+    } finally {
+      setSavingAsnDirect(false);
+    }
+  };
+
+  // Click an ID from the table to load into the appropriate query tool
+  const handleSelectDocForQuery = (job) => {
+    const { id, type } = extractDocId(job);
+    const fac = extractFacility(job) || 'Food_Cbe';
+    if (!id) return;
+    setSearchFacility(fac);
+    if (type === 'PO') {
+      setActiveConsoleTab('PO_STATUS');
+      setPoSearchId(id);
+      setPoLinesSearchId(id);
+      setPoAsnSearchId(id);
+      handleQueryPoStatus(id, fac);
+    } else {
+      setActiveConsoleTab('ASN_STATUS');
+      setSearchAsnId(id);
+      handleManualSearchAsn(id, fac);
+    }
     const consoleEl = document.getElementById('mawm-search-console');
     if (consoleEl) {
       consoleEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -254,22 +530,28 @@ export default function MawmDispatchPage({
   const handleVerifyRow = async (job, e) => {
     if (e) e.stopPropagation();
     const jobId = job.jobId;
-    const targetAsn = extractAsnId(job);
-    const targetFac = extractFacility(job) || 'Food_Cbe';
+    const { id, type } = extractDocId(job);
+    const fac = extractFacility(job) || 'Food_Cbe';
     setVerifyingJobId(jobId);
     try {
-      const res = await integrationApi.searchAsnVerification(targetAsn, targetFac);
-      const actualApiStatus = res.asnStatus || res.statusDescription || (res.success ? 'RECEIVED' : 'ERROR');
-      setRowStatusMap(prev => ({
-        ...prev,
-        [jobId]: actualApiStatus
-      }));
-      setSearchAsnId(targetAsn);
-      setSearchFacility(targetFac);
-      setSearchResult(res);
+      if (type === 'PO') {
+        const res = await integrationApi.searchPoStatus(id, fac, searchUsername);
+        const actualStatus = res.statusDescription || res.purchaseOrderStatus || (res.success ? 'RECEIVED' : 'ERROR');
+        setRowStatusMap(prev => ({ ...prev, [jobId]: actualStatus }));
+        setPoSearchId(id);
+        setPoStatusResult(res);
+        setActiveConsoleTab('PO_STATUS');
+      } else {
+        const res = await integrationApi.searchAsnVerification(id, fac, searchUsername);
+        const actualStatus = res.asnStatus || res.statusDescription || (res.success ? 'RECEIVED' : 'ERROR');
+        setRowStatusMap(prev => ({ ...prev, [jobId]: actualStatus }));
+        setSearchAsnId(id);
+        setAsnSearchResult(res);
+        setActiveConsoleTab('ASN_STATUS');
+      }
       await loadData(true);
     } catch (err) {
-      alert(`Verification query failed for ${targetAsn}: ${err.message}`);
+      alert(`Verification query failed for ${id}: ${err.message}`);
     } finally {
       setVerifyingJobId(null);
     }
@@ -285,7 +567,7 @@ export default function MawmDispatchPage({
         if (inspectingJob && inspectingJob.jobId === jobId) {
           setInspectingJob((prev) => ({
             ...prev,
-            dispatchStatus: res.dispatchStatus || 'DELIVERED_TO_MAWM (200 OK)',
+            dispatchStatus: res.dispatchStatus || 'DELIVERED (200 OK)',
             mawmResponse: res.mawmResponse || prev.mawmResponse
           }));
         }
@@ -304,30 +586,42 @@ export default function MawmDispatchPage({
   const handleInspectJob = async (job) => {
     setInspectingJob(job);
     setInspectPayloadTab('response');
+    const { id, type } = extractDocId(job);
+    const fac = extractFacility(job) || 'Food_Cbe';
     try {
       const fullTracker = await integrationApi.getTrackerById(job.jobId);
       if (fullTracker) {
-        setInspectingJob(prev => ({
-          ...prev,
-          ...fullTracker
-        }));
+        setInspectingJob(prev => ({ ...prev, ...fullTracker }));
       }
     } catch (e) {
       console.warn('Could not load full tracker details:', e);
     }
+
+    // Proactively fetch PO lines/ASNs if PO
+    if (type === 'PO' && id && !id.startsWith('PO-RECORD')) {
+      integrationApi.searchPoLines(id, fac, searchUsername)
+        .then(linesRes => setInspectingDetails(prev => ({ ...prev, lines: linesRes })))
+        .catch(() => {});
+      integrationApi.searchPoAsnLines(id, fac, searchUsername)
+        .then(asnRes => setInspectingDetails(prev => ({ ...prev, asns: asnRes })))
+        .catch(() => {});
+    }
   };
 
-  // Filtered trackers by ERP Source selector & query
+  // Filtered trackers by ERP Source selector, DocType, and Query
   const filteredTrackers = useMemo(() => {
     return trackers.filter((r) => {
-      // 1. Transaction Type filter: only ASN transactions or records with mawmResponse / dispatchStatus
+      const isPo = isPoRecord(r);
       const isAsn = (r.transactionType || '').toUpperCase().includes('ASN') ||
                     (r.originalFilename || '').toUpperCase().includes('ASN') ||
-                    Boolean(r.mawmResponse) ||
-                    Boolean(r.dispatchStatus);
-      if (!isAsn) return false;
+                    (!isPo && (Boolean(r.mawmResponse) || Boolean(r.dispatchStatus)));
 
-      // 2. ERP Source Filter (Dropdown selection: OPTI, SAP, HM, OTHER - No ALL ERP option)
+      // 1. DocType filter
+      if (selectedDocTypeFilter === 'PO' && !isPo) return false;
+      if (selectedDocTypeFilter === 'ASN' && !isAsn) return false;
+      if (!isPo && !isAsn && !Boolean(r.mawmResponse) && !Boolean(r.dispatchStatus)) return false;
+
+      // 2. ERP Source Filter (Dropdown selection: OPTI, SAP, HM, OTHER)
       const src = (r.sourceSystem || '').toUpperCase();
       if (selectedErp === 'OPTI') {
         if (!src.includes('OPTI') && !src.includes('OTPI') && !src.includes('OPI')) return false;
@@ -342,19 +636,19 @@ export default function MawmDispatchPage({
       // 3. Search query filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const asnId = extractAsnId(r).toLowerCase();
+        const { id } = extractDocId(r);
         const jId = (r.jobId || '').toLowerCase();
         const fac = (extractFacility(r) || '').toLowerCase();
-        const src = (r.sourceSystem || '').toLowerCase();
+        const s = (r.sourceSystem || '').toLowerCase();
         const fn = (r.originalFilename || '').toLowerCase();
-        if (!asnId.includes(q) && !jId.includes(q) && !fac.includes(q) && !src.includes(q) && !fn.includes(q)) {
+        if (!id.toLowerCase().includes(q) && !jId.includes(q) && !fac.includes(q) && !s.includes(q) && !fn.includes(q)) {
           return false;
         }
       }
 
       return true;
     });
-  }, [trackers, selectedErp, searchQuery, extractAsnId, extractFacility]);
+  }, [trackers, selectedErp, selectedDocTypeFilter, searchQuery, isPoRecord, extractDocId, extractFacility]);
 
   // Aggregate stats across all filtered records
   const stats = useMemo(() => {
@@ -362,12 +656,12 @@ export default function MawmDispatchPage({
     let verified = 0;
     filteredTrackers.forEach((r) => {
       const s = (r.dispatchStatus || '').toUpperCase();
-      const v = String(extractVerificationStatus(r) || '').toUpperCase();
+      const v = String(extractLiveStatus(r) || '').toUpperCase();
       if (s.includes('DELIVERED') || s.includes('200')) delivered++;
       if (v && v !== 'UNKNOWN' && v !== 'NOT_FOUND') verified++;
     });
     return { delivered, verified, total: filteredTrackers.length };
-  }, [filteredTrackers, extractVerificationStatus]);
+  }, [filteredTrackers, extractLiveStatus]);
 
   // Pagination slice
   const totalPages = Math.ceil(filteredTrackers.length / pageSize) || 1;
@@ -376,16 +670,19 @@ export default function MawmDispatchPage({
     return filteredTrackers.slice(start, start + pageSize);
   }, [filteredTrackers, currentPage, pageSize]);
 
-  // Handle page change safely
   const handlePageChange = (page) => {
     if (page >= 1 && page <= totalPages) {
       setCurrentPage(page);
     }
   };
 
+  const toggleRawJson = (key) => {
+    setShowRawJsonMap(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
   return (
-    <div className="page-container" style={{ padding: '1.25rem 1.75rem', maxWidth: '1400px', margin: '0 auto' }}>
-      {/* 1. Header & Actions Bar (Clean: NO OPTI EXCLUSIVE badge, universal hub) */}
+    <div className="page-container" style={{ padding: '1.25rem 1.75rem', maxWidth: '1440px', margin: '0 auto' }}>
+      {/* 1. Header & Actions Bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div style={{
@@ -410,9 +707,6 @@ export default function MawmDispatchPage({
                 LIVE CLOUD
               </span>
             </div>
-            <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Manhattan Active® WMS Automated Ingestion, Dispatch & Real-Time Receipt Verification Hub.
-            </p>
           </div>
         </div>
 
@@ -451,7 +745,7 @@ export default function MawmDispatchPage({
         </div>
       </div>
 
-      {/* OAuth Connection Status Banner */}
+      {/* Connection Result Banner */}
       {testResult && (
         <div style={{
           marginBottom: '1rem',
@@ -498,7 +792,7 @@ export default function MawmDispatchPage({
 
         <div className="card" style={{ padding: '0.85rem 1rem', borderRadius: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>VERIFIED RECEIPTS</span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>VERIFIED DELIVERIES</span>
             <CheckCheck size={16} color="#38bdf8" />
           </div>
           <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#38bdf8', lineHeight: 1.2 }}>
@@ -518,277 +812,515 @@ export default function MawmDispatchPage({
       </div>
 
       {/* =========================================================================
-          3. Interactive ASN Verification Search Console (5.4.2 Live Query Tool)
+          3. Unified Interactive MAWM Query & Dispatch Console (PO & ASN 5.3 + 5.4)
          ========================================================================= */}
       <div id="mawm-search-console" className="card" style={{ padding: '1.25rem 1.5rem', borderRadius: '10px', border: '1px solid rgba(56, 189, 248, 0.3)', backgroundColor: 'rgba(15, 23, 42, 0.65)', marginBottom: '1.25rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <Search size={16} />
-              <span>ASN Verification Status Query Console</span>
-            </h3>
-            <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              Query real-time receipt verification status in Manhattan Active WMS Cloud.
-            </p>
+        {/* Navigation Tabs */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => setActiveConsoleTab('PO_STATUS')}
+              className={`filter-pill ${activeConsoleTab === 'PO_STATUS' ? 'active' : ''}`}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
+            >
+              <FileText size={14} />
+              <span>5.3.2 Query PO Status</span>
+            </button>
+
+            <button
+              onClick={() => setActiveConsoleTab('PO_LINES')}
+              className={`filter-pill ${activeConsoleTab === 'PO_LINES' ? 'active' : ''}`}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
+            >
+              <ListOrdered size={14} />
+              <span>5.3.3 Query PO Lines</span>
+            </button>
+
+            <button
+              onClick={() => setActiveConsoleTab('PO_ASN')}
+              className={`filter-pill ${activeConsoleTab === 'PO_ASN' ? 'active' : ''}`}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
+            >
+              <Layers size={14} />
+              <span>5.3.4 Associated ASNs</span>
+            </button>
+
+            <button
+              onClick={() => setActiveConsoleTab('ASN_STATUS')}
+              className={`filter-pill ${activeConsoleTab === 'ASN_STATUS' ? 'active' : ''}`}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
+            >
+              <Truck size={14} />
+              <span>5.4.2 ASN Verification</span>
+            </button>
+
+            <button
+              onClick={() => setActiveConsoleTab('PO_SAVE')}
+              className={`filter-pill ${activeConsoleTab === 'PO_SAVE' ? 'active' : ''}`}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
+            >
+              <Send size={14} />
+              <span>5.3.1 Direct Save PO</span>
+            </button>
+
+            <button
+              onClick={() => setActiveConsoleTab('ASN_SAVE')}
+              className={`filter-pill ${activeConsoleTab === 'ASN_SAVE' ? 'active' : ''}`}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
+            >
+              <Send size={14} />
+              <span>5.4.1 Direct Save ASN</span>
+            </button>
           </div>
-          <span style={{ fontSize: '0.72rem', color: '#38bdf8', backgroundColor: 'rgba(56, 189, 248, 0.1)', padding: '0.2rem 0.55rem', borderRadius: '4px', border: '1px solid rgba(56, 189, 248, 0.25)' }}>
-            Live MAWM Search
-          </span>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span style={{ fontSize: '0.72rem', color: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '0.2rem 0.55rem', borderRadius: '4px', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+              Selected Location: {searchFacility}
+            </span>
+          </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', alignItems: 'flex-end' }}>
-          {/* AsnId Input */}
-          <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
-              AsnId to Search:
-            </label>
-            <input
-              type="text"
-              value={searchAsnId}
-              onChange={(e) => setSearchAsnId(e.target.value)}
-              placeholder="Enter AsnId to query (e.g. ASNOPTI00004769)..."
-              className="input-field"
-              style={{
-                width: '100%',
-                padding: '0.45rem 0.75rem',
-                fontSize: '0.82rem',
-                fontFamily: 'var(--font-mono, monospace)',
-                boxSizing: 'border-box'
-              }}
-            />
-          </div>
-
-          {/* Destination Facility Input with Quick Presets */}
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                Destination Facility:
-              </label>
-              <div style={{ display: 'flex', gap: '0.3rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setSearchFacility('Food_Cbe')}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: searchFacility === 'Food_Cbe' ? '#10b981' : '#38bdf8',
-                    fontSize: '0.7rem',
-                    cursor: 'pointer',
-                    textDecoration: 'underline',
-                    padding: 0
-                  }}
-                  title="User is authorized for Food_Cbe"
-                >
-                  Food_Cbe (Auth)
-                </button>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>|</span>
-                <button
-                  type="button"
-                  onClick={() => setSearchFacility('Food_chn')}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: searchFacility === 'Food_chn' ? '#f59e0b' : 'var(--text-muted)',
-                    fontSize: '0.7rem',
-                    cursor: 'pointer',
-                    textDecoration: 'underline',
-                    padding: 0
-                  }}
-                >
-                  Food_chn
-                </button>
-              </div>
-            </div>
+        {/* Global Facility & Username controls for query tools */}
+        <div style={{ display: 'flex', gap: '1rem', marginBottom: '0.85rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Facility:</span>
             <input
               type="text"
               value={searchFacility}
               onChange={(e) => setSearchFacility(e.target.value)}
-              placeholder="e.g. Food_Cbe"
               className="input-field"
-              style={{
-                width: '100%',
-                padding: '0.45rem 0.75rem',
-                fontSize: '0.82rem',
-                fontFamily: 'var(--font-mono, monospace)',
-                boxSizing: 'border-box'
-              }}
+              style={{ width: '130px', padding: '0.3rem 0.55rem', fontSize: '0.76rem', fontFamily: 'var(--font-mono, monospace)' }}
             />
+            <button
+              type="button"
+              onClick={() => setSearchFacility('Food_Cbe')}
+              style={{ background: 'none', border: 'none', color: searchFacility === 'Food_Cbe' ? '#10b981' : '#38bdf8', fontSize: '0.7rem', cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Food_Cbe (Auth)
+            </button>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>|</span>
+            <button
+              type="button"
+              onClick={() => setSearchFacility('Food_chn')}
+              style={{ background: 'none', border: 'none', color: searchFacility === 'Food_chn' ? '#f59e0b' : 'var(--text-muted)', fontSize: '0.7rem', cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Food_chn
+            </button>
           </div>
 
-          {/* Action Button */}
-          <div>
-            <button
-              onClick={() => handleManualSearchAsn()}
-              disabled={searchingAsn || !searchAsnId.trim()}
-              className="btn-primary"
-              style={{
-                width: '100%',
-                padding: '0.48rem 1rem',
-                fontSize: '0.82rem',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.4rem',
-                backgroundColor: '#0284c7',
-                borderColor: '#0284c7',
-                cursor: searchAsnId.trim() ? 'pointer' : 'not-allowed',
-                opacity: searchAsnId.trim() ? 1 : 0.6
-              }}
-            >
-              <Search size={14} className={searchingAsn ? 'spin-icon' : ''} />
-              <span>{searchingAsn ? 'Querying MAWM Cloud...' : 'Check Verification Status'}</span>
-            </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>User:</span>
+            <input
+              type="text"
+              value={searchUsername}
+              onChange={(e) => setSearchUsername(e.target.value)}
+              className="input-field"
+              style={{ width: '110px', padding: '0.3rem 0.55rem', fontSize: '0.76rem', fontFamily: 'var(--font-mono, monospace)' }}
+            />
           </div>
         </div>
 
-        {/* Formatted Search Output Container */}
-        {searchResult && (
-          <div style={{
-            marginTop: '1rem',
-            padding: '0.85rem 1.15rem',
-            borderRadius: '8px',
-            backgroundColor: searchResult.isVerified
-              ? 'rgba(16, 185, 129, 0.1)'
-              : (searchResult.success ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.08)'),
-            border: `1px solid ${searchResult.isVerified ? '#10b981' : (searchResult.success ? '#f59e0b' : 'rgba(239, 68, 68, 0.35)')}`,
-            boxSizing: 'border-box',
-            maxWidth: '100%',
-            overflow: 'hidden'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.65rem' }}>
-              {searchResult.isVerified ? (
-                <CheckCheck size={20} color="#10b981" style={{ flexShrink: 0, marginTop: '2px' }} />
-              ) : searchResult.success ? (
-                <Clock size={20} color="#f59e0b" style={{ flexShrink: 0, marginTop: '2px' }} />
-              ) : (
-                <AlertTriangle size={20} color="#ef4444" style={{ flexShrink: 0, marginTop: '2px' }} />
-              )}
+        {/* --- TAB 1: 5.3.2 Query PO Status --- */}
+        {activeConsoleTab === 'PO_STATUS' && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem', alignItems: 'flex-end' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+                  PurchaseOrderId:
+                </label>
+                <input
+                  type="text"
+                  value={poSearchId}
+                  onChange={(e) => setPoSearchId(e.target.value)}
+                  placeholder="e.g. PO-2026-0001"
+                  className="input-field"
+                  style={{ width: '100%', padding: '0.45rem 0.75rem', fontSize: '0.82rem', fontFamily: 'var(--font-mono, monospace)' }}
+                />
+              </div>
 
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.35rem' }}>
-                  {searchResult.success ? (
-                    <span style={{
-                      backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                      color: '#38bdf8',
-                      border: '1px solid rgba(56, 189, 248, 0.3)',
-                      fontSize: '0.74rem',
-                      fontWeight: 700,
-                      padding: '0.18rem 0.55rem',
-                      borderRadius: '4px'
-                    }}>
-                      STATUS: {searchResult.asnStatus || searchResult.statusDescription || 'RECEIVED'}
-                    </span>
-                  ) : (
-                    <span style={{
-                      backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                      color: '#ef4444',
-                      border: '1px solid #ef4444',
-                      fontSize: '0.72rem',
-                      fontWeight: 700,
-                      padding: '0.15rem 0.5rem',
-                      borderRadius: '4px'
-                    }}>
-                      HTTP {searchResult.statusCode || 500} ERROR
-                    </span>
-                  )}
-
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono, monospace)' }}>
-                    AsnId: <strong>{searchResult.asnId || searchAsnId}</strong> | Facility: <strong>{searchResult.facilityId || searchFacility}</strong>
-                  </span>
-                </div>
-
-                <div style={{
-                  fontSize: '0.82rem',
-                  color: searchResult.success ? '#38bdf8' : '#f87171',
-                  fontWeight: 600,
-                  wordBreak: 'break-word',
-                  overflowWrap: 'anywhere',
-                  lineHeight: 1.45
-                }}>
-                  {searchResult.success
-                    ? `Live MAWM Status: ${searchResult.statusDescription || searchResult.asnStatus}`
-                    : (searchResult.cleanError || searchResult.error)}
-                </div>
+              <div>
+                <button
+                  onClick={() => handleQueryPoStatus()}
+                  disabled={searchingPoStatus || !poSearchId.trim()}
+                  className="btn-primary"
+                  style={{ width: '100%', padding: '0.48rem 1rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', backgroundColor: '#0284c7' }}
+                >
+                  <Search size={14} className={searchingPoStatus ? 'spin-icon' : ''} />
+                  <span>{searchingPoStatus ? 'Querying MAWM...' : 'Check PO Status (5.3.2)'}</span>
+                </button>
               </div>
             </div>
 
-            {/* Smart Recommendation for unauthorized facility */}
-            {String(searchResult.cleanError || searchResult.error || '').includes('does not have access to the selected organization') && (
-              <div style={{
-                marginTop: '0.65rem',
-                padding: '0.55rem 0.85rem',
-                backgroundColor: 'rgba(56, 189, 248, 0.1)',
-                border: '1px solid rgba(56, 189, 248, 0.25)',
-                borderRadius: '6px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '0.65rem',
-                flexWrap: 'wrap'
-              }}>
-                <div style={{ fontSize: '0.76rem', color: '#38bdf8' }}>
-                  <strong>Access Tip:</strong> Active user is authorized for <strong>Food_Cbe</strong>.
+            {/* Result Box */}
+            {poStatusResult && (
+              <div style={{ marginTop: '1rem', padding: '0.85rem 1.15rem', borderRadius: '8px', backgroundColor: poStatusResult.success ? 'rgba(56, 189, 248, 0.08)' : 'rgba(239, 68, 68, 0.08)', border: `1px solid ${poStatusResult.success ? 'rgba(56, 189, 248, 0.35)' : 'rgba(239, 68, 68, 0.35)'}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ backgroundColor: poStatusResult.success ? 'rgba(56, 189, 248, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: poStatusResult.success ? '#38bdf8' : '#ef4444', fontSize: '0.74rem', fontWeight: 700, padding: '0.18rem 0.55rem', borderRadius: '4px' }}>
+                      {poStatusResult.success ? `STATUS: ${poStatusResult.purchaseOrderStatus || poStatusResult.statusDescription || 'OK'}` : `HTTP ${poStatusResult.statusCode || 500} ERROR`}
+                    </span>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                      PO: <strong>{poStatusResult.purchaseOrderId || poSearchId}</strong> | Facility: <strong>{poStatusResult.facilityId || searchFacility}</strong>
+                    </span>
+                  </div>
+                  <button onClick={() => toggleRawJson('poStatus')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}>
+                    {showRawJsonMap['poStatus'] ? 'Hide Technical Response' : 'View Full JSON Response'}
+                  </button>
                 </div>
-                <button
-                  onClick={() => {
-                    setSearchFacility('Food_Cbe');
-                    handleManualSearchAsn('Food_Cbe');
-                  }}
-                  className="btn-secondary"
-                  style={{
-                    fontSize: '0.72rem',
-                    padding: '0.22rem 0.6rem',
-                    borderColor: '#38bdf8',
-                    color: '#38bdf8',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.3rem'
-                  }}
-                >
-                  <Check size={12} />
-                  <span>Switch to Food_Cbe & Retry</span>
-                </button>
+
+                <div style={{ fontSize: '0.82rem', color: poStatusResult.success ? '#38bdf8' : '#f87171', fontWeight: 600 }}>
+                  {poStatusResult.success ? `Live Response Fact: ${poStatusResult.statusDescription || poStatusResult.purchaseOrderStatus}` : (poStatusResult.cleanError || poStatusResult.error)}
+                </div>
+
+                {showRawJsonMap['poStatus'] && poStatusResult.rawResponse && (
+                  <pre style={{ marginTop: '0.5rem', padding: '0.65rem', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '4px', maxHeight: '160px', overflow: 'auto', fontSize: '0.72rem', color: '#34d399', whiteSpace: 'pre-wrap' }}>
+                    {formatPayload(poStatusResult.rawResponse)}
+                  </pre>
+                )}
               </div>
             )}
+          </div>
+        )}
 
-            {/* Collapsible Full Response */}
-            {searchResult.rawResponse && (
-              <div style={{ marginTop: '0.65rem' }}>
+        {/* --- TAB 2: 5.3.3 Query PO Lines --- */}
+        {activeConsoleTab === 'PO_LINES' && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem', alignItems: 'flex-end' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+                  PurchaseOrderId:
+                </label>
+                <input
+                  type="text"
+                  value={poLinesSearchId}
+                  onChange={(e) => setPoLinesSearchId(e.target.value)}
+                  placeholder="e.g. PO-2026-0001"
+                  className="input-field"
+                  style={{ width: '100%', padding: '0.45rem 0.75rem', fontSize: '0.82rem', fontFamily: 'var(--font-mono, monospace)' }}
+                />
+              </div>
+
+              <div>
                 <button
-                  onClick={() => setShowRawSearchJson(!showRawSearchJson)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--text-muted)',
-                    fontSize: '0.72rem',
-                    cursor: 'pointer',
-                    padding: 0,
-                    textDecoration: 'underline',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.25rem'
-                  }}
+                  onClick={() => handleQueryPoLines()}
+                  disabled={searchingPoLines || !poLinesSearchId.trim()}
+                  className="btn-primary"
+                  style={{ width: '100%', padding: '0.48rem 1rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', backgroundColor: '#0284c7' }}
                 >
-                  <span>{showRawSearchJson ? 'Hide Technical Response' : 'View Full Technical Response (JSON)'}</span>
+                  <Search size={14} className={searchingPoLines ? 'spin-icon' : ''} />
+                  <span>{searchingPoLines ? 'Querying Lines...' : 'Query PO Lines (5.3.3)'}</span>
                 </button>
-                {showRawSearchJson && (
-                  <pre style={{
-                    marginTop: '0.35rem',
-                    padding: '0.65rem',
-                    backgroundColor: 'rgba(0,0,0,0.4)',
-                    borderRadius: '4px',
-                    maxHeight: '160px',
-                    overflowX: 'auto',
-                    overflowY: 'auto',
-                    fontFamily: 'var(--font-mono, monospace)',
-                    fontSize: '0.72rem',
-                    color: searchResult.success ? '#34d399' : '#fca5a5',
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                    overflowWrap: 'anywhere',
-                    border: '1px solid rgba(255, 255, 255, 0.1)'
-                  }}>
-                    {formatPayload(searchResult.rawResponse)}
+              </div>
+            </div>
+
+            {/* PO Lines Result Table */}
+            {poLinesResult && (
+              <div style={{ marginTop: '1rem', padding: '0.85rem 1.15rem', borderRadius: '8px', backgroundColor: poLinesResult.success ? 'rgba(56, 189, 248, 0.08)' : 'rgba(239, 68, 68, 0.08)', border: `1px solid ${poLinesResult.success ? 'rgba(56, 189, 248, 0.35)' : 'rgba(239, 68, 68, 0.35)'}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#38bdf8' }}>
+                    Purchase Order Lines ({poLinesResult.lines ? poLinesResult.lines.length : 0})
+                  </span>
+                  <button onClick={() => toggleRawJson('poLines')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}>
+                    {showRawJsonMap['poLines'] ? 'Hide Technical Response' : 'View Full JSON Response'}
+                  </button>
+                </div>
+
+                {Array.isArray(poLinesResult.lines) && poLinesResult.lines.length > 0 ? (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)', textAlign: 'left' }}>
+                          <th style={{ padding: '0.35rem 0.5rem' }}>Line ID</th>
+                          <th style={{ padding: '0.35rem 0.5rem' }}>Shipped Qty</th>
+                          <th style={{ padding: '0.35rem 0.5rem' }}>Received Qty</th>
+                          <th style={{ padding: '0.35rem 0.5rem' }}>Line Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {poLinesResult.lines.map((line, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                            <td style={{ padding: '0.35rem 0.5rem', fontFamily: 'var(--font-mono, monospace)', fontWeight: 600 }}>
+                              {line.PurchaseOrderLineId || line.purchaseOrderLineId || idx + 1}
+                            </td>
+                            <td style={{ padding: '0.35rem 0.5rem', color: '#38bdf8' }}>
+                              {line.ShippedQuantity ?? line.shippedQuantity ?? 0}
+                            </td>
+                            <td style={{ padding: '0.35rem 0.5rem', color: '#10b981' }}>
+                              {line.ReceivedQuantity ?? line.receivedQuantity ?? 0}
+                            </td>
+                            <td style={{ padding: '0.35rem 0.5rem' }}>
+                              <span style={{ backgroundColor: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', padding: '0.1rem 0.4rem', borderRadius: '4px', fontSize: '0.7rem' }}>
+                                {line.PoLineStatus || line.poLineStatus || 'Open'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    {poLinesResult.cleanError || 'No line items returned for this Purchase Order'}
+                  </div>
+                )}
+
+                {showRawJsonMap['poLines'] && poLinesResult.rawResponse && (
+                  <pre style={{ marginTop: '0.5rem', padding: '0.65rem', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '4px', maxHeight: '160px', overflow: 'auto', fontSize: '0.72rem', color: '#34d399', whiteSpace: 'pre-wrap' }}>
+                    {formatPayload(poLinesResult.rawResponse)}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* --- TAB 3: 5.3.4 Associated ASNs --- */}
+        {activeConsoleTab === 'PO_ASN' && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem', alignItems: 'flex-end' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+                  PurchaseOrderId:
+                </label>
+                <input
+                  type="text"
+                  value={poAsnSearchId}
+                  onChange={(e) => setPoAsnSearchId(e.target.value)}
+                  placeholder="e.g. PO-2026-0001"
+                  className="input-field"
+                  style={{ width: '100%', padding: '0.45rem 0.75rem', fontSize: '0.82rem', fontFamily: 'var(--font-mono, monospace)' }}
+                />
+              </div>
+
+              <div>
+                <button
+                  onClick={() => handleQueryPoAsnLines()}
+                  disabled={searchingPoAsn || !poAsnSearchId.trim()}
+                  className="btn-primary"
+                  style={{ width: '100%', padding: '0.48rem 1rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', backgroundColor: '#0284c7' }}
+                >
+                  <Search size={14} className={searchingPoAsn ? 'spin-icon' : ''} />
+                  <span>{searchingPoAsn ? 'Querying ASNs...' : 'Query Associated ASNs (5.3.4)'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* PO Associated ASNs Table */}
+            {poAsnResult && (
+              <div style={{ marginTop: '1rem', padding: '0.85rem 1.15rem', borderRadius: '8px', backgroundColor: poAsnResult.success ? 'rgba(56, 189, 248, 0.08)' : 'rgba(239, 68, 68, 0.08)', border: `1px solid ${poAsnResult.success ? 'rgba(56, 189, 248, 0.35)' : 'rgba(239, 68, 68, 0.35)'}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#38bdf8' }}>
+                    Associated ASNs ({poAsnResult.asnLines ? poAsnResult.asnLines.length : 0})
+                  </span>
+                  <button onClick={() => toggleRawJson('poAsn')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}>
+                    {showRawJsonMap['poAsn'] ? 'Hide Technical Response' : 'View Full JSON Response'}
+                  </button>
+                </div>
+
+                {Array.isArray(poAsnResult.asnLines) && poAsnResult.asnLines.length > 0 ? (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)', textAlign: 'left' }}>
+                          <th style={{ padding: '0.35rem 0.5rem' }}>AsnId</th>
+                          <th style={{ padding: '0.35rem 0.5rem' }}>Item ID</th>
+                          <th style={{ padding: '0.35rem 0.5rem' }}>Shipped Qty</th>
+                          <th style={{ padding: '0.35rem 0.5rem' }}>PO Line ID</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {poAsnResult.asnLines.map((line, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                            <td style={{ padding: '0.35rem 0.5rem', fontFamily: 'var(--font-mono, monospace)', fontWeight: 600, color: '#10b981' }}>
+                              {line.AsnId || line.asnId || '—'}
+                            </td>
+                            <td style={{ padding: '0.35rem 0.5rem' }}>
+                              {line.ItemId || line.itemId || '—'}
+                            </td>
+                            <td style={{ padding: '0.35rem 0.5rem', color: '#38bdf8' }}>
+                              {line.ShippedQuantity ?? line.shippedQuantity ?? 0}
+                            </td>
+                            <td style={{ padding: '0.35rem 0.5rem', fontFamily: 'var(--font-mono, monospace)' }}>
+                              {line.PurchaseOrderLineId || line.purchaseOrderLineId || '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    {poAsnResult.cleanError || 'No ASN deliveries associated with this PO yet'}
+                  </div>
+                )}
+
+                {showRawJsonMap['poAsn'] && poAsnResult.rawResponse && (
+                  <pre style={{ marginTop: '0.5rem', padding: '0.65rem', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '4px', maxHeight: '160px', overflow: 'auto', fontSize: '0.72rem', color: '#34d399', whiteSpace: 'pre-wrap' }}>
+                    {formatPayload(poAsnResult.rawResponse)}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* --- TAB 4: 5.4.2 ASN Verification Search --- */}
+        {activeConsoleTab === 'ASN_STATUS' && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem', alignItems: 'flex-end' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+                  AsnId to Search:
+                </label>
+                <input
+                  type="text"
+                  value={searchAsnId}
+                  onChange={(e) => setSearchAsnId(e.target.value)}
+                  placeholder="Enter AsnId to query (e.g. ASN-2026-0001)..."
+                  className="input-field"
+                  style={{ width: '100%', padding: '0.45rem 0.75rem', fontSize: '0.82rem', fontFamily: 'var(--font-mono, monospace)' }}
+                />
+              </div>
+
+              <div>
+                <button
+                  onClick={() => handleManualSearchAsn()}
+                  disabled={searchingAsn || !searchAsnId.trim()}
+                  className="btn-primary"
+                  style={{ width: '100%', padding: '0.48rem 1rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', backgroundColor: '#0284c7' }}
+                >
+                  <Search size={14} className={searchingAsn ? 'spin-icon' : ''} />
+                  <span>{searchingAsn ? 'Querying MAWM...' : 'Check ASN Status (5.4.2)'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* ASN Search Output Box */}
+            {asnSearchResult && (
+              <div style={{ marginTop: '1rem', padding: '0.85rem 1.15rem', borderRadius: '8px', backgroundColor: asnSearchResult.success ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)', border: `1px solid ${asnSearchResult.success ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ backgroundColor: asnSearchResult.success ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: asnSearchResult.success ? '#10b981' : '#ef4444', fontSize: '0.74rem', fontWeight: 700, padding: '0.18rem 0.55rem', borderRadius: '4px' }}>
+                      {asnSearchResult.success ? `STATUS: ${asnSearchResult.asnStatus || asnSearchResult.statusDescription || 'OK'}` : `HTTP ${asnSearchResult.statusCode || 500} ERROR`}
+                    </span>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                      AsnId: <strong>{asnSearchResult.asnId || searchAsnId}</strong> | Facility: <strong>{asnSearchResult.facilityId || searchFacility}</strong>
+                    </span>
+                  </div>
+                  <button onClick={() => toggleRawJson('asnSearch')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}>
+                    {showRawJsonMap['asnSearch'] ? 'Hide Technical Response' : 'View Full JSON Response'}
+                  </button>
+                </div>
+
+                <div style={{ fontSize: '0.82rem', color: asnSearchResult.success ? '#10b981' : '#f87171', fontWeight: 600 }}>
+                  {asnSearchResult.success ? `Live Response Fact: ${asnSearchResult.statusDescription || asnSearchResult.asnStatus}` : (asnSearchResult.cleanError || asnSearchResult.error)}
+                </div>
+
+                {showRawJsonMap['asnSearch'] && asnSearchResult.rawResponse && (
+                  <pre style={{ marginTop: '0.5rem', padding: '0.65rem', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '4px', maxHeight: '160px', overflow: 'auto', fontSize: '0.72rem', color: '#34d399', whiteSpace: 'pre-wrap' }}>
+                    {formatPayload(asnSearchResult.rawResponse)}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* --- TAB 5: 5.3.1 Direct Save PO --- */}
+        {activeConsoleTab === 'PO_SAVE' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                Direct Purchase Order Payload (5.3.1):
+              </span>
+              <button
+                type="button"
+                onClick={() => setDirectPoJson(JSON.stringify(DEFAULT_PO_SAMPLE, null, 2))}
+                style={{ background: 'none', border: 'none', color: '#38bdf8', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Reset Specification Default
+              </button>
+            </div>
+
+            <textarea
+              rows={8}
+              value={directPoJson}
+              onChange={(e) => setDirectPoJson(e.target.value)}
+              className="input-field"
+              style={{ width: '100%', fontFamily: 'var(--font-mono, monospace)', fontSize: '0.78rem', boxSizing: 'border-box' }}
+            />
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.6rem' }}>
+              <button
+                onClick={handleDirectPoSave}
+                disabled={savingPoDirect}
+                className="btn-primary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1.1rem', fontSize: '0.82rem', backgroundColor: '#059669', borderColor: '#059669' }}
+              >
+                <Send size={14} className={savingPoDirect ? 'spin-icon' : ''} />
+                <span>{savingPoDirect ? 'Saving PO to MAWM...' : 'Dispatch / Save PO to MAWM (200 OK)'}</span>
+              </button>
+            </div>
+
+            {directPoResult && (
+              <div style={{ marginTop: '0.85rem', padding: '0.75rem 1rem', borderRadius: '6px', backgroundColor: directPoResult.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', border: `1px solid ${directPoResult.success ? '#10b981' : '#ef4444'}` }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: directPoResult.success ? '#10b981' : '#ef4444' }}>
+                  {directPoResult.success ? (directPoResult.message || '200 OK - Purchase Order Saved Successfully') : (directPoResult.cleanError || directPoResult.error)}
+                </div>
+                {directPoResult.rawResponse && (
+                  <pre style={{ marginTop: '0.4rem', padding: '0.5rem', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '4px', maxHeight: '140px', overflow: 'auto', fontSize: '0.72rem', color: '#34d399', whiteSpace: 'pre-wrap' }}>
+                    {formatPayload(directPoResult.rawResponse)}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* --- TAB 6: 5.4.1 Direct Save ASN --- */}
+        {activeConsoleTab === 'ASN_SAVE' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                Direct ASN Payload (5.4.1):
+              </span>
+              <button
+                type="button"
+                onClick={() => setDirectAsnJson(JSON.stringify(DEFAULT_ASN_SAMPLE, null, 2))}
+                style={{ background: 'none', border: 'none', color: '#38bdf8', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Reset Specification Default
+              </button>
+            </div>
+
+            <textarea
+              rows={8}
+              value={directAsnJson}
+              onChange={(e) => setDirectAsnJson(e.target.value)}
+              className="input-field"
+              style={{ width: '100%', fontFamily: 'var(--font-mono, monospace)', fontSize: '0.78rem', boxSizing: 'border-box' }}
+            />
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.6rem' }}>
+              <button
+                onClick={handleDirectAsnSave}
+                disabled={savingAsnDirect}
+                className="btn-primary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1.1rem', fontSize: '0.82rem', backgroundColor: '#059669', borderColor: '#059669' }}
+              >
+                <Send size={14} className={savingAsnDirect ? 'spin-icon' : ''} />
+                <span>{savingAsnDirect ? 'Saving ASN to MAWM...' : 'Dispatch / Save ASN to MAWM (200 OK)'}</span>
+              </button>
+            </div>
+
+            {directAsnResult && (
+              <div style={{ marginTop: '0.85rem', padding: '0.75rem 1rem', borderRadius: '6px', backgroundColor: directAsnResult.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', border: `1px solid ${directAsnResult.success ? '#10b981' : '#ef4444'}` }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: directAsnResult.success ? '#10b981' : '#ef4444' }}>
+                  {directAsnResult.success ? (directAsnResult.message || '200 OK - ASN Saved Successfully') : (directAsnResult.cleanError || directAsnResult.error)}
+                </div>
+                {directAsnResult.rawResponse && (
+                  <pre style={{ marginTop: '0.4rem', padding: '0.5rem', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '4px', maxHeight: '140px', overflow: 'auto', fontSize: '0.72rem', color: '#34d399', whiteSpace: 'pre-wrap' }}>
+                    {formatPayload(directAsnResult.rawResponse)}
                   </pre>
                 )}
               </div>
@@ -798,8 +1330,7 @@ export default function MawmDispatchPage({
       </div>
 
       {/* =========================================================================
-          4. MAWM Dispatch Details Table (WITH ERP SOURCE SELECTOR & FILTER)
-             "Not exclusive opti if I select opti then should be displayed in the Mawm dispatch details"
+          4. MAWM Dispatch Details Table (With ERP Selector & Document Type Filter)
          ========================================================================= */}
       <div className="card" style={{ padding: '1.25rem', borderRadius: '10px' }}>
         <div style={{
@@ -812,69 +1343,97 @@ export default function MawmDispatchPage({
           paddingBottom: '0.85rem',
           borderBottom: '1px solid var(--border-default)'
         }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                MAWM Dispatch Details
-              </h2>
-              <span className="badge" style={{ backgroundColor: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', fontSize: '0.72rem', fontWeight: 700 }}>
-                {filteredTrackers.length} Records
-              </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              MAWM Dispatch Details
+            </h2>
+            <span className="badge" style={{ backgroundColor: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', fontSize: '0.72rem', fontWeight: 700 }}>
+              {filteredTrackers.length} Records
+            </span>
+
+            {/* Doc Type Selector */}
+            <div style={{ display: 'flex', gap: '0.3rem', marginLeft: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => { setSelectedDocTypeFilter('ALL'); setCurrentPage(1); }}
+                className={`filter-pill ${selectedDocTypeFilter === 'ALL' ? 'active' : ''}`}
+                style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
+              >
+                All Documents
+              </button>
+              <button
+                type="button"
+                onClick={() => { setSelectedDocTypeFilter('PO'); setCurrentPage(1); }}
+                className={`filter-pill ${selectedDocTypeFilter === 'PO' ? 'active' : ''}`}
+                style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
+              >
+                Purchase Orders (PO)
+              </button>
+              <button
+                type="button"
+                onClick={() => { setSelectedDocTypeFilter('ASN'); setCurrentPage(1); }}
+                className={`filter-pill ${selectedDocTypeFilter === 'ASN' ? 'active' : ''}`}
+                style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
+              >
+                ASN Deliveries
+              </button>
             </div>
           </div>
 
-          {/* ERP Source Selector Dropdown (No ALL ERP option, dropdown type) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-            <label htmlFor="erp-source-select" style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-              <Filter size={13} color="#10b981" />
-              <span>ERP Source:</span>
-            </label>
-            <select
-              id="erp-source-select"
-              value={selectedErp}
-              onChange={(e) => {
-                setSelectedErp(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="input-field"
-              style={{
-                fontSize: '0.78rem',
-                fontWeight: 600,
-                padding: '0.35rem 0.75rem',
-                borderRadius: '6px',
-                backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                color: selectedErp === 'OPTI' ? '#10b981' : '#38bdf8',
-                border: '1px solid var(--border-default)',
-                cursor: 'pointer',
-                outline: 'none',
-                minWidth: '135px'
-              }}
-            >
-              <option value="OPTI" style={{ backgroundColor: '#0f172a', color: '#10b981', fontWeight: 600 }}>Opti ERP</option>
-              <option value="SAP" style={{ backgroundColor: '#0f172a', color: '#e2e8f0' }}>SAP ERP</option>
-              <option value="HM" style={{ backgroundColor: '#0f172a', color: '#e2e8f0' }}>H&M</option>
-              <option value="OTHER" style={{ backgroundColor: '#0f172a', color: '#e2e8f0' }}>Other ERP</option>
-            </select>
-          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            {/* ERP Source Selector Dropdown */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+              <label htmlFor="erp-source-select" style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                <Filter size={13} color="#10b981" />
+                <span>ERP Source:</span>
+              </label>
+              <select
+                id="erp-source-select"
+                value={selectedErp}
+                onChange={(e) => {
+                  setSelectedErp(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="input-field"
+                style={{
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  padding: '0.35rem 0.75rem',
+                  borderRadius: '6px',
+                  backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                  color: selectedErp === 'OPTI' ? '#10b981' : '#38bdf8',
+                  border: '1px solid var(--border-default)',
+                  cursor: 'pointer',
+                  outline: 'none',
+                  minWidth: '135px'
+                }}
+              >
+                <option value="OPTI" style={{ backgroundColor: '#0f172a', color: '#10b981', fontWeight: 600 }}>Opti ERP</option>
+                <option value="SAP" style={{ backgroundColor: '#0f172a', color: '#e2e8f0' }}>SAP ERP</option>
+                <option value="HM" style={{ backgroundColor: '#0f172a', color: '#e2e8f0' }}>H&M</option>
+                <option value="OTHER" style={{ backgroundColor: '#0f172a', color: '#e2e8f0' }}>Other ERP</option>
+              </select>
+            </div>
 
-          {/* Quick Search */}
-          <div style={{ minWidth: '220px' }}>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
-              placeholder="Filter by AsnId, Facility..."
-              className="input-field"
-              style={{
-                width: '100%',
-                padding: '0.35rem 0.65rem',
-                fontSize: '0.76rem',
-                boxSizing: 'border-box'
-              }}
-            />
+            {/* Quick Search */}
+            <div style={{ minWidth: '200px' }}>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
+                placeholder="Filter by PO, ASN, Facility..."
+                className="input-field"
+                style={{
+                  width: '100%',
+                  padding: '0.35rem 0.65rem',
+                  fontSize: '0.76rem',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
           </div>
         </div>
 
@@ -887,10 +1446,10 @@ export default function MawmDispatchPage({
         ) : filteredTrackers.length === 0 ? (
           <div style={{ padding: '3rem 1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
             <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
-              No dispatch records found for {selectedErp} ERP
+              No dispatch records found for {selectedErp} ERP {selectedDocTypeFilter !== 'ALL' ? `(${selectedDocTypeFilter})` : ''}
             </div>
             <div style={{ fontSize: '0.78rem' }}>
-              Select "Opti ERP" to view active dispatch logs, or ingest a new ASN file.
+              Select "Opti ERP" to view active dispatch logs, or send a new PO/ASN payload via Files API.
             </div>
             {selectedErp !== 'OPTI' && (
               <button
@@ -907,21 +1466,21 @@ export default function MawmDispatchPage({
             <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border-default)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                  <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>AsnId</th>
+                  <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Document ID</th>
+                  <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Type</th>
                   <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Source ERP</th>
                   <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Destination Facility</th>
-                  <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>5.4.1 Save Status</th>
-                  <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>5.4.2 Verification Status</th>
+                  <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Save Status (5.3.1 / 5.4.1)</th>
+                  <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Live Status (5.3.2 / 5.4.2)</th>
                   <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Dispatched Time</th>
                   <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600, textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {paginatedTrackers.map((job) => {
-                  const asnId = extractAsnId(job);
+                  const { id: docId, type: docType } = extractDocId(job);
                   const facility = extractFacility(job);
-                  const vStatus = extractVerificationStatus(job);
-                  const isVerified = String(vStatus || '').toUpperCase().includes('VERIFIED');
+                  const liveStatus = extractLiveStatus(job);
                   const isDelivered = (job.dispatchStatus || '').toUpperCase().includes('DELIVERED') || (job.dispatchStatus || '').includes('200');
                   const isFailed = (job.dispatchStatus || '').toUpperCase().includes('FAILED');
 
@@ -934,26 +1493,41 @@ export default function MawmDispatchPage({
                       }}
                       className="table-row-hover"
                     >
-                      {/* AsnId (Clickable link to query console) */}
+                      {/* Document ID */}
                       <td style={{ padding: '0.65rem 0.75rem' }}>
                         <button
                           type="button"
-                          onClick={() => handleSelectAsnForQuery(asnId, facility)}
+                          onClick={() => handleSelectDocForQuery(job)}
                           style={{
                             background: 'none',
                             border: 'none',
                             padding: 0,
                             fontFamily: 'var(--font-mono, monospace)',
                             fontWeight: 600,
-                            color: '#38bdf8',
+                            color: docType === 'PO' ? '#38bdf8' : '#34d399',
                             cursor: 'pointer',
                             textDecoration: 'underline',
                             fontSize: '0.78rem'
                           }}
-                          title="Click to query verification in 5.4.2 console"
+                          title={`Click to load ${docType} into Query Console`}
                         >
-                          {asnId}
+                          {docId}
                         </button>
+                      </td>
+
+                      {/* Document Type Badge */}
+                      <td style={{ padding: '0.65rem 0.75rem' }}>
+                        <span style={{
+                          fontSize: '0.68rem',
+                          fontWeight: 700,
+                          padding: '0.12rem 0.45rem',
+                          borderRadius: '4px',
+                          backgroundColor: docType === 'PO' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                          color: docType === 'PO' ? '#38bdf8' : '#10b981',
+                          border: `1px solid ${docType === 'PO' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
+                        }}>
+                          {docType}
+                        </span>
                       </td>
 
                       {/* Source ERP */}
@@ -963,9 +1537,8 @@ export default function MawmDispatchPage({
                           fontWeight: 700,
                           padding: '0.15rem 0.45rem',
                           borderRadius: '4px',
-                          backgroundColor: 'rgba(56, 189, 248, 0.12)',
-                          color: '#38bdf8',
-                          border: '1px solid rgba(56, 189, 248, 0.25)'
+                          backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                          color: 'var(--text-primary)'
                         }}>
                           {job.sourceSystem || 'OPTI'}
                         </span>
@@ -986,7 +1559,7 @@ export default function MawmDispatchPage({
                         </span>
                       </td>
 
-                      {/* 5.4.1 Save Status */}
+                      {/* 5.3.1 / 5.4.1 Save Status */}
                       <td style={{ padding: '0.65rem 0.75rem' }}>
                         {isDelivered ? (
                           <span style={{
@@ -1034,9 +1607,9 @@ export default function MawmDispatchPage({
                         )}
                       </td>
 
-                      {/* 5.4.2 Verification Status (Actual API response fact) */}
+                      {/* Live Status (5.3.2 / 5.4.2) */}
                       <td style={{ padding: '0.65rem 0.75rem' }}>
-                        {vStatus ? (
+                        {liveStatus ? (
                           <button
                             type="button"
                             onClick={(e) => handleVerifyRow(job, e)}
@@ -1047,17 +1620,17 @@ export default function MawmDispatchPage({
                               gap: '0.3rem',
                               fontSize: '0.72rem',
                               fontWeight: 700,
-                              color: isVerified ? '#10b981' : '#38bdf8',
-                              backgroundColor: isVerified ? 'rgba(16, 185, 129, 0.12)' : 'rgba(56, 189, 248, 0.12)',
+                              color: '#38bdf8',
+                              backgroundColor: 'rgba(56, 189, 248, 0.12)',
                               padding: '0.15rem 0.5rem',
                               borderRadius: '4px',
-                              border: `1px solid ${isVerified ? '#10b981' : 'rgba(56, 189, 248, 0.3)'}`,
+                              border: '1px solid rgba(56, 189, 248, 0.3)',
                               cursor: 'pointer'
                             }}
                             title="Live status returned from MAWM API. Click to re-check."
                           >
-                            {isVerified ? <CheckCheck size={12} /> : <Clock size={12} />}
-                            <span>STATUS: {vStatus}</span>
+                            <Clock size={12} />
+                            <span>STATUS: {liveStatus}</span>
                           </button>
                         ) : (
                           <button
@@ -1186,7 +1759,7 @@ export default function MawmDispatchPage({
       </div>
 
       {/* =========================================================================
-          5. Inspection Modal
+          5. Inspection Modal with PO & ASN Multi-Tab Analysis
          ========================================================================= */}
       {inspectingJob && (
         <div style={{
@@ -1208,7 +1781,7 @@ export default function MawmDispatchPage({
             border: '1px solid var(--border-default)',
             borderRadius: '12px',
             width: '100%',
-            maxWidth: '850px',
+            maxWidth: '900px',
             maxHeight: '90vh',
             display: 'flex',
             flexDirection: 'column',
@@ -1223,10 +1796,10 @@ export default function MawmDispatchPage({
             }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Inspect MAWM Payload & Verification: {extractAsnId(inspectingJob)}
+                  Inspect MAWM Payload & Verification: {extractDocId(inspectingJob).id}
                 </h3>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-                  Facility: <strong>{extractFacility(inspectingJob)}</strong> | Source: <strong>{inspectingJob.sourceSystem || 'OPTI'}</strong>
+                  Document Type: <strong>{extractDocId(inspectingJob).type}</strong> | Facility: <strong>{extractFacility(inspectingJob)}</strong> | Source: <strong>{inspectingJob.sourceSystem || 'OPTI'}</strong>
                 </div>
               </div>
               <button
@@ -1238,21 +1811,39 @@ export default function MawmDispatchPage({
             </div>
 
             <div style={{ padding: '1rem 1.25rem', flex: 1, overflowY: 'auto' }}>
-              <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
                 <button
                   onClick={() => setInspectPayloadTab('response')}
                   className={`filter-pill ${inspectPayloadTab === 'response' ? 'active' : ''}`}
                   style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
                 >
-                  5.4.1 Response (/asn/save)
+                  Direct Save Response
                 </button>
                 <button
-                  onClick={() => setInspectPayloadTab('verification')}
-                  className={`filter-pill ${inspectPayloadTab === 'verification' ? 'active' : ''}`}
+                  onClick={() => setInspectPayloadTab('status')}
+                  className={`filter-pill ${inspectPayloadTab === 'status' ? 'active' : ''}`}
                   style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
                 >
-                  5.4.2 Verification (/asn/search)
+                  Status Query Fact
                 </button>
+                {isPoRecord(inspectingJob) && (
+                  <>
+                    <button
+                      onClick={() => setInspectPayloadTab('lines')}
+                      className={`filter-pill ${inspectPayloadTab === 'lines' ? 'active' : ''}`}
+                      style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
+                    >
+                      5.3.3 PO Lines
+                    </button>
+                    <button
+                      onClick={() => setInspectPayloadTab('asns')}
+                      className={`filter-pill ${inspectPayloadTab === 'asns' ? 'active' : ''}`}
+                      style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
+                    >
+                      5.3.4 Associated ASNs
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={() => setInspectPayloadTab('raw')}
                   className={`filter-pill ${inspectPayloadTab === 'raw' ? 'active' : ''}`}
@@ -1269,7 +1860,7 @@ export default function MawmDispatchPage({
                 padding: '0.85rem',
                 fontFamily: 'var(--font-mono, monospace)',
                 fontSize: '0.76rem',
-                color: inspectPayloadTab === 'response' ? '#34d399' : (inspectPayloadTab === 'verification' ? '#38bdf8' : '#fbbf24'),
+                color: inspectPayloadTab === 'response' ? '#34d399' : '#38bdf8',
                 maxHeight: '380px',
                 overflow: 'auto',
                 whiteSpace: 'pre-wrap',
@@ -1278,17 +1869,18 @@ export default function MawmDispatchPage({
               }}>
                 {inspectPayloadTab === 'response'
                   ? formatPayload(inspectingJob.mawmResponse || 'No direct response captured yet')
-                  : (inspectPayloadTab === 'verification'
-                      ? formatPayload({
-                          api: "5.4.2 Check ASN Verification Status",
-                          requestPayload: {
-                            "Query": `AsnId in ('${extractAsnId(inspectingJob)}')`,
-                            "Template": { "AsnId": "", "AsnStatus": "" }
-                          },
-                          facility: extractFacility(inspectingJob),
-                          currentStatus: extractVerificationStatus(inspectingJob) || 'Not queried yet'
-                        })
-                      : formatPayload(inspectingJob.rawContent || inspectingJob.outputFiles || 'No raw payload available'))}
+                  : inspectPayloadTab === 'status'
+                    ? formatPayload({
+                        documentId: extractDocId(inspectingJob).id,
+                        documentType: extractDocId(inspectingJob).type,
+                        facility: extractFacility(inspectingJob),
+                        liveStatus: extractLiveStatus(inspectingJob) || 'Not queried yet'
+                      })
+                    : inspectPayloadTab === 'lines'
+                      ? formatPayload(inspectingDetails.lines || 'Loading or no lines returned')
+                      : inspectPayloadTab === 'asns'
+                        ? formatPayload(inspectingDetails.asns || 'Loading or no associated ASNs')
+                        : formatPayload(inspectingJob.rawContent || inspectingJob.outputFiles || 'No raw payload available')}
               </pre>
             </div>
 
@@ -1301,13 +1893,13 @@ export default function MawmDispatchPage({
             }}>
               <button
                 onClick={() => {
-                  handleSelectAsnForQuery(extractAsnId(inspectingJob), extractFacility(inspectingJob));
+                  handleSelectDocForQuery(inspectingJob);
                   setInspectingJob(null);
                 }}
                 className="btn-secondary"
                 style={{ padding: '0.4rem 0.85rem', fontSize: '0.78rem', color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.3)' }}
               >
-                Load into 5.4.2 Verification Console
+                Load into Query Console
               </button>
 
               <button

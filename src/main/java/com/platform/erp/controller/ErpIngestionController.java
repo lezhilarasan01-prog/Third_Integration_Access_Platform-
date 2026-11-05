@@ -313,12 +313,12 @@ public class ErpIngestionController {
             }
         }
         if (payload != null && payload.length > 0) {
-            String sample = new String(payload, 0, Math.min(payload.length, 512), java.nio.charset.StandardCharsets.UTF_8);
+            String sample = new String(payload, 0, Math.min(payload.length, 1024), java.nio.charset.StandardCharsets.UTF_8);
+            if (sample.contains("PurchaseOrderId") || sample.contains("purchaseOrder") || sample.contains("purchaseOrderId") || sample.contains("poNumber") || sample.contains("orders")) {
+                return "PO";
+            }
             if (sample.contains("AsnId") || sample.contains("inboundDelivery") || sample.contains("asn")) {
                 return "ASN";
-            }
-            if (sample.contains("orders") || sample.contains("poNumber") || sample.contains("purchaseOrder")) {
-                return "PO";
             }
         }
         return "ASN";
