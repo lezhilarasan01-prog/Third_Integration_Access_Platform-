@@ -137,10 +137,7 @@ public class ErpIngestionController {
                 || "files".equalsIgnoreCase(erpSource)
                 || "ingest".equalsIgnoreCase(erpSource)
                 || "raw".equalsIgnoreCase(erpSource)) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
-                    "error", "MISSING_HOST_SOURCE",
-                    "message", "Host Source is mandatory. Please specify a valid host source system"
-            ));
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "MISSING_HOST_SOURCE", "message", "Host Source is mandatory. Please specify a valid host source system"));
         }
 
         if ("OPTI".equalsIgnoreCase(erpSource)) {
