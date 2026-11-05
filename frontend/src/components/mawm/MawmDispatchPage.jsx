@@ -92,18 +92,18 @@ export default function MawmDispatchPage({
   const [searchFacility, setSearchFacility] = useState('Food_Cbe');
   const [searchUsername, setSearchUsername] = useState('kabil');
 
-  // PO Status State
-  const [poSearchId, setPoSearchId] = useState('PO-2026-0001');
+  // PO Status State (No hardcoded default values)
+  const [poSearchId, setPoSearchId] = useState('');
   const [searchingPoStatus, setSearchingPoStatus] = useState(false);
   const [poStatusResult, setPoStatusResult] = useState(null);
 
-  // PO Lines State
-  const [poLinesSearchId, setPoLinesSearchId] = useState('PO-2026-0001');
+  // PO Lines State (No hardcoded default values)
+  const [poLinesSearchId, setPoLinesSearchId] = useState('');
   const [searchingPoLines, setSearchingPoLines] = useState(false);
   const [poLinesResult, setPoLinesResult] = useState(null);
 
-  // PO Associated ASNs State
-  const [poAsnSearchId, setPoAsnSearchId] = useState('PO-2026-0001');
+  // PO Associated ASNs State (No hardcoded default values)
+  const [poAsnSearchId, setPoAsnSearchId] = useState('');
   const [searchingPoAsn, setSearchingPoAsn] = useState(false);
   const [poAsnResult, setPoAsnResult] = useState(null);
 
@@ -350,7 +350,11 @@ export default function MawmDispatchPage({
         integrationApi.getMawmTelemetry().catch(() => null),
         integrationApi.getAllTrackers().catch(() => [])
       ]);
-      if (telemetryData) setTelemetry(telemetryData);
+      if (telemetryData) {
+        setTelemetry(telemetryData);
+        if (telemetryData.facility) setSearchFacility(telemetryData.facility);
+        if (telemetryData.username) setSearchUsername(telemetryData.username);
+      }
       if (Array.isArray(allTrackers)) setTrackers(allTrackers);
     } catch (err) {
       console.error('Failed to load MAWM dispatch data:', err);
@@ -689,6 +693,29 @@ export default function MawmDispatchPage({
     });
   }, [trackers, selectedErp, selectedDocTypeFilter, searchQuery, isAsnRecord, isPoRecord, extractDocId, extractFacility]);
 
+  // Available real PO and ASN IDs extracted dynamically from actual trackers
+  const availablePoIds = useMemo(() => {
+    const ids = new Set();
+    trackers.forEach((t) => {
+      if (isPoRecord(t)) {
+        const { id } = extractDocId(t);
+        if (id && !id.startsWith('PO-RECORD')) ids.add(id);
+      }
+    });
+    return Array.from(ids);
+  }, [trackers, isPoRecord, extractDocId]);
+
+  const availableAsnIds = useMemo(() => {
+    const ids = new Set();
+    trackers.forEach((t) => {
+      if (isAsnRecord(t)) {
+        const { id } = extractDocId(t);
+        if (id && !id.startsWith('ASN-RECORD')) ids.add(id);
+      }
+    });
+    return Array.from(ids);
+  }, [trackers, isAsnRecord, extractDocId]);
+
   // Aggregate stats across all filtered records
   const stats = useMemo(() => {
     let delivered = 0;
@@ -984,12 +1011,18 @@ export default function MawmDispatchPage({
                 </label>
                 <input
                   type="text"
+                  list="available-po-ids"
                   value={poSearchId}
                   onChange={(e) => setPoSearchId(e.target.value)}
-                  placeholder="e.g. PO-2026-0001"
+                  placeholder="Enter PurchaseOrderId or select from table below..."
                   className="input-field"
                   style={{ width: '100%', padding: '0.45rem 0.75rem', fontSize: '0.82rem', fontFamily: 'var(--font-mono, monospace)' }}
                 />
+                <datalist id="available-po-ids">
+                  {availablePoIds.map((id) => (
+                    <option key={id} value={id} />
+                  ))}
+                </datalist>
               </div>
 
               <div>
@@ -1046,9 +1079,10 @@ export default function MawmDispatchPage({
                 </label>
                 <input
                   type="text"
+                  list="available-po-ids"
                   value={poLinesSearchId}
                   onChange={(e) => setPoLinesSearchId(e.target.value)}
-                  placeholder="e.g. PO-2026-0001"
+                  placeholder="Enter PurchaseOrderId or select from table below..."
                   className="input-field"
                   style={{ width: '100%', padding: '0.45rem 0.75rem', fontSize: '0.82rem', fontFamily: 'var(--font-mono, monospace)' }}
                 />
@@ -1138,9 +1172,10 @@ export default function MawmDispatchPage({
                 </label>
                 <input
                   type="text"
+                  list="available-po-ids"
                   value={poAsnSearchId}
                   onChange={(e) => setPoAsnSearchId(e.target.value)}
-                  placeholder="e.g. PO-2026-0001"
+                  placeholder="Enter PurchaseOrderId or select from table below..."
                   className="input-field"
                   style={{ width: '100%', padding: '0.45rem 0.75rem', fontSize: '0.82rem', fontFamily: 'var(--font-mono, monospace)' }}
                 />
@@ -1279,12 +1314,18 @@ export default function MawmDispatchPage({
                 </label>
                 <input
                   type="text"
+                  list="available-asn-ids"
                   value={searchAsnId}
                   onChange={(e) => setSearchAsnId(e.target.value)}
-                  placeholder="Enter AsnId to query (e.g. ASN-2026-0001)..."
+                  placeholder="Enter AsnId or select from table below..."
                   className="input-field"
                   style={{ width: '100%', padding: '0.45rem 0.75rem', fontSize: '0.82rem', fontFamily: 'var(--font-mono, monospace)' }}
                 />
+                <datalist id="available-asn-ids">
+                  {availableAsnIds.map((id) => (
+                    <option key={id} value={id} />
+                  ))}
+                </datalist>
               </div>
 
               <div>
