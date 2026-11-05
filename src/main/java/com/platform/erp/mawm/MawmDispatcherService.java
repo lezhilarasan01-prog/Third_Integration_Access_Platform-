@@ -44,7 +44,7 @@ public class MawmDispatcherService {
 
         // STRICT BUSINESS RULE: Only Opti ERP hot dispatches to MAWM Cloud REST API
         String source = envelope.getErpSource();
-        boolean isOpti = source != null && ("Opti".equalsIgnoreCase(source) || "OPTI".equalsIgnoreCase(source) || "OTPI".equalsIgnoreCase(source));
+        boolean isOpti = source != null && ("Opti".equalsIgnoreCase(source) || "OPTI".equalsIgnoreCase(source));
         if (!isOpti) {
             log.info("[MAWM Dispatcher] Hot dispatch to live MAWM Cloud skipped for non-Opti source '{}'. Converted Canonical JSON saved. TrackingId: {}", source, trackingId);
             int count = (envelope.getData() != null && !envelope.getData().isEmpty()) ? envelope.getData().size() : 1;
@@ -764,7 +764,7 @@ public class MawmDispatcherService {
         }
         var tracker = optTracker.get();
         String source = tracker.getSourceSystem();
-        boolean isOpti = source != null && ("Opti".equalsIgnoreCase(source) || "OPTI".equalsIgnoreCase(source) || "OTPI".equalsIgnoreCase(source));
+        boolean isOpti = source != null && ("Opti".equalsIgnoreCase(source) || "OPTI".equalsIgnoreCase(source));
         if (!isOpti) {
             log.info("[MAWM Search] Live cloud verification is exclusive to Opti ERP feeds. Non-Opti source: '{}', JobId: {}", source, jobId);
             return Map.of(
@@ -877,7 +877,7 @@ public class MawmDispatcherService {
         }
         var tracker = optTracker.get();
         String source = tracker.getSourceSystem();
-        boolean isOpti = source != null && ("Opti".equalsIgnoreCase(source) || "OPTI".equalsIgnoreCase(source) || "OTPI".equalsIgnoreCase(source));
+        boolean isOpti = source != null && ("Opti".equalsIgnoreCase(source) || "OPTI".equalsIgnoreCase(source));
         if (!isOpti) {
             log.info("[MAWM Dispatcher] Live cloud dispatch is exclusive to Opti ERP feeds. Non-Opti source: '{}', JobId: {}", source, jobId);
             return Map.of("success", true, "message", "Conversion active. Hot dispatch to MAWM Cloud REST API is exclusive to Opti ERP.", "dispatchStatus", "CONVERTED (Opti Exclusive)");

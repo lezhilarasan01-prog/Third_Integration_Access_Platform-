@@ -34,7 +34,7 @@ import { copyToClipboard } from '../../utils/clipboard';
 
 function formatSourceName(code) {
   if (!code) return 'Unknown Source';
-  if (code.toUpperCase() === 'OTPI' || code.toUpperCase() === 'OPTI') {
+  if (code.toUpperCase() === 'OPTI') {
     return 'Opti';
   }
   return code;
@@ -1700,7 +1700,7 @@ export default function JobDetailsPage({ jobId, onBack }) {
                   </div>
                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
                     {(() => {
-                      const isOpti = job.sourceSystem?.toUpperCase() === 'OPTI' || job.sourceSystem?.toUpperCase() === 'OTPI';
+                      const isOpti = job.sourceSystem?.toUpperCase() === 'OPTI';
                       return (
                         <>
                           <button

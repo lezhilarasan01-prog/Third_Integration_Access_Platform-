@@ -576,13 +576,13 @@ export default function MawmDispatchPage({
       // 2. ERP Source Filter (Dropdown selection: OPTI, SAP, HM, OTHER)
       const src = (r.sourceSystem || '').toUpperCase();
       if (selectedErp === 'OPTI') {
-        if (!src.includes('OPTI') && !src.includes('OTPI') && !src.includes('OPI')) return false;
+        if (!src.includes('OPTI') && !src.includes('OPI')) return false;
       } else if (selectedErp === 'SAP') {
         if (!src.includes('SAP')) return false;
       } else if (selectedErp === 'HM') {
         if (!src.includes('HM') && !src.includes('H&M')) return false;
       } else if (selectedErp === 'OTHER') {
-        if (src.includes('OPTI') || src.includes('OTPI') || src.includes('OPI') || src.includes('SAP') || src.includes('HM')) return false;
+        if (src.includes('OPTI') || src.includes('OPI') || src.includes('SAP') || src.includes('HM')) return false;
       }
 
       // 3. Search query filter

@@ -345,7 +345,6 @@ export default function IntegrationJobsPage({
     const s = (source || '').toUpperCase();
     switch (s) {
       case 'OPTI':
-      case 'OTPI':
         return 'badge-orange';
       case 'SAP':
       case 'SAP_ERP':
@@ -361,7 +360,7 @@ export default function IntegrationJobsPage({
 
   const formatSourceName = (source) => {
     if (!source) return 'Unknown';
-    if (source.toUpperCase() === 'OTPI' || source.toUpperCase() === 'OPTI') {
+    if (source.toUpperCase() === 'OPTI') {
       return 'Opti';
     }
     return source;
@@ -1456,7 +1455,7 @@ export default function IntegrationJobsPage({
                   <span>Full Job Details</span>
                 </button>
                 {(() => {
-                  const isOpti = quickMawmJob?.sourceSystem?.toUpperCase() === 'OPTI' || quickMawmJob?.sourceSystem?.toUpperCase() === 'OTPI';
+                  const isOpti = quickMawmJob?.sourceSystem?.toUpperCase() === 'OPTI';
                   return (
                     <button
                       onClick={() => isOpti && handleRedispatchMawm(quickMawmJob.jobId)}

@@ -123,8 +123,7 @@ public class ErpFileConsumerService {
 
             // 4. Dispatch to MAWM Cloud REST Endpoint ONLY if source is Opti
             boolean isOpti = "Opti".equalsIgnoreCase(erpSource)
-                    || "OPTI".equalsIgnoreCase(erpSource)
-                    || "OTPI".equalsIgnoreCase(erpSource);
+                    || "OPTI".equalsIgnoreCase(erpSource);
             if (isOpti) {
                 mawmDispatcher.dispatch(envelope);
             } else {

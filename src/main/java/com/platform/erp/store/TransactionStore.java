@@ -501,7 +501,7 @@ public class TransactionStore {
     }
 
     private boolean isOptiSystem(String s) {
-        return s != null && ("Opti".equalsIgnoreCase(s) || "OPTI".equalsIgnoreCase(s) || "OTPI".equalsIgnoreCase(s));
+        return s != null && ("Opti".equalsIgnoreCase(s) || "OPTI".equalsIgnoreCase(s));
     }
 
     public List<ProcessedTransaction> getAllTransactions() {

@@ -126,7 +126,7 @@ public class ErpIngestionController {
             @RequestHeader(value = "Content-Disposition", required = false) String contentDisposition,
             HttpServletRequest request) {
 
-        // 0. Enforce Mandatory ERP Source Validation - Restricted strictly to OPTI / OTPI
+        // 0. Enforce Mandatory ERP Source Validation - Restricted strictly to OPTI
         String erpSource = (erpSourceParam != null && !erpSourceParam.isBlank())
                 ? erpSourceParam.trim()
                 : (erpSourceHeader != null && !erpSourceHeader.isBlank())
@@ -143,7 +143,7 @@ public class ErpIngestionController {
             ));
         }
 
-        if ("OTPI".equalsIgnoreCase(erpSource) || "OPTI".equalsIgnoreCase(erpSource)) {
+        if ("OPTI".equalsIgnoreCase(erpSource)) {
             erpSource = "Opti";
         }
 
@@ -215,8 +215,7 @@ public class ErpIngestionController {
             IngestionAckResponse ack = producerService.publishFile(erpSource, destination, resolvedFilename, payload);
 
             boolean isOpti = "Opti".equalsIgnoreCase(erpSource)
-                    || "OPTI".equalsIgnoreCase(erpSource)
-                    || "OTPI".equalsIgnoreCase(erpSource);
+                    || "OPTI".equalsIgnoreCase(erpSource);
 
             // 7. Wait for asynchronous Kafka conversion (Opti waits for MAWM cloud dispatch; non-Opti finishes quickly)
             var optTracker = transactionStore.waitForCompletion(ack.getTrackingId(), isOpti ? 4500 : 800);

@@ -52,8 +52,7 @@ public class TransactionQueryController {
             var tracker = optTracker.get();
             boolean isOpti = tracker.getSourceSystem() != null &&
                     ("Opti".equalsIgnoreCase(tracker.getSourceSystem()) ||
-                     "OPTI".equalsIgnoreCase(tracker.getSourceSystem()) ||
-                     "OTPI".equalsIgnoreCase(tracker.getSourceSystem()));
+                     "OPTI".equalsIgnoreCase(tracker.getSourceSystem()));
             if (isOpti && "CONVERTED".equalsIgnoreCase(tracker.getIntakeStatus()) &&
                     (tracker.getMawmResponse() == null || tracker.getMawmResponse().isBlank()) &&
                     (tracker.getDispatchStatus() == null || tracker.getDispatchStatus().startsWith("SAVED") || tracker.getDispatchStatus().startsWith("PENDING"))) {
@@ -89,8 +88,7 @@ public class TransactionQueryController {
             var tracker = optTracker.get();
             boolean isOpti = tracker.getSourceSystem() != null &&
                     ("Opti".equalsIgnoreCase(tracker.getSourceSystem()) ||
-                     "OPTI".equalsIgnoreCase(tracker.getSourceSystem()) ||
-                     "OTPI".equalsIgnoreCase(tracker.getSourceSystem()));
+                     "OPTI".equalsIgnoreCase(tracker.getSourceSystem()));
             if (isOpti && "CONVERTED".equalsIgnoreCase(tracker.getIntakeStatus()) &&
                     (tracker.getMawmResponse() == null || tracker.getMawmResponse().isBlank()) &&
                     (tracker.getDispatchStatus() == null || tracker.getDispatchStatus().startsWith("SAVED") || tracker.getDispatchStatus().startsWith("PENDING"))) {

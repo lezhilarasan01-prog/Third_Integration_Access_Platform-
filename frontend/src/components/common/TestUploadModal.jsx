@@ -525,7 +525,7 @@ function autoDetectMetadata(filename, content) {
   if (name.includes('oracle') || name.includes('netsuite')) detectedErp = 'ORACLE_NETSUITE';
   else if (name.includes('sap')) detectedErp = 'SAP';
   else if (name.includes('hm') || name.includes('h&m')) detectedErp = 'HM';
-  else if (name.includes('opti') || name.includes('otpi')) detectedErp = 'Opti';
+  else if (name.includes('opti')) detectedErp = 'Opti';
   else if (name.includes('customer_a') || name.includes('customera')) detectedErp = 'CUSTOMER_A_ERP';
   else if (name.includes('customer_b') || name.includes('customerb')) detectedErp = 'CUSTOMER_B_ERP';
   else if (name.includes('logistics') || name.includes('dhl')) detectedErp = 'LOGISTICS_PARTNER';
@@ -617,7 +617,7 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
           }
 
           if (status === 'CONVERTED' || status === 'COMPLETED') {
-            const isOptiRecord = (tracker.sourceSystem || activeErp || '').toUpperCase() === 'OPTI' || (tracker.sourceSystem || activeErp || '').toUpperCase() === 'OTPI';
+            const isOptiRecord = (tracker.sourceSystem || activeErp || '').toUpperCase() === 'OPTI';
             if (hasMawm || !isOptiRecord || tracker.dispatchStatus?.includes('Opti Exclusive')) {
               setIsLoadingJson(false);
               if (!isOptiRecord) {
@@ -723,7 +723,7 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
 
   const activeErp = erpSource === 'CUSTOM' ? customErp.trim() || 'CUSTOM_ERP' : erpSource;
   const activeDocType = docType === 'CUSTOM' ? (customDocType.trim().toUpperCase() || 'CUSTOM_DOC') : docType;
-  const isOpti = (activeErp || '').toUpperCase() === 'OPTI' || (activeErp || '').toUpperCase() === 'OTPI';
+  const isOpti = (activeErp || '').toUpperCase() === 'OPTI';
 
   const hasValidFileExtension = (name) => {
     if (!name || typeof name !== 'string') return false;
@@ -1155,7 +1155,7 @@ export default function TestUploadModal({ isOpen, onClose, onOpenBeautifier }) {
                   style={{ width: '100%', marginTop: '0.4rem', padding: '0.4rem 0.6rem' }}
                 />
               )}
-              {activeErp && activeErp.toUpperCase() !== 'OPTI' && activeErp.toUpperCase() !== 'OTPI' && (
+              {activeErp && activeErp.toUpperCase() !== 'OPTI' && (
                 <div style={{
                   marginTop: '0.45rem',
                   padding: '0.4rem 0.6rem',
