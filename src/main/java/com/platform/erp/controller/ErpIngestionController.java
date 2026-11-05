@@ -194,19 +194,13 @@ public class ErpIngestionController {
                 resolvedFilename = extractFilenameFromContentDisposition(contentDisposition);
             }
 
-            if (resolvedFilename == null || resolvedFilename.isBlank()) {
-                resolvedFilename = "opti_payload.json";
-            } else if (!hasValidExtension(resolvedFilename)) {
-                resolvedFilename = resolvedFilename.trim() + ".json";
-            }
-
-            // 5. Dynamic Document Type Resolution (Sniffs content and defaults to ASN for OPTI)
+            // 5. Dynamic Document Type Resolution (Resolves PO or ASN; returns null if neither)
             String requestedDocType = (docTypeParam != null && !docTypeParam.isBlank()) ? docTypeParam
                     : (typeParam != null && !typeParam.isBlank()) ? typeParam : headerDocType;
             String docType = resolveDocType(requestedDocType, resolvedFilename, payload);
 
             String destination = (customTopic != null && !customTopic.isBlank()) ? customTopic.trim()
-                    : ((headerTopic != null && !headerTopic.isBlank()) ? headerTopic.trim() : docType);
+                    : ((headerTopic != null && !headerTopic.isBlank()) ? headerTopic.trim() : (docType != null ? docType : "UNKNOWN"));
 
             log.info("[Universal Ingestion] Accepted from ERP: '{}', Target: '{}', Filename: '{}', Size: {} bytes",
                     erpSource, destination, resolvedFilename, payload.length);
@@ -297,7 +291,13 @@ public class ErpIngestionController {
 
     private String resolveDocType(String requestedDocType, String filename, byte[] payload) {
         if (requestedDocType != null && !requestedDocType.isBlank()) {
-            return requestedDocType.trim().toUpperCase();
+            String upper = requestedDocType.trim().toUpperCase();
+            if (upper.contains("ASN") || upper.contains("DESADV") || upper.contains("SHIP")) {
+                return "ASN";
+            }
+            if (upper.contains("PO") || upper.contains("ORDER") || upper.contains("PURCHASE")) {
+                return "PO";
+            }
         }
         if (filename != null && !filename.isBlank()) {
             String upper = filename.toUpperCase();
@@ -307,20 +307,17 @@ public class ErpIngestionController {
             if (upper.contains("PO") || upper.contains("ORDER") || upper.contains("PURCHASE")) {
                 return "PO";
             }
-            if (upper.contains("INV") || upper.contains("INVOICE")) {
-                return "INVOICE";
-            }
         }
         if (payload != null && payload.length > 0) {
-            String sample = new String(payload, 0, Math.min(payload.length, 1024), java.nio.charset.StandardCharsets.UTF_8);
+            String sample = new String(payload, 0, Math.min(payload.length, 2048), java.nio.charset.StandardCharsets.UTF_8);
+            if (sample.contains("AsnId") || sample.contains("asnId") || sample.contains("inboundDelivery") || sample.contains("asn") || sample.contains("ASN")) {
+                return "ASN";
+            }
             if (sample.contains("PurchaseOrderId") || sample.contains("purchaseOrder") || sample.contains("purchaseOrderId") || sample.contains("poNumber") || sample.contains("orders")) {
                 return "PO";
             }
-            if (sample.contains("AsnId") || sample.contains("inboundDelivery") || sample.contains("asn")) {
-                return "ASN";
-            }
         }
-        return "ASN";
+        return null;
     }
 
     private String extractFilenameFromContentDisposition(String contentDisposition) {
@@ -338,21 +335,5 @@ public class ErpIngestionController {
             }
         }
         return null;
-    }
-
-    private boolean hasValidExtension(String filename) {
-        if (filename == null || filename.isBlank()) {
-            return false;
-        }
-        String cleanName = filename.replace("\\", "/");
-        if (cleanName.contains("/")) {
-            cleanName = cleanName.substring(cleanName.lastIndexOf('/') + 1).trim();
-        }
-        int dotIndex = cleanName.lastIndexOf('.');
-        if (dotIndex <= 0 || dotIndex == cleanName.length() - 1) {
-            return false;
-        }
-        String ext = cleanName.substring(dotIndex + 1).trim();
-        return !ext.isBlank();
     }
 }
