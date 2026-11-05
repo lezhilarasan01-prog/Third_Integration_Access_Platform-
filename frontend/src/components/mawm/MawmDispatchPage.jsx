@@ -80,39 +80,44 @@ export default function MawmDispatchPage({
   const [testingConnection, setTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState(null);
 
-  // Active Query Console Tool Tab: 'PO_STATUS' | 'PO_LINES' | 'PO_ASN' | 'ASN_STATUS' | 'PO_SAVE' | 'ASN_SAVE'
+  // Top-Level Document Category Mode: 'PO' | 'ASN'
+  const [selectedDocCategory, setSelectedDocCategory] = useState('PO');
+
+  // Active Query Console Tool Tab within Category:
+  // For PO: 'PO_STATUS' | 'PO_LINES' | 'PO_ASN' | 'PO_SAVE'
+  // For ASN: 'ASN_STATUS' | 'ASN_SAVE'
   const [activeConsoleTab, setActiveConsoleTab] = useState('PO_STATUS');
 
-  // Shared Facility & Username
+  // Shared Facility & Username (managed in background by default, no default input clutter)
   const [searchFacility, setSearchFacility] = useState('Food_Cbe');
   const [searchUsername, setSearchUsername] = useState('kabil');
 
-  // 5.3.2 PO Status State
+  // PO Status State
   const [poSearchId, setPoSearchId] = useState('PO-2026-0001');
   const [searchingPoStatus, setSearchingPoStatus] = useState(false);
   const [poStatusResult, setPoStatusResult] = useState(null);
 
-  // 5.3.3 PO Lines State
+  // PO Lines State
   const [poLinesSearchId, setPoLinesSearchId] = useState('PO-2026-0001');
   const [searchingPoLines, setSearchingPoLines] = useState(false);
   const [poLinesResult, setPoLinesResult] = useState(null);
 
-  // 5.3.4 PO Associated ASNs State
+  // PO Associated ASNs State
   const [poAsnSearchId, setPoAsnSearchId] = useState('PO-2026-0001');
   const [searchingPoAsn, setSearchingPoAsn] = useState(false);
   const [poAsnResult, setPoAsnResult] = useState(null);
 
-  // 5.4.2 ASN Verification Search State
+  // ASN Verification Search State
   const [searchAsnId, setSearchAsnId] = useState('');
   const [searchingAsn, setSearchingAsn] = useState(false);
   const [asnSearchResult, setAsnSearchResult] = useState(null);
 
-  // 5.3.1 Direct PO Save State
+  // Direct PO Save State
   const [directPoJson, setDirectPoJson] = useState(JSON.stringify(DEFAULT_PO_SAMPLE, null, 2));
   const [savingPoDirect, setSavingPoDirect] = useState(false);
   const [directPoResult, setDirectPoResult] = useState(null);
 
-  // 5.4.1 Direct ASN Save State
+  // Direct ASN Save State
   const [directAsnJson, setDirectAsnJson] = useState(JSON.stringify(DEFAULT_ASN_SAMPLE, null, 2));
   const [savingAsnDirect, setSavingAsnDirect] = useState(false);
   const [directAsnResult, setDirectAsnResult] = useState(null);
@@ -121,7 +126,7 @@ export default function MawmDispatchPage({
 
   // MAWM Dispatch Details Filtering & Pagination
   const [selectedErp, setSelectedErp] = useState('OPTI'); // Dropdown type, default to OPTI
-  const [selectedDocTypeFilter, setSelectedDocTypeFilter] = useState('ALL'); // 'ALL' | 'PO' | 'ASN'
+  const [selectedDocTypeFilter, setSelectedDocTypeFilter] = useState('PO'); // Defaults to match selected category
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
@@ -350,7 +355,7 @@ export default function MawmDispatchPage({
     }
   };
 
-  // 5.3.2 Query PO Status
+  // Query PO Status
   const handleQueryPoStatus = async (overridePoId, overrideFac) => {
     const targetPo = (overridePoId || poSearchId).trim();
     const targetFac = (overrideFac || searchFacility).trim();
@@ -380,7 +385,7 @@ export default function MawmDispatchPage({
     }
   };
 
-  // 5.3.3 Query PO Lines
+  // Query PO Lines
   const handleQueryPoLines = async (overridePoId, overrideFac) => {
     const targetPo = (overridePoId || poLinesSearchId).trim();
     const targetFac = (overrideFac || searchFacility).trim();
@@ -402,7 +407,7 @@ export default function MawmDispatchPage({
     }
   };
 
-  // 5.3.4 Query PO Associated ASNs
+  // Query PO Associated ASNs
   const handleQueryPoAsnLines = async (overridePoId, overrideFac) => {
     const targetPo = (overridePoId || poAsnSearchId).trim();
     const targetFac = (overrideFac || searchFacility).trim();
@@ -424,7 +429,7 @@ export default function MawmDispatchPage({
     }
   };
 
-  // 5.4.2 ASN Verification Search
+  // ASN Verification Search
   const handleManualSearchAsn = async (overrideAsn, overrideFac) => {
     const targetAsn = (overrideAsn || searchAsnId).trim();
     const targetFac = (overrideFac || searchFacility).trim();
@@ -453,7 +458,7 @@ export default function MawmDispatchPage({
     }
   };
 
-  // 5.3.1 Direct Save PO Action
+  // Direct Save PO Action
   const handleDirectPoSave = async () => {
     setSavingPoDirect(true);
     setDirectPoResult(null);
@@ -478,7 +483,7 @@ export default function MawmDispatchPage({
     }
   };
 
-  // 5.4.1 Direct Save ASN Action
+  // Direct Save ASN Action
   const handleDirectAsnSave = async () => {
     setSavingAsnDirect(true);
     setDirectAsnResult(null);
@@ -510,12 +515,14 @@ export default function MawmDispatchPage({
     if (!id) return;
     setSearchFacility(fac);
     if (type === 'PO') {
+      setSelectedDocCategory('PO');
       setActiveConsoleTab('PO_STATUS');
       setPoSearchId(id);
       setPoLinesSearchId(id);
       setPoAsnSearchId(id);
       handleQueryPoStatus(id, fac);
     } else {
+      setSelectedDocCategory('ASN');
       setActiveConsoleTab('ASN_STATUS');
       setSearchAsnId(id);
       handleManualSearchAsn(id, fac);
@@ -540,6 +547,7 @@ export default function MawmDispatchPage({
         setRowStatusMap(prev => ({ ...prev, [jobId]: actualStatus }));
         setPoSearchId(id);
         setPoStatusResult(res);
+        setSelectedDocCategory('PO');
         setActiveConsoleTab('PO_STATUS');
       } else {
         const res = await integrationApi.searchAsnVerification(id, fac, searchUsername);
@@ -547,6 +555,7 @@ export default function MawmDispatchPage({
         setRowStatusMap(prev => ({ ...prev, [jobId]: actualStatus }));
         setSearchAsnId(id);
         setAsnSearchResult(res);
+        setSelectedDocCategory('ASN');
         setActiveConsoleTab('ASN_STATUS');
       }
       await loadData(true);
@@ -597,7 +606,6 @@ export default function MawmDispatchPage({
       console.warn('Could not load full tracker details:', e);
     }
 
-    // Proactively fetch PO lines/ASNs if PO
     if (type === 'PO' && id && !id.startsWith('PO-RECORD')) {
       integrationApi.searchPoLines(id, fac, searchUsername)
         .then(linesRes => setInspectingDetails(prev => ({ ...prev, lines: linesRes })))
@@ -812,19 +820,78 @@ export default function MawmDispatchPage({
       </div>
 
       {/* =========================================================================
-          3. Unified Interactive MAWM Query & Dispatch Console (PO & ASN 5.3 + 5.4)
+          3. Proper Document Console: Clean Category Selection (PO vs ASN)
          ========================================================================= */}
       <div id="mawm-search-console" className="card" style={{ padding: '1.25rem 1.5rem', borderRadius: '10px', border: '1px solid rgba(56, 189, 248, 0.3)', backgroundColor: 'rgba(15, 23, 42, 0.65)', marginBottom: '1.25rem' }}>
-        {/* Navigation Tabs */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+        
+        {/* Top-Level Document Category Selector: Purchase Order vs ASN */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+          paddingBottom: '0.75rem',
+          marginBottom: '1rem',
+          flexWrap: 'wrap',
+          gap: '0.75rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              onClick={() => {
+                setSelectedDocCategory('PO');
+                setActiveConsoleTab('PO_STATUS');
+                setSelectedDocTypeFilter('PO');
+                setCurrentPage(1);
+              }}
+              className={`filter-pill ${selectedDocCategory === 'PO' ? 'active' : ''}`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                padding: '0.4rem 0.95rem',
+                borderRadius: '6px'
+              }}
+            >
+              <FileText size={15} />
+              <span>Purchase Order (PO)</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setSelectedDocCategory('ASN');
+                setActiveConsoleTab('ASN_STATUS');
+                setSelectedDocTypeFilter('ASN');
+                setCurrentPage(1);
+              }}
+              className={`filter-pill ${selectedDocCategory === 'ASN' ? 'active' : ''}`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                padding: '0.4rem 0.95rem',
+                borderRadius: '6px'
+              }}
+            >
+              <Truck size={15} />
+              <span>Advanced Shipping Notice (ASN)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Sub-tools for Selected Category (Clean Names, Zero Section Numbers) */}
+        {selectedDocCategory === 'PO' ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '1.15rem', flexWrap: 'wrap' }}>
             <button
               onClick={() => setActiveConsoleTab('PO_STATUS')}
               className={`filter-pill ${activeConsoleTab === 'PO_STATUS' ? 'active' : ''}`}
               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
             >
               <FileText size={14} />
-              <span>5.3.2 Query PO Status</span>
+              <span>PO Status</span>
             </button>
 
             <button
@@ -833,7 +900,7 @@ export default function MawmDispatchPage({
               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
             >
               <ListOrdered size={14} />
-              <span>5.3.3 Query PO Lines</span>
+              <span>PO Lines</span>
             </button>
 
             <button
@@ -842,16 +909,7 @@ export default function MawmDispatchPage({
               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
             >
               <Layers size={14} />
-              <span>5.3.4 Associated ASNs</span>
-            </button>
-
-            <button
-              onClick={() => setActiveConsoleTab('ASN_STATUS')}
-              className={`filter-pill ${activeConsoleTab === 'ASN_STATUS' ? 'active' : ''}`}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
-            >
-              <Truck size={14} />
-              <span>5.4.2 ASN Verification</span>
+              <span>Associated ASNs</span>
             </button>
 
             <button
@@ -860,7 +918,18 @@ export default function MawmDispatchPage({
               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
             >
               <Send size={14} />
-              <span>5.3.1 Direct Save PO</span>
+              <span>Save PO</span>
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '1.15rem', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => setActiveConsoleTab('ASN_STATUS')}
+              className={`filter-pill ${activeConsoleTab === 'ASN_STATUS' ? 'active' : ''}`}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
+            >
+              <Truck size={14} />
+              <span>ASN Verification</span>
             </button>
 
             <button
@@ -869,59 +938,13 @@ export default function MawmDispatchPage({
               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
             >
               <Send size={14} />
-              <span>5.4.1 Direct Save ASN</span>
+              <span>Save ASN</span>
             </button>
           </div>
+        )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <span style={{ fontSize: '0.72rem', color: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '0.2rem 0.55rem', borderRadius: '4px', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
-              Selected Location: {searchFacility}
-            </span>
-          </div>
-        </div>
-
-        {/* Global Facility & Username controls for query tools */}
-        <div style={{ display: 'flex', gap: '1rem', marginBottom: '0.85rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Facility:</span>
-            <input
-              type="text"
-              value={searchFacility}
-              onChange={(e) => setSearchFacility(e.target.value)}
-              className="input-field"
-              style={{ width: '130px', padding: '0.3rem 0.55rem', fontSize: '0.76rem', fontFamily: 'var(--font-mono, monospace)' }}
-            />
-            <button
-              type="button"
-              onClick={() => setSearchFacility('Food_Cbe')}
-              style={{ background: 'none', border: 'none', color: searchFacility === 'Food_Cbe' ? '#10b981' : '#38bdf8', fontSize: '0.7rem', cursor: 'pointer', textDecoration: 'underline' }}
-            >
-              Food_Cbe (Auth)
-            </button>
-            <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>|</span>
-            <button
-              type="button"
-              onClick={() => setSearchFacility('Food_chn')}
-              style={{ background: 'none', border: 'none', color: searchFacility === 'Food_chn' ? '#f59e0b' : 'var(--text-muted)', fontSize: '0.7rem', cursor: 'pointer', textDecoration: 'underline' }}
-            >
-              Food_chn
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>User:</span>
-            <input
-              type="text"
-              value={searchUsername}
-              onChange={(e) => setSearchUsername(e.target.value)}
-              className="input-field"
-              style={{ width: '110px', padding: '0.3rem 0.55rem', fontSize: '0.76rem', fontFamily: 'var(--font-mono, monospace)' }}
-            />
-          </div>
-        </div>
-
-        {/* --- TAB 1: 5.3.2 Query PO Status --- */}
-        {activeConsoleTab === 'PO_STATUS' && (
+        {/* --- PO: Query PO Status --- */}
+        {selectedDocCategory === 'PO' && activeConsoleTab === 'PO_STATUS' && (
           <div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem', alignItems: 'flex-end' }}>
               <div>
@@ -946,7 +969,7 @@ export default function MawmDispatchPage({
                   style={{ width: '100%', padding: '0.48rem 1rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', backgroundColor: '#0284c7' }}
                 >
                   <Search size={14} className={searchingPoStatus ? 'spin-icon' : ''} />
-                  <span>{searchingPoStatus ? 'Querying MAWM...' : 'Check PO Status (5.3.2)'}</span>
+                  <span>{searchingPoStatus ? 'Querying MAWM...' : 'Check PO Status'}</span>
                 </button>
               </div>
             </div>
@@ -960,7 +983,7 @@ export default function MawmDispatchPage({
                       {poStatusResult.success ? `STATUS: ${poStatusResult.purchaseOrderStatus || poStatusResult.statusDescription || 'OK'}` : `HTTP ${poStatusResult.statusCode || 500} ERROR`}
                     </span>
                     <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                      PO: <strong>{poStatusResult.purchaseOrderId || poSearchId}</strong> | Facility: <strong>{poStatusResult.facilityId || searchFacility}</strong>
+                      PO: <strong>{poStatusResult.purchaseOrderId || poSearchId}</strong>
                     </span>
                   </div>
                   <button onClick={() => toggleRawJson('poStatus')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}>
@@ -982,8 +1005,8 @@ export default function MawmDispatchPage({
           </div>
         )}
 
-        {/* --- TAB 2: 5.3.3 Query PO Lines --- */}
-        {activeConsoleTab === 'PO_LINES' && (
+        {/* --- PO: Query PO Lines --- */}
+        {selectedDocCategory === 'PO' && activeConsoleTab === 'PO_LINES' && (
           <div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem', alignItems: 'flex-end' }}>
               <div>
@@ -1008,7 +1031,7 @@ export default function MawmDispatchPage({
                   style={{ width: '100%', padding: '0.48rem 1rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', backgroundColor: '#0284c7' }}
                 >
                   <Search size={14} className={searchingPoLines ? 'spin-icon' : ''} />
-                  <span>{searchingPoLines ? 'Querying Lines...' : 'Query PO Lines (5.3.3)'}</span>
+                  <span>{searchingPoLines ? 'Querying Lines...' : 'Query PO Lines'}</span>
                 </button>
               </div>
             </div>
@@ -1074,8 +1097,8 @@ export default function MawmDispatchPage({
           </div>
         )}
 
-        {/* --- TAB 3: 5.3.4 Associated ASNs --- */}
-        {activeConsoleTab === 'PO_ASN' && (
+        {/* --- PO: Query Associated ASNs --- */}
+        {selectedDocCategory === 'PO' && activeConsoleTab === 'PO_ASN' && (
           <div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem', alignItems: 'flex-end' }}>
               <div>
@@ -1100,7 +1123,7 @@ export default function MawmDispatchPage({
                   style={{ width: '100%', padding: '0.48rem 1rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', backgroundColor: '#0284c7' }}
                 >
                   <Search size={14} className={searchingPoAsn ? 'spin-icon' : ''} />
-                  <span>{searchingPoAsn ? 'Querying ASNs...' : 'Query Associated ASNs (5.3.4)'}</span>
+                  <span>{searchingPoAsn ? 'Querying ASNs...' : 'Query Associated ASNs'}</span>
                 </button>
               </div>
             </div>
@@ -1164,74 +1187,12 @@ export default function MawmDispatchPage({
           </div>
         )}
 
-        {/* --- TAB 4: 5.4.2 ASN Verification Search --- */}
-        {activeConsoleTab === 'ASN_STATUS' && (
-          <div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem', alignItems: 'flex-end' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
-                  AsnId to Search:
-                </label>
-                <input
-                  type="text"
-                  value={searchAsnId}
-                  onChange={(e) => setSearchAsnId(e.target.value)}
-                  placeholder="Enter AsnId to query (e.g. ASN-2026-0001)..."
-                  className="input-field"
-                  style={{ width: '100%', padding: '0.45rem 0.75rem', fontSize: '0.82rem', fontFamily: 'var(--font-mono, monospace)' }}
-                />
-              </div>
-
-              <div>
-                <button
-                  onClick={() => handleManualSearchAsn()}
-                  disabled={searchingAsn || !searchAsnId.trim()}
-                  className="btn-primary"
-                  style={{ width: '100%', padding: '0.48rem 1rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', backgroundColor: '#0284c7' }}
-                >
-                  <Search size={14} className={searchingAsn ? 'spin-icon' : ''} />
-                  <span>{searchingAsn ? 'Querying MAWM...' : 'Check ASN Status (5.4.2)'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* ASN Search Output Box */}
-            {asnSearchResult && (
-              <div style={{ marginTop: '1rem', padding: '0.85rem 1.15rem', borderRadius: '8px', backgroundColor: asnSearchResult.success ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)', border: `1px solid ${asnSearchResult.success ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}` }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.4rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ backgroundColor: asnSearchResult.success ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: asnSearchResult.success ? '#10b981' : '#ef4444', fontSize: '0.74rem', fontWeight: 700, padding: '0.18rem 0.55rem', borderRadius: '4px' }}>
-                      {asnSearchResult.success ? `STATUS: ${asnSearchResult.asnStatus || asnSearchResult.statusDescription || 'OK'}` : `HTTP ${asnSearchResult.statusCode || 500} ERROR`}
-                    </span>
-                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                      AsnId: <strong>{asnSearchResult.asnId || searchAsnId}</strong> | Facility: <strong>{asnSearchResult.facilityId || searchFacility}</strong>
-                    </span>
-                  </div>
-                  <button onClick={() => toggleRawJson('asnSearch')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}>
-                    {showRawJsonMap['asnSearch'] ? 'Hide Technical Response' : 'View Full JSON Response'}
-                  </button>
-                </div>
-
-                <div style={{ fontSize: '0.82rem', color: asnSearchResult.success ? '#10b981' : '#f87171', fontWeight: 600 }}>
-                  {asnSearchResult.success ? `Live Response Fact: ${asnSearchResult.statusDescription || asnSearchResult.asnStatus}` : (asnSearchResult.cleanError || asnSearchResult.error)}
-                </div>
-
-                {showRawJsonMap['asnSearch'] && asnSearchResult.rawResponse && (
-                  <pre style={{ marginTop: '0.5rem', padding: '0.65rem', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '4px', maxHeight: '160px', overflow: 'auto', fontSize: '0.72rem', color: '#34d399', whiteSpace: 'pre-wrap' }}>
-                    {formatPayload(asnSearchResult.rawResponse)}
-                  </pre>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* --- TAB 5: 5.3.1 Direct Save PO --- */}
-        {activeConsoleTab === 'PO_SAVE' && (
+        {/* --- PO: Direct Save PO --- */}
+        {selectedDocCategory === 'PO' && activeConsoleTab === 'PO_SAVE' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
               <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                Direct Purchase Order Payload (5.3.1):
+                Purchase Order Payload:
               </span>
               <button
                 type="button"
@@ -1277,12 +1238,74 @@ export default function MawmDispatchPage({
           </div>
         )}
 
-        {/* --- TAB 6: 5.4.1 Direct Save ASN --- */}
-        {activeConsoleTab === 'ASN_SAVE' && (
+        {/* --- ASN: ASN Verification Search --- */}
+        {selectedDocCategory === 'ASN' && activeConsoleTab === 'ASN_STATUS' && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem', alignItems: 'flex-end' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+                  AsnId to Search:
+                </label>
+                <input
+                  type="text"
+                  value={searchAsnId}
+                  onChange={(e) => setSearchAsnId(e.target.value)}
+                  placeholder="Enter AsnId to query (e.g. ASN-2026-0001)..."
+                  className="input-field"
+                  style={{ width: '100%', padding: '0.45rem 0.75rem', fontSize: '0.82rem', fontFamily: 'var(--font-mono, monospace)' }}
+                />
+              </div>
+
+              <div>
+                <button
+                  onClick={() => handleManualSearchAsn()}
+                  disabled={searchingAsn || !searchAsnId.trim()}
+                  className="btn-primary"
+                  style={{ width: '100%', padding: '0.48rem 1rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', backgroundColor: '#0284c7' }}
+                >
+                  <Search size={14} className={searchingAsn ? 'spin-icon' : ''} />
+                  <span>{searchingAsn ? 'Querying MAWM...' : 'Check ASN Status'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* ASN Search Output Box */}
+            {asnSearchResult && (
+              <div style={{ marginTop: '1rem', padding: '0.85rem 1.15rem', borderRadius: '8px', backgroundColor: asnSearchResult.success ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)', border: `1px solid ${asnSearchResult.success ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ backgroundColor: asnSearchResult.success ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: asnSearchResult.success ? '#10b981' : '#ef4444', fontSize: '0.74rem', fontWeight: 700, padding: '0.18rem 0.55rem', borderRadius: '4px' }}>
+                      {asnSearchResult.success ? `STATUS: ${asnSearchResult.asnStatus || asnSearchResult.statusDescription || 'OK'}` : `HTTP ${asnSearchResult.statusCode || 500} ERROR`}
+                    </span>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                      AsnId: <strong>{asnSearchResult.asnId || searchAsnId}</strong>
+                    </span>
+                  </div>
+                  <button onClick={() => toggleRawJson('asnSearch')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}>
+                    {showRawJsonMap['asnSearch'] ? 'Hide Technical Response' : 'View Full JSON Response'}
+                  </button>
+                </div>
+
+                <div style={{ fontSize: '0.82rem', color: asnSearchResult.success ? '#10b981' : '#f87171', fontWeight: 600 }}>
+                  {asnSearchResult.success ? `Live Response Fact: ${asnSearchResult.statusDescription || asnSearchResult.asnStatus}` : (asnSearchResult.cleanError || asnSearchResult.error)}
+                </div>
+
+                {showRawJsonMap['asnSearch'] && asnSearchResult.rawResponse && (
+                  <pre style={{ marginTop: '0.5rem', padding: '0.65rem', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '4px', maxHeight: '160px', overflow: 'auto', fontSize: '0.72rem', color: '#34d399', whiteSpace: 'pre-wrap' }}>
+                    {formatPayload(asnSearchResult.rawResponse)}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* --- ASN: Direct Save ASN --- */}
+        {selectedDocCategory === 'ASN' && activeConsoleTab === 'ASN_SAVE' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
               <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                Direct ASN Payload (5.4.1):
+                ASN Payload:
               </span>
               <button
                 type="button"
@@ -1363,7 +1386,7 @@ export default function MawmDispatchPage({
               </button>
               <button
                 type="button"
-                onClick={() => { setSelectedDocTypeFilter('PO'); setCurrentPage(1); }}
+                onClick={() => { setSelectedDocTypeFilter('PO'); setSelectedDocCategory('PO'); setCurrentPage(1); }}
                 className={`filter-pill ${selectedDocTypeFilter === 'PO' ? 'active' : ''}`}
                 style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
               >
@@ -1371,7 +1394,7 @@ export default function MawmDispatchPage({
               </button>
               <button
                 type="button"
-                onClick={() => { setSelectedDocTypeFilter('ASN'); setCurrentPage(1); }}
+                onClick={() => { setSelectedDocTypeFilter('ASN'); setSelectedDocCategory('ASN'); setCurrentPage(1); }}
                 className={`filter-pill ${selectedDocTypeFilter === 'ASN' ? 'active' : ''}`}
                 style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
               >
@@ -1470,8 +1493,8 @@ export default function MawmDispatchPage({
                   <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Type</th>
                   <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Source ERP</th>
                   <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Destination Facility</th>
-                  <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Save Status (5.3.1 / 5.4.1)</th>
-                  <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Live Status (5.3.2 / 5.4.2)</th>
+                  <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Save Status</th>
+                  <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Live Status</th>
                   <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Dispatched Time</th>
                   <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600, textAlign: 'right' }}>Actions</th>
                 </tr>
@@ -1559,7 +1582,7 @@ export default function MawmDispatchPage({
                         </span>
                       </td>
 
-                      {/* 5.3.1 / 5.4.1 Save Status */}
+                      {/* Save Status */}
                       <td style={{ padding: '0.65rem 0.75rem' }}>
                         {isDelivered ? (
                           <span style={{
@@ -1607,7 +1630,7 @@ export default function MawmDispatchPage({
                         )}
                       </td>
 
-                      {/* Live Status (5.3.2 / 5.4.2) */}
+                      {/* Live Status */}
                       <td style={{ padding: '0.65rem 0.75rem' }}>
                         {liveStatus ? (
                           <button
@@ -1817,14 +1840,14 @@ export default function MawmDispatchPage({
                   className={`filter-pill ${inspectPayloadTab === 'response' ? 'active' : ''}`}
                   style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
                 >
-                  Direct Save Response
+                  Save Response
                 </button>
                 <button
                   onClick={() => setInspectPayloadTab('status')}
                   className={`filter-pill ${inspectPayloadTab === 'status' ? 'active' : ''}`}
                   style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
                 >
-                  Status Query Fact
+                  Live Status
                 </button>
                 {isPoRecord(inspectingJob) && (
                   <>
@@ -1833,14 +1856,14 @@ export default function MawmDispatchPage({
                       className={`filter-pill ${inspectPayloadTab === 'lines' ? 'active' : ''}`}
                       style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
                     >
-                      5.3.3 PO Lines
+                      PO Lines
                     </button>
                     <button
                       onClick={() => setInspectPayloadTab('asns')}
                       className={`filter-pill ${inspectPayloadTab === 'asns' ? 'active' : ''}`}
                       style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
                     >
-                      5.3.4 Associated ASNs
+                      Associated ASNs
                     </button>
                   </>
                 )}
@@ -1849,7 +1872,7 @@ export default function MawmDispatchPage({
                   className={`filter-pill ${inspectPayloadTab === 'raw' ? 'active' : ''}`}
                   style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
                 >
-                  Raw Ingested Content
+                  Raw Payload
                 </button>
               </div>
 
