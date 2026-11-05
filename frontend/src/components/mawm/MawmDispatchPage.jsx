@@ -158,21 +158,53 @@ export default function MawmDispatchPage({
     }
   };
 
-  const isPoRecord = useCallback((job) => {
+  const isAsnRecord = useCallback((job) => {
     if (!job) return false;
     const type = (job.transactionType || '').toUpperCase();
-    if (type === 'PO' || type.includes('PURCHASE') || type.includes('ORDER')) return true;
+    if (type === 'ASN' || type.includes('ASN') || type.includes('SHIPMENT')) return true;
+    const storage = (job.storagePath || '').toLowerCase();
+    if (storage.includes('asn')) return true;
+    const profile = (job.mappingProfile || '').toLowerCase();
+    if (profile.includes('asn')) return true;
     const fn = (job.originalFilename || '').toUpperCase();
-    if (fn.includes('PO') || fn.includes('ORDER') || fn.includes('PURCHASE')) return true;
-    if (job.rawContent && (job.rawContent.includes('PurchaseOrderId') || job.rawContent.includes('purchaseOrder'))) return true;
-    if (job.outputFiles && (job.outputFiles.includes('PurchaseOrderId') || job.outputFiles.includes('purchaseOrder'))) return true;
-    if (job.mawmResponse && (job.mawmResponse.includes('PurchaseOrderId') || job.mawmResponse.includes('purchaseOrder'))) return true;
+    if (fn.includes('ASN')) return true;
+    if (job.outputFiles && (job.outputFiles.includes('AsnId') || job.outputFiles.includes('asnId') || job.outputFiles.includes('AsnLine'))) return true;
+    if (job.rawContent && (job.rawContent.includes('AsnId') || job.rawContent.includes('asnId') || job.rawContent.includes('AsnLine'))) return true;
+    if (job.mawmResponse && (job.mawmResponse.includes('AsnId') || job.mawmResponse.includes('asnId') || job.mawmResponse.includes('AsnLine'))) return true;
     return false;
   }, []);
+
+  const isPoRecord = useCallback((job) => {
+    if (!job) return false;
+    if (isAsnRecord(job)) return false;
+    const type = (job.transactionType || '').toUpperCase();
+    if (type === 'PO' || type.includes('PURCHASE') || type.includes('ORDER')) return true;
+    const storage = (job.storagePath || '').toLowerCase();
+    if (storage.includes('po')) return true;
+    const profile = (job.mappingProfile || '').toLowerCase();
+    if (profile.includes('po')) return true;
+    const fn = (job.originalFilename || '').toUpperCase();
+    if (fn.includes('PO') || fn.includes('ORDER') || fn.includes('PURCHASE')) return true;
+    if (job.outputFiles && (job.outputFiles.includes('PurchaseOrderId') || job.outputFiles.includes('purchaseOrder'))) return true;
+    if (job.rawContent && (job.rawContent.includes('PurchaseOrderId') || job.rawContent.includes('purchaseOrder'))) return true;
+    if (job.mawmResponse && (job.mawmResponse.includes('PurchaseOrderId') || job.mawmResponse.includes('purchaseOrder'))) return true;
+    return false;
+  }, [isAsnRecord]);
 
   // Robust PO ID extraction
   const extractPoId = useCallback((job) => {
     if (!job) return '';
+    if (job.outputFiles && typeof job.outputFiles === 'string') {
+      try {
+        const parsed = JSON.parse(job.outputFiles);
+        const dataArr = parsed.Data || parsed.data || (Array.isArray(parsed) ? parsed : null);
+        if (Array.isArray(dataArr) && dataArr[0]?.PurchaseOrderId) return String(dataArr[0].PurchaseOrderId);
+        if (parsed.PurchaseOrderId) return String(parsed.PurchaseOrderId);
+        if (parsed.purchaseOrderId) return String(parsed.purchaseOrderId);
+      } catch (e) {}
+      const m = job.outputFiles.match(/"PurchaseOrderId"\s*:\s*"([^"]+)"/i) || job.outputFiles.match(/"purchaseOrderId"\s*:\s*"([^"]+)"/i);
+      if (m && m[1]) return m[1];
+    }
     if (job.mawmResponse && typeof job.mawmResponse === 'string') {
       try {
         const parsed = JSON.parse(job.mawmResponse);
@@ -183,24 +215,13 @@ export default function MawmDispatchPage({
       const m = job.mawmResponse.match(/"PurchaseOrderId"\s*:\s*"([^"]+)"/i) || job.mawmResponse.match(/"purchaseOrderId"\s*:\s*"([^"]+)"/i);
       if (m && m[1]) return m[1];
     }
-    if (job.outputFiles && typeof job.outputFiles === 'string') {
-      try {
-        const parsed = JSON.parse(job.outputFiles);
-        const dataArr = parsed.Data || parsed.data || (Array.isArray(parsed) ? parsed : null);
-        if (Array.isArray(dataArr) && dataArr[0]?.PurchaseOrderId) return String(dataArr[0].PurchaseOrderId);
-        if (parsed.PurchaseOrderId) return String(parsed.PurchaseOrderId);
-        if (parsed.purchaseOrderId) return String(parsed.purchaseOrderId);
-      } catch (e) {}
-      const m = job.outputFiles.match(/"PurchaseOrderId"\s*:\s*"([^"]+)"/i);
-      if (m && m[1]) return m[1];
-    }
     if (job.rawContent && typeof job.rawContent === 'string') {
       try {
         const parsed = JSON.parse(job.rawContent);
         if (parsed.PurchaseOrderId) return String(parsed.PurchaseOrderId);
         if (parsed.purchaseOrderId) return String(parsed.purchaseOrderId);
       } catch (e) {}
-      const m = job.rawContent.match(/"PurchaseOrderId"\s*:\s*"([^"]+)"/i);
+      const m = job.rawContent.match(/"PurchaseOrderId"\s*:\s*"([^"]+)"/i) || job.rawContent.match(/"purchaseOrderId"\s*:\s*"([^"]+)"/i);
       if (m && m[1]) return m[1];
     }
     if (job.originalFilename) {
@@ -216,17 +237,6 @@ export default function MawmDispatchPage({
   // Robust ASN ID extraction
   const extractAsnId = useCallback((job) => {
     if (!job) return '';
-    if (job.mawmResponse && typeof job.mawmResponse === 'string') {
-      try {
-        const parsed = JSON.parse(job.mawmResponse);
-        const data = parsed.data || parsed.Data || parsed;
-        if (data?.AsnId) return String(data.AsnId);
-        if (data?.Asn?.AsnId) return String(data.Asn.AsnId);
-        if (Array.isArray(data?.AsnLine) && data.AsnLine[0]?.AsnId) return String(data.AsnLine[0].AsnId);
-      } catch (e) {}
-      const m = job.mawmResponse.match(/"AsnId"\s*:\s*"([^"]+)"/i) || job.mawmResponse.match(/"asnId"\s*:\s*"([^"]+)"/i);
-      if (m && m[1]) return m[1];
-    }
     if (job.outputFiles && typeof job.outputFiles === 'string') {
       try {
         const parsed = JSON.parse(job.outputFiles);
@@ -235,7 +245,19 @@ export default function MawmDispatchPage({
         if (parsed.AsnId) return String(parsed.AsnId);
         if (parsed.asnId) return String(parsed.asnId);
       } catch (e) {}
-      const m = job.outputFiles.match(/"AsnId"\s*:\s*"([^"]+)"/i);
+      const m = job.outputFiles.match(/"AsnId"\s*:\s*"([^"]+)"/i) || job.outputFiles.match(/"asnId"\s*:\s*"([^"]+)"/i);
+      if (m && m[1]) return m[1];
+    }
+    if (job.mawmResponse && typeof job.mawmResponse === 'string') {
+      try {
+        const parsed = JSON.parse(job.mawmResponse);
+        const data = parsed.data || parsed.Data || parsed;
+        if (data?.AsnId) return String(data.AsnId);
+        if (data?.Asn?.AsnId) return String(data.Asn.AsnId);
+        if (Array.isArray(data?.AsnLine) && data.AsnLine[0]?.AsnId) return String(data.AsnLine[0].AsnId);
+        if (Array.isArray(data) && data[0]?.AsnId) return String(data[0].AsnId);
+      } catch (e) {}
+      const m = job.mawmResponse.match(/"AsnId"\s*:\s*"([^"]+)"/i) || job.mawmResponse.match(/"asnId"\s*:\s*"([^"]+)"/i);
       if (m && m[1]) return m[1];
     }
     if (job.rawContent && typeof job.rawContent === 'string') {
@@ -244,7 +266,7 @@ export default function MawmDispatchPage({
         if (parsed.AsnId) return String(parsed.AsnId);
         if (parsed.asnId) return String(parsed.asnId);
       } catch (e) {}
-      const m = job.rawContent.match(/"AsnId"\s*:\s*"([^"]+)"/i);
+      const m = job.rawContent.match(/"AsnId"\s*:\s*"([^"]+)"/i) || job.rawContent.match(/"asnId"\s*:\s*"([^"]+)"/i);
       if (m && m[1]) return m[1];
     }
     if (job.originalFilename) {
@@ -260,11 +282,18 @@ export default function MawmDispatchPage({
   // Unified Document ID extraction
   const extractDocId = useCallback((job) => {
     if (!job) return { id: '', type: 'ASN' };
+    if (isAsnRecord(job)) {
+      return { id: extractAsnId(job), type: 'ASN' };
+    }
     if (isPoRecord(job)) {
       return { id: extractPoId(job), type: 'PO' };
     }
-    return { id: extractAsnId(job), type: 'ASN' };
-  }, [isPoRecord, extractPoId, extractAsnId]);
+    const fn = (job.originalFilename || '').toUpperCase();
+    if (fn.includes('ASN')) {
+      return { id: extractAsnId(job), type: 'ASN' };
+    }
+    return { id: extractPoId(job), type: 'PO' };
+  }, [isAsnRecord, isPoRecord, extractAsnId, extractPoId]);
 
   // Robust Destination Facility extraction
   const extractFacility = useCallback((job) => {
@@ -619,15 +648,17 @@ export default function MawmDispatchPage({
   // Filtered trackers by ERP Source selector, DocType, and Query
   const filteredTrackers = useMemo(() => {
     return trackers.filter((r) => {
+      const isAsn = isAsnRecord(r);
       const isPo = isPoRecord(r);
-      const isAsn = (r.transactionType || '').toUpperCase().includes('ASN') ||
-                    (r.originalFilename || '').toUpperCase().includes('ASN') ||
-                    (!isPo && (Boolean(r.mawmResponse) || Boolean(r.dispatchStatus)));
 
-      // 1. DocType filter
-      if (selectedDocTypeFilter === 'PO' && !isPo) return false;
-      if (selectedDocTypeFilter === 'ASN' && !isAsn) return false;
-      if (!isPo && !isAsn && !Boolean(r.mawmResponse) && !Boolean(r.dispatchStatus)) return false;
+      // 1. DocType filter (Strictly Purchase Orders or ASN Deliveries)
+      if (selectedDocTypeFilter === 'PO') {
+        if (!isPo) return false;
+      } else if (selectedDocTypeFilter === 'ASN') {
+        if (!isAsn) return false;
+      } else {
+        if (!isPo && !isAsn) return false;
+      }
 
       // 2. ERP Source Filter (Dropdown selection: OPTI, SAP, HM, OTHER)
       const src = (r.sourceSystem || '').toUpperCase();
@@ -656,7 +687,7 @@ export default function MawmDispatchPage({
 
       return true;
     });
-  }, [trackers, selectedErp, selectedDocTypeFilter, searchQuery, isPoRecord, extractDocId, extractFacility]);
+  }, [trackers, selectedErp, selectedDocTypeFilter, searchQuery, isAsnRecord, isPoRecord, extractDocId, extractFacility]);
 
   // Aggregate stats across all filtered records
   const stats = useMemo(() => {
@@ -1378,14 +1409,6 @@ export default function MawmDispatchPage({
             <div style={{ display: 'flex', gap: '0.3rem', marginLeft: '0.5rem' }}>
               <button
                 type="button"
-                onClick={() => { setSelectedDocTypeFilter('ALL'); setCurrentPage(1); }}
-                className={`filter-pill ${selectedDocTypeFilter === 'ALL' ? 'active' : ''}`}
-                style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
-              >
-                All Documents
-              </button>
-              <button
-                type="button"
                 onClick={() => { setSelectedDocTypeFilter('PO'); setSelectedDocCategory('PO'); setCurrentPage(1); }}
                 className={`filter-pill ${selectedDocTypeFilter === 'PO' ? 'active' : ''}`}
                 style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
@@ -1469,7 +1492,7 @@ export default function MawmDispatchPage({
         ) : filteredTrackers.length === 0 ? (
           <div style={{ padding: '3rem 1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
             <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
-              No dispatch records found for {selectedErp} ERP {selectedDocTypeFilter !== 'ALL' ? `(${selectedDocTypeFilter})` : ''}
+              No dispatch records found for {selectedErp} ERP ({selectedDocTypeFilter === 'PO' ? 'Purchase Orders' : 'ASN Deliveries'})
             </div>
             <div style={{ fontSize: '0.78rem' }}>
               Select "Opti ERP" to view active dispatch logs, or send a new PO/ASN payload via Files API.
