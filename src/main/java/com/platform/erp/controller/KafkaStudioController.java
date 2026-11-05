@@ -346,7 +346,7 @@ public class KafkaStudioController {
                     Map<TopicPartition, Long> endOffsets = consumer.endOffsets(partitionsToPoll);
                     Map<TopicPartition, Long> beginOffsets = consumer.beginningOffsets(partitionsToPoll);
 
-                    int perPartitionLimit = Math.max(5, limit / Math.max(1, partitionsToPoll.size()));
+                    int perPartitionLimit = Math.max(15, limit / Math.max(1, partitionsToPoll.size()));
 
                     for (TopicPartition tp : partitionsToPoll) {
                         long end = endOffsets.getOrDefault(tp, 0L);
@@ -355,45 +355,58 @@ public class KafkaStudioController {
                         consumer.seek(tp, targetSeek);
                     }
 
-                    ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofMillis(1200));
-                    for (ConsumerRecord<String, byte[]> r : records) {
-                        Map<String, Object> msg = new LinkedHashMap<>();
-                        msg.put("topic", r.topic());
-                        msg.put("partition", r.partition());
-                        msg.put("offset", r.offset());
-                        msg.put("key", r.key() != null ? r.key() : "NULL");
-                        msg.put("timestamp", r.timestamp());
-                        msg.put("payloadSizeBytes", r.value() != null ? r.value().length : 0);
+                    long deadline = System.currentTimeMillis() + 3000;
+                    while (System.currentTimeMillis() < deadline) {
+                        ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofMillis(350));
+                        if (records.isEmpty()) {
+                            if (!messages.isEmpty()) {
+                                break;
+                            }
+                            continue;
+                        }
+                        for (ConsumerRecord<String, byte[]> r : records) {
+                            Map<String, Object> msg = new LinkedHashMap<>();
+                            msg.put("topic", r.topic());
+                            msg.put("partition", r.partition());
+                            msg.put("offset", r.offset());
+                            msg.put("key", r.key() != null ? r.key() : "NULL");
+                            msg.put("timestamp", r.timestamp());
+                            msg.put("payloadSizeBytes", r.value() != null ? r.value().length : 0);
 
-                        // Extract Kafka Headers
-                        Map<String, String> headers = new HashMap<>();
-                        String trackingId = null;
-                        if (r.headers() != null) {
-                            for (Header h : r.headers()) {
-                                if (h.value() != null) {
-                                    String val = new String(h.value(), StandardCharsets.UTF_8);
-                                    headers.put(h.key(), val);
-                                    if ("X-Tracking-Id".equalsIgnoreCase(h.key())) {
-                                        trackingId = val;
+                            // Extract Kafka Headers
+                            Map<String, String> headers = new HashMap<>();
+                            String trackingId = null;
+                            if (r.headers() != null) {
+                                for (Header h : r.headers()) {
+                                    if (h.value() != null) {
+                                        String val = new String(h.value(), StandardCharsets.UTF_8);
+                                        headers.put(h.key(), val);
+                                        if ("X-Tracking-Id".equalsIgnoreCase(h.key())) {
+                                            trackingId = val;
+                                        }
                                     }
                                 }
                             }
-                        }
-                        msg.put("headers", headers);
-                        msg.put("trackingId", trackingId != null ? trackingId : "N/A");
+                            msg.put("headers", headers);
+                            msg.put("trackingId", trackingId != null ? trackingId : "N/A");
 
-                        // Payload preview (first 400 chars)
-                        if (r.value() != null) {
-                            String rawStr = new String(r.value(), StandardCharsets.UTF_8);
-                            String preview = rawStr.length() > 400 ? rawStr.substring(0, 400) + "..." : rawStr;
-                            msg.put("payloadPreview", preview);
-                            msg.put("isClaimCheck", rawStr.contains("[CLAIM_CHECK:") || "true".equalsIgnoreCase(headers.get("X-Claim-Check")));
-                        } else {
-                            msg.put("payloadPreview", "(Empty Payload)");
-                            msg.put("isClaimCheck", false);
+                            // Payload preview (first 400 chars)
+                            if (r.value() != null) {
+                                String rawStr = new String(r.value(), StandardCharsets.UTF_8);
+                                String preview = rawStr.length() > 400 ? rawStr.substring(0, 400) + "..." : rawStr;
+                                msg.put("payloadPreview", preview);
+                                msg.put("isClaimCheck", rawStr.contains("[CLAIM_CHECK:") || "true".equalsIgnoreCase(headers.get("X-Claim-Check")));
+                            } else {
+                                msg.put("payloadPreview", "(Empty Payload)");
+                                msg.put("isClaimCheck", false);
+                            }
+
+                            messages.add(msg);
                         }
 
-                        messages.add(msg);
+                        if (messages.size() >= limit * 2) {
+                            break;
+                        }
                     }
                 }
             }
@@ -418,7 +431,7 @@ public class KafkaStudioController {
                 msg.put("topic", t.getKafkaTopic() != null ? t.getKafkaTopic() : topic);
                 msg.put("partition", t.getKafkaPartition() != null ? t.getKafkaPartition() : 0);
                 msg.put("offset", t.getKafkaOffset() != null ? t.getKafkaOffset() : 0L);
-                msg.put("key", t.getSourceSystem() != null ? t.getSourceSystem() : "ERP_FEED");
+                msg.put("key", t.getSourceSystem() != null ? t.getSourceSystem() : "Opti");
                 msg.put("timestamp", t.getReceivedAt() != null ? t.getReceivedAt().toEpochMilli() : System.currentTimeMillis());
                 msg.put("trackingId", t.getJobId());
                 msg.put("payloadSizeBytes", t.getFileSizeBytes() != null ? t.getFileSizeBytes() : 0);
@@ -428,8 +441,8 @@ public class KafkaStudioController {
                 msg.put("isClaimCheck", t.getRawContent() != null && t.getRawContent().contains("CLAIM_CHECK"));
                 msg.put("headers", Map.of(
                         "X-Tracking-Id", t.getJobId(),
-                        "X-ERP-Source", t.getSourceSystem(),
-                        "X-Original-Filename", t.getOriginalFilename() != null ? t.getOriginalFilename() : "file.csv"
+                        "X-ERP-Source", t.getSourceSystem() != null ? t.getSourceSystem() : "Opti",
+                        "X-Original-Filename", t.getOriginalFilename() != null ? t.getOriginalFilename() : "payload.json"
                 ));
                 messages.add(msg);
             }

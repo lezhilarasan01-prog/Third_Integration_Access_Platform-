@@ -340,7 +340,7 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
   const [copiedPayload, setCopiedPayload] = useState(false);
 
   // Topic Selection & Date Range Filter State
-  const [dateRange, setDateRange] = useState('7d'); // 'today', '24h', '7d', '30d', 'custom'
+  const [dateRange, setDateRange] = useState('today'); // 'today', '24h', '7d', '30d', 'all', 'custom'
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
 
@@ -720,10 +720,10 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
     }
   };
 
-  const fetchMessagesAndPartitions = async (topic = selectedTopic) => {
+  const fetchMessagesAndPartitions = async (topic = selectedTopic, partition = selectedPartition) => {
     setIsLoadingMessages(true);
     try {
-      const msgsRes = await integrationApi.getTopicMessages(topic, null, 40).catch(() => ({ messages: [] }));
+      const msgsRes = await integrationApi.getTopicMessages(topic, partition, 50).catch(() => ({ messages: [] }));
       let loadedMsgs = msgsRes?.messages || [];
 
       // Fallback: If live broker endpoint is empty or 404 (prior to Spring Boot restart),
@@ -744,11 +744,11 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
               topic: topic,
               partition: s.kafkaPartition !== null && s.kafkaPartition !== undefined ? s.kafkaPartition : (idx % 6),
               offset: s.kafkaOffset !== null && s.kafkaOffset !== undefined ? s.kafkaOffset : (1020 + idx * 14),
-              key: s.sourceSystem || 'CUSTOMER_D_ERP',
+              key: s.sourceSystem || 'Opti',
               trackingId: s.jobId,
               timestamp: s.receivedAt ? new Date(s.receivedAt).getTime() : Date.now(),
               payloadSizeBytes: s.fileSizeBytes || 4096,
-              payloadPreview: `${s.originalFilename || 'file.csv'} (${s.totalRecords || 0} records, Status: ${s.intakeStatus})`,
+              payloadPreview: `${s.originalFilename || 'payload.json'} (${s.totalRecords || 0} records, Status: ${s.intakeStatus})`,
               isClaimCheck: s.fileSizeBytes > 5242880,
               headers: {
                 'X-Tracking-Id': s.jobId,
@@ -777,21 +777,22 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
   }, []);
 
   useEffect(() => {
-    fetchMessagesAndPartitions(selectedTopic);
-  }, [selectedTopic]);
+    fetchMessagesAndPartitions(selectedTopic, selectedPartition);
+  }, [selectedTopic, selectedPartition]);
 
   // Auto-refresh interval (15s if toggled on)
   useEffect(() => {
     if (!autoRefresh) return;
     const interval = setInterval(() => {
-      fetchMessagesAndPartitions(selectedTopic);
+      fetchMessagesAndPartitions(selectedTopic, selectedPartition);
     }, 15000);
     return () => clearInterval(interval);
-  }, [autoRefresh, selectedTopic]);
+  }, [autoRefresh, selectedTopic, selectedPartition]);
 
   const handleSelectTopic = (topicName) => {
     setSelectedTopic(topicName);
     setSelectedPartition(null);
+    fetchMessagesAndPartitions(topicName, null);
     const found = studioData?.topics?.find(t => t.topic === topicName);
     if (found) {
       setRetentionHours(found.retentionHours || 168);
@@ -851,15 +852,28 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
     }
   };
 
+  // Helper to safely parse timestamp
+  const parseMsgTime = (ts) => {
+    if (!ts) return Date.now();
+    if (typeof ts === 'number') {
+      return ts < 10000000000 ? ts * 1000 : ts;
+    }
+    const d = new Date(ts).getTime();
+    return isNaN(d) ? Date.now() : d;
+  };
+
   // Filter messages by Topic, Date Range, and Search Query
   const filteredMessages = messages.filter((msg) => {
     // 1. Date Range filter
-    const msgTime = msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now();
+    const msgTime = parseMsgTime(msg.timestamp);
     const now = Date.now();
-    if (dateRange === 'today') {
+    if (dateRange === 'all') {
+      // All time - no date restriction
+    } else if (dateRange === 'today') {
       const startOfToday = new Date();
       startOfToday.setHours(0, 0, 0, 0);
-      if (msgTime < startOfToday.getTime()) return false;
+      const threshold = Math.min(startOfToday.getTime(), now - 24 * 60 * 60 * 1000);
+      if (msgTime < threshold) return false;
     } else if (dateRange === '24h') {
       if (msgTime < (now - 24 * 60 * 60 * 1000)) return false;
     } else if (dateRange === '7d') {
@@ -1588,10 +1602,11 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
                 onChange={(e) => setDateRange(e.target.value)}
                 className="studio-filter-select"
               >
-                <option value="7d">Last 7 Days</option>
                 <option value="today">Today</option>
                 <option value="24h">Last 24 Hours</option>
+                <option value="7d">Last 7 Days</option>
                 <option value="30d">Last 30 Days</option>
+                <option value="all">All Time</option>
                 <option value="custom">Custom Date Range...</option>
               </select>
 

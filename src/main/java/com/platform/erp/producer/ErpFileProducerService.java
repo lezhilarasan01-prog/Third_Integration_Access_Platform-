@@ -82,7 +82,11 @@ public class ErpFileProducerService {
 		});
 
 		try {
-			future.get(200, TimeUnit.MILLISECONDS);
+			var sendResult = future.get(2000, TimeUnit.MILLISECONDS);
+			if (sendResult != null && sendResult.getRecordMetadata() != null) {
+				var meta = sendResult.getRecordMetadata();
+				transactionStore.recordKafkaCoordinates(trackingId, meta.topic(), meta.partition(), meta.offset());
+			}
 		} catch (Exception ignored) {
 		}
 
