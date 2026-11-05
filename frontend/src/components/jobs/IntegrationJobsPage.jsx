@@ -82,7 +82,6 @@ export default function IntegrationJobsPage({
     setSourceFilter(safe);
     setCurrentPage(1);
   }, [initialSourceFilter]);
-  const [typeFilter, setTypeFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -186,20 +185,6 @@ export default function IntegrationJobsPage({
       .sort((a, b) => b.count - a.count || a.source.localeCompare(b.source));
   }, [effectiveJobs]);
 
-  // Dynamic Real-time Transaction Types extracted from live database rows
-  const availableTypes = useMemo(() => {
-    const counts = {};
-    effectiveJobs.forEach((j) => {
-      if (j.transactionType && j.transactionType.trim()) {
-        const type = j.transactionType.trim();
-        counts[type] = (counts[type] || 0) + 1;
-      }
-    });
-    return Object.entries(counts)
-      .map(([type, count]) => ({ type, count }))
-      .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type));
-  }, [effectiveJobs]);
-
   // Synchronize with external activeJobId if controlled, or fallback to internalJobId
   const inspectedJobId = activeJobId !== undefined && activeJobId !== null ? activeJobId : internalJobId;
 
@@ -260,10 +245,7 @@ export default function IntegrationJobsPage({
       // 2. Source ERP Filter
       if (sourceFilter !== 'ALL' && job.sourceSystem !== sourceFilter) return false;
 
-      // 3. Transaction Type Filter
-      if (typeFilter !== 'ALL' && job.transactionType !== typeFilter) return false;
-
-      // 4. Date & Time Range Filter
+      // 3. Date & Time Range Filter
       const timeStr = job.dispatchCompletedAt || job.updatedAt || job.createdAt;
       if (timeStr) {
         const rowTime = new Date(timeStr).getTime();
@@ -308,7 +290,7 @@ export default function IntegrationJobsPage({
 
       return true;
     });
-  }, [effectiveJobs, statusFilter, sourceFilter, typeFilter, dateRange, customStartDateTime, customEndDateTime, searchQuery]);
+  }, [effectiveJobs, statusFilter, sourceFilter, dateRange, customStartDateTime, customEndDateTime, searchQuery]);
 
   // Pagination calculations
   const totalRecords = filteredJobs.length;
@@ -326,7 +308,6 @@ export default function IntegrationJobsPage({
   const handleResetFilters = () => {
     setStatusFilter('ALL');
     setSourceFilter('ALL');
-    setTypeFilter('ALL');
     setDateRange('7d');
     setCustomStartDateTime('');
     setCustomEndDateTime('');
@@ -369,7 +350,6 @@ export default function IntegrationJobsPage({
   const hasActiveFilters =
     statusFilter !== 'ALL' ||
     sourceFilter !== 'ALL' ||
-    typeFilter !== 'ALL' ||
     dateRange !== '7d' ||
     customStartDateTime !== '' ||
     customEndDateTime !== '' ||
@@ -554,24 +534,6 @@ export default function IntegrationJobsPage({
                   <option key={source} value={source}>
                     {source}
                   </option>
-              ))}
-            </select>
-
-            {/* Transaction Type Dropdown (Dynamic from real-time database) */}
-            <select
-              value={typeFilter}
-              onChange={(e) => {
-                setTypeFilter(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="form-select-theme"
-              title="Filter by live document transaction types"
-            >
-              <option value="ALL">All Transaction Types</option>
-              {availableTypes.map(({ type }) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
               ))}
             </select>
 
