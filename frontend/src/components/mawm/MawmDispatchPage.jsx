@@ -83,34 +83,9 @@ export default function MawmDispatchPage({
   // Top-Level Document Category Mode: 'PO' | 'ASN'
   const [selectedDocCategory, setSelectedDocCategory] = useState('PO');
 
-  // Active Query Console Tool Tab within Category:
-  // For PO: 'PO_STATUS' | 'PO_LINES' | 'PO_ASN' | 'PO_SAVE'
-  // For ASN: 'ASN_STATUS' | 'ASN_SAVE'
-  const [activeConsoleTab, setActiveConsoleTab] = useState('PO_STATUS');
-
   // Shared Facility & Username (managed in background by default, no default input clutter)
   const [searchFacility, setSearchFacility] = useState('Food_Cbe');
   const [searchUsername, setSearchUsername] = useState('kabil');
-
-  // PO Status State (No hardcoded default values)
-  const [poSearchId, setPoSearchId] = useState('');
-  const [searchingPoStatus, setSearchingPoStatus] = useState(false);
-  const [poStatusResult, setPoStatusResult] = useState(null);
-
-  // PO Lines State (No hardcoded default values)
-  const [poLinesSearchId, setPoLinesSearchId] = useState('');
-  const [searchingPoLines, setSearchingPoLines] = useState(false);
-  const [poLinesResult, setPoLinesResult] = useState(null);
-
-  // PO Associated ASNs State (No hardcoded default values)
-  const [poAsnSearchId, setPoAsnSearchId] = useState('');
-  const [searchingPoAsn, setSearchingPoAsn] = useState(false);
-  const [poAsnResult, setPoAsnResult] = useState(null);
-
-  // ASN Verification Search State
-  const [searchAsnId, setSearchAsnId] = useState('');
-  const [searchingAsn, setSearchingAsn] = useState(false);
-  const [asnSearchResult, setAsnSearchResult] = useState(null);
 
   // Direct PO Save State
   const [directPoJson, setDirectPoJson] = useState(JSON.stringify(DEFAULT_PO_SAMPLE, null, 2));
@@ -390,14 +365,11 @@ export default function MawmDispatchPage({
 
   // Query PO Status
   const handleQueryPoStatus = async (overridePoId, overrideFac) => {
-    const targetPo = (overridePoId || poSearchId).trim();
+    const targetPo = (overridePoId || '').trim();
     const targetFac = (overrideFac || searchFacility).trim();
-    if (!targetPo) return;
-    setSearchingPoStatus(true);
-    setPoStatusResult(null);
+    if (!targetPo) return null;
     try {
       const res = await integrationApi.searchPoStatus(targetPo, targetFac, searchUsername);
-      setPoStatusResult(res);
       if (res.statusDescription || res.purchaseOrderStatus) {
         const val = res.statusDescription || res.purchaseOrderStatus;
         trackers.forEach(t => {
@@ -406,72 +378,43 @@ export default function MawmDispatchPage({
           }
         });
       }
+      return res;
     } catch (err) {
-      setPoStatusResult({
-        success: false,
-        statusCode: 500,
-        cleanError: err.message || 'Failed to query MAWM PO status API',
-        facilityId: targetFac
-      });
-    } finally {
-      setSearchingPoStatus(false);
+      return { success: false, statusCode: 500, cleanError: err.message || 'Failed to query MAWM PO status API', facilityId: targetFac };
     }
   };
 
   // Query PO Lines
   const handleQueryPoLines = async (overridePoId, overrideFac) => {
-    const targetPo = (overridePoId || poLinesSearchId).trim();
+    const targetPo = (overridePoId || '').trim();
     const targetFac = (overrideFac || searchFacility).trim();
-    if (!targetPo) return;
-    setSearchingPoLines(true);
-    setPoLinesResult(null);
+    if (!targetPo) return null;
     try {
-      const res = await integrationApi.searchPoLines(targetPo, targetFac, searchUsername);
-      setPoLinesResult(res);
+      return await integrationApi.searchPoLines(targetPo, targetFac, searchUsername);
     } catch (err) {
-      setPoLinesResult({
-        success: false,
-        statusCode: 500,
-        cleanError: err.message || 'Failed to query MAWM PO lines API',
-        facilityId: targetFac
-      });
-    } finally {
-      setSearchingPoLines(false);
+      return { success: false, statusCode: 500, cleanError: err.message || 'Failed to query MAWM PO lines API', facilityId: targetFac };
     }
   };
 
   // Query PO Associated ASNs
   const handleQueryPoAsnLines = async (overridePoId, overrideFac) => {
-    const targetPo = (overridePoId || poAsnSearchId).trim();
+    const targetPo = (overridePoId || '').trim();
     const targetFac = (overrideFac || searchFacility).trim();
-    if (!targetPo) return;
-    setSearchingPoAsn(true);
-    setPoAsnResult(null);
+    if (!targetPo) return null;
     try {
-      const res = await integrationApi.searchPoAsnLines(targetPo, targetFac, searchUsername);
-      setPoAsnResult(res);
+      return await integrationApi.searchPoAsnLines(targetPo, targetFac, searchUsername);
     } catch (err) {
-      setPoAsnResult({
-        success: false,
-        statusCode: 500,
-        cleanError: err.message || 'Failed to query MAWM PO ASN lines API',
-        facilityId: targetFac
-      });
-    } finally {
-      setSearchingPoAsn(false);
+      return { success: false, statusCode: 500, cleanError: err.message || 'Failed to query MAWM PO ASN lines API', facilityId: targetFac };
     }
   };
 
   // ASN Verification Search
   const handleManualSearchAsn = async (overrideAsn, overrideFac) => {
-    const targetAsn = (overrideAsn || searchAsnId).trim();
+    const targetAsn = (overrideAsn || '').trim();
     const targetFac = (overrideFac || searchFacility).trim();
-    if (!targetAsn) return;
-    setSearchingAsn(true);
-    setAsnSearchResult(null);
+    if (!targetAsn) return null;
     try {
       const res = await integrationApi.searchAsnVerification(targetAsn, targetFac, searchUsername);
-      setAsnSearchResult(res);
       if (res.asnStatus) {
         trackers.forEach(t => {
           if (extractAsnId(t) === targetAsn) {
@@ -479,15 +422,9 @@ export default function MawmDispatchPage({
           }
         });
       }
+      return res;
     } catch (err) {
-      setAsnSearchResult({
-        success: false,
-        statusCode: 500,
-        cleanError: err.message || 'Failed to query MAWM ASN verification API',
-        facilityId: targetFac
-      });
-    } finally {
-      setSearchingAsn(false);
+      return { success: false, statusCode: 500, cleanError: err.message || 'Failed to query MAWM ASN verification API', facilityId: targetFac };
     }
   };
 
@@ -541,29 +478,9 @@ export default function MawmDispatchPage({
     }
   };
 
-  // Click an ID from the table to load into the appropriate query tool
+  // Click an ID from the table to open full Inspection Modal
   const handleSelectDocForQuery = (job) => {
-    const { id, type } = extractDocId(job);
-    const fac = extractFacility(job) || 'Food_Cbe';
-    if (!id) return;
-    setSearchFacility(fac);
-    if (type === 'PO') {
-      setSelectedDocCategory('PO');
-      setActiveConsoleTab('PO_STATUS');
-      setPoSearchId(id);
-      setPoLinesSearchId(id);
-      setPoAsnSearchId(id);
-      handleQueryPoStatus(id, fac);
-    } else {
-      setSelectedDocCategory('ASN');
-      setActiveConsoleTab('ASN_STATUS');
-      setSearchAsnId(id);
-      handleManualSearchAsn(id, fac);
-    }
-    const consoleEl = document.getElementById('mawm-search-console');
-    if (consoleEl) {
-      consoleEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+    handleInspectJob(job);
   };
 
   // Row-level verification action
@@ -578,18 +495,10 @@ export default function MawmDispatchPage({
         const res = await integrationApi.searchPoStatus(id, fac, searchUsername);
         const actualStatus = res.statusDescription || res.purchaseOrderStatus || (res.success ? 'RECEIVED' : 'ERROR');
         setRowStatusMap(prev => ({ ...prev, [jobId]: actualStatus }));
-        setPoSearchId(id);
-        setPoStatusResult(res);
-        setSelectedDocCategory('PO');
-        setActiveConsoleTab('PO_STATUS');
       } else {
         const res = await integrationApi.searchAsnVerification(id, fac, searchUsername);
         const actualStatus = res.asnStatus || res.statusDescription || (res.success ? 'RECEIVED' : 'ERROR');
         setRowStatusMap(prev => ({ ...prev, [jobId]: actualStatus }));
-        setSearchAsnId(id);
-        setAsnSearchResult(res);
-        setSelectedDocCategory('ASN');
-        setActiveConsoleTab('ASN_STATUS');
       }
       await loadData(true);
     } catch (err) {
@@ -897,7 +806,6 @@ export default function MawmDispatchPage({
             <button
               onClick={() => {
                 setSelectedDocCategory('PO');
-                setActiveConsoleTab('PO_STATUS');
                 setSelectedDocTypeFilter('PO');
                 setCurrentPage(1);
               }}
@@ -919,7 +827,6 @@ export default function MawmDispatchPage({
             <button
               onClick={() => {
                 setSelectedDocCategory('ASN');
-                setActiveConsoleTab('ASN_STATUS');
                 setSelectedDocTypeFilter('ASN');
                 setCurrentPage(1);
               }}
@@ -940,321 +847,8 @@ export default function MawmDispatchPage({
           </div>
         </div>
 
-        {/* Sub-tools for Selected Category (Clean Names, Zero Section Numbers) */}
-        {selectedDocCategory === 'PO' ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '1.15rem', flexWrap: 'wrap' }}>
-            <button
-              onClick={() => setActiveConsoleTab('PO_STATUS')}
-              className={`filter-pill ${activeConsoleTab === 'PO_STATUS' ? 'active' : ''}`}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
-            >
-              <FileText size={14} />
-              <span>PO Status</span>
-            </button>
-
-            <button
-              onClick={() => setActiveConsoleTab('PO_LINES')}
-              className={`filter-pill ${activeConsoleTab === 'PO_LINES' ? 'active' : ''}`}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
-            >
-              <ListOrdered size={14} />
-              <span>PO Lines</span>
-            </button>
-
-            <button
-              onClick={() => setActiveConsoleTab('PO_ASN')}
-              className={`filter-pill ${activeConsoleTab === 'PO_ASN' ? 'active' : ''}`}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
-            >
-              <Layers size={14} />
-              <span>Associated ASNs</span>
-            </button>
-
-            <button
-              onClick={() => setActiveConsoleTab('PO_SAVE')}
-              className={`filter-pill ${activeConsoleTab === 'PO_SAVE' ? 'active' : ''}`}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
-            >
-              <Send size={14} />
-              <span>Save PO</span>
-            </button>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '1.15rem', flexWrap: 'wrap' }}>
-            <button
-              onClick={() => setActiveConsoleTab('ASN_STATUS')}
-              className={`filter-pill ${activeConsoleTab === 'ASN_STATUS' ? 'active' : ''}`}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
-            >
-              <Truck size={14} />
-              <span>ASN Verification</span>
-            </button>
-
-            <button
-              onClick={() => setActiveConsoleTab('ASN_SAVE')}
-              className={`filter-pill ${activeConsoleTab === 'ASN_SAVE' ? 'active' : ''}`}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem' }}
-            >
-              <Send size={14} />
-              <span>Save ASN</span>
-            </button>
-          </div>
-        )}
-
-        {/* --- PO: Query PO Status --- */}
-        {selectedDocCategory === 'PO' && activeConsoleTab === 'PO_STATUS' && (
-          <div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem', alignItems: 'flex-end' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
-                  PurchaseOrderId:
-                </label>
-                <input
-                  type="text"
-                  list="available-po-ids"
-                  value={poSearchId}
-                  onChange={(e) => setPoSearchId(e.target.value)}
-                  placeholder="Enter PurchaseOrderId or select from table below..."
-                  className="input-field"
-                  style={{ width: '100%', padding: '0.45rem 0.75rem', fontSize: '0.82rem', fontFamily: 'var(--font-mono, monospace)' }}
-                />
-                <datalist id="available-po-ids">
-                  {availablePoIds.map((id) => (
-                    <option key={id} value={id} />
-                  ))}
-                </datalist>
-              </div>
-
-              <div>
-                <button
-                  onClick={() => handleQueryPoStatus()}
-                  disabled={searchingPoStatus || !poSearchId.trim()}
-                  className="btn-primary"
-                  style={{ width: '100%', padding: '0.48rem 1rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', backgroundColor: '#0284c7' }}
-                >
-                  <Search size={14} className={searchingPoStatus ? 'spin-icon' : ''} />
-                  <span>{searchingPoStatus ? 'Querying MAWM...' : 'Check PO Status'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Result Box */}
-            {poStatusResult && (
-              <div style={{ marginTop: '1rem', padding: '0.85rem 1.15rem', borderRadius: '8px', backgroundColor: poStatusResult.success ? 'rgba(56, 189, 248, 0.08)' : 'rgba(239, 68, 68, 0.08)', border: `1px solid ${poStatusResult.success ? 'rgba(56, 189, 248, 0.35)' : 'rgba(239, 68, 68, 0.35)'}` }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.4rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ backgroundColor: poStatusResult.success ? 'rgba(56, 189, 248, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: poStatusResult.success ? '#38bdf8' : '#ef4444', fontSize: '0.74rem', fontWeight: 700, padding: '0.18rem 0.55rem', borderRadius: '4px' }}>
-                      {poStatusResult.success ? `STATUS: ${poStatusResult.purchaseOrderStatus || poStatusResult.statusDescription || 'OK'}` : `HTTP ${poStatusResult.statusCode || 500} ERROR`}
-                    </span>
-                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                      PO: <strong>{poStatusResult.purchaseOrderId || poSearchId}</strong>
-                    </span>
-                  </div>
-                  <button onClick={() => toggleRawJson('poStatus')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}>
-                    {showRawJsonMap['poStatus'] ? 'Hide Technical Response' : 'View Full JSON Response'}
-                  </button>
-                </div>
-
-                <div style={{ fontSize: '0.82rem', color: poStatusResult.success ? '#38bdf8' : '#f87171', fontWeight: 600 }}>
-                  {poStatusResult.success ? `Live Response Fact: ${poStatusResult.statusDescription || poStatusResult.purchaseOrderStatus}` : (poStatusResult.cleanError || poStatusResult.error)}
-                </div>
-
-                {showRawJsonMap['poStatus'] && poStatusResult.rawResponse && (
-                  <pre style={{ marginTop: '0.5rem', padding: '0.65rem', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '4px', maxHeight: '160px', overflow: 'auto', fontSize: '0.72rem', color: '#34d399', whiteSpace: 'pre-wrap' }}>
-                    {formatPayload(poStatusResult.rawResponse)}
-                  </pre>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* --- PO: Query PO Lines --- */}
-        {selectedDocCategory === 'PO' && activeConsoleTab === 'PO_LINES' && (
-          <div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem', alignItems: 'flex-end' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
-                  PurchaseOrderId:
-                </label>
-                <input
-                  type="text"
-                  list="available-po-ids"
-                  value={poLinesSearchId}
-                  onChange={(e) => setPoLinesSearchId(e.target.value)}
-                  placeholder="Enter PurchaseOrderId or select from table below..."
-                  className="input-field"
-                  style={{ width: '100%', padding: '0.45rem 0.75rem', fontSize: '0.82rem', fontFamily: 'var(--font-mono, monospace)' }}
-                />
-              </div>
-
-              <div>
-                <button
-                  onClick={() => handleQueryPoLines()}
-                  disabled={searchingPoLines || !poLinesSearchId.trim()}
-                  className="btn-primary"
-                  style={{ width: '100%', padding: '0.48rem 1rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', backgroundColor: '#0284c7' }}
-                >
-                  <Search size={14} className={searchingPoLines ? 'spin-icon' : ''} />
-                  <span>{searchingPoLines ? 'Querying Lines...' : 'Query PO Lines'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* PO Lines Result Table */}
-            {poLinesResult && (
-              <div style={{ marginTop: '1rem', padding: '0.85rem 1.15rem', borderRadius: '8px', backgroundColor: poLinesResult.success ? 'rgba(56, 189, 248, 0.08)' : 'rgba(239, 68, 68, 0.08)', border: `1px solid ${poLinesResult.success ? 'rgba(56, 189, 248, 0.35)' : 'rgba(239, 68, 68, 0.35)'}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#38bdf8' }}>
-                    Purchase Order Lines ({poLinesResult.lines ? poLinesResult.lines.length : 0})
-                  </span>
-                  <button onClick={() => toggleRawJson('poLines')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}>
-                    {showRawJsonMap['poLines'] ? 'Hide Technical Response' : 'View Full JSON Response'}
-                  </button>
-                </div>
-
-                {Array.isArray(poLinesResult.lines) && poLinesResult.lines.length > 0 ? (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)', textAlign: 'left' }}>
-                          <th style={{ padding: '0.35rem 0.5rem' }}>Line ID</th>
-                          <th style={{ padding: '0.35rem 0.5rem' }}>Shipped Qty</th>
-                          <th style={{ padding: '0.35rem 0.5rem' }}>Received Qty</th>
-                          <th style={{ padding: '0.35rem 0.5rem' }}>Line Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {poLinesResult.lines.map((line, idx) => (
-                          <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                            <td style={{ padding: '0.35rem 0.5rem', fontFamily: 'var(--font-mono, monospace)', fontWeight: 600 }}>
-                              {line.PurchaseOrderLineId || line.purchaseOrderLineId || idx + 1}
-                            </td>
-                            <td style={{ padding: '0.35rem 0.5rem', color: '#38bdf8' }}>
-                              {line.ShippedQuantity ?? line.shippedQuantity ?? 0}
-                            </td>
-                            <td style={{ padding: '0.35rem 0.5rem', color: '#10b981' }}>
-                              {line.ReceivedQuantity ?? line.receivedQuantity ?? 0}
-                            </td>
-                            <td style={{ padding: '0.35rem 0.5rem' }}>
-                              <span style={{ backgroundColor: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', padding: '0.1rem 0.4rem', borderRadius: '4px', fontSize: '0.7rem' }}>
-                                {line.PoLineStatus || line.poLineStatus || 'Open'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    {poLinesResult.cleanError || 'No line items returned for this Purchase Order'}
-                  </div>
-                )}
-
-                {showRawJsonMap['poLines'] && poLinesResult.rawResponse && (
-                  <pre style={{ marginTop: '0.5rem', padding: '0.65rem', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '4px', maxHeight: '160px', overflow: 'auto', fontSize: '0.72rem', color: '#34d399', whiteSpace: 'pre-wrap' }}>
-                    {formatPayload(poLinesResult.rawResponse)}
-                  </pre>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* --- PO: Query Associated ASNs --- */}
-        {selectedDocCategory === 'PO' && activeConsoleTab === 'PO_ASN' && (
-          <div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem', alignItems: 'flex-end' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
-                  PurchaseOrderId:
-                </label>
-                <input
-                  type="text"
-                  list="available-po-ids"
-                  value={poAsnSearchId}
-                  onChange={(e) => setPoAsnSearchId(e.target.value)}
-                  placeholder="Enter PurchaseOrderId or select from table below..."
-                  className="input-field"
-                  style={{ width: '100%', padding: '0.45rem 0.75rem', fontSize: '0.82rem', fontFamily: 'var(--font-mono, monospace)' }}
-                />
-              </div>
-
-              <div>
-                <button
-                  onClick={() => handleQueryPoAsnLines()}
-                  disabled={searchingPoAsn || !poAsnSearchId.trim()}
-                  className="btn-primary"
-                  style={{ width: '100%', padding: '0.48rem 1rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', backgroundColor: '#0284c7' }}
-                >
-                  <Search size={14} className={searchingPoAsn ? 'spin-icon' : ''} />
-                  <span>{searchingPoAsn ? 'Querying ASNs...' : 'Query Associated ASNs'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* PO Associated ASNs Table */}
-            {poAsnResult && (
-              <div style={{ marginTop: '1rem', padding: '0.85rem 1.15rem', borderRadius: '8px', backgroundColor: poAsnResult.success ? 'rgba(56, 189, 248, 0.08)' : 'rgba(239, 68, 68, 0.08)', border: `1px solid ${poAsnResult.success ? 'rgba(56, 189, 248, 0.35)' : 'rgba(239, 68, 68, 0.35)'}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#38bdf8' }}>
-                    Associated ASNs ({poAsnResult.asnLines ? poAsnResult.asnLines.length : 0})
-                  </span>
-                  <button onClick={() => toggleRawJson('poAsn')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}>
-                    {showRawJsonMap['poAsn'] ? 'Hide Technical Response' : 'View Full JSON Response'}
-                  </button>
-                </div>
-
-                {Array.isArray(poAsnResult.asnLines) && poAsnResult.asnLines.length > 0 ? (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)', textAlign: 'left' }}>
-                          <th style={{ padding: '0.35rem 0.5rem' }}>AsnId</th>
-                          <th style={{ padding: '0.35rem 0.5rem' }}>Item ID</th>
-                          <th style={{ padding: '0.35rem 0.5rem' }}>Shipped Qty</th>
-                          <th style={{ padding: '0.35rem 0.5rem' }}>PO Line ID</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {poAsnResult.asnLines.map((line, idx) => (
-                          <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                            <td style={{ padding: '0.35rem 0.5rem', fontFamily: 'var(--font-mono, monospace)', fontWeight: 600, color: '#10b981' }}>
-                              {line.AsnId || line.asnId || '—'}
-                            </td>
-                            <td style={{ padding: '0.35rem 0.5rem' }}>
-                              {line.ItemId || line.itemId || '—'}
-                            </td>
-                            <td style={{ padding: '0.35rem 0.5rem', color: '#38bdf8' }}>
-                              {line.ShippedQuantity ?? line.shippedQuantity ?? 0}
-                            </td>
-                            <td style={{ padding: '0.35rem 0.5rem', fontFamily: 'var(--font-mono, monospace)' }}>
-                              {line.PurchaseOrderLineId || line.purchaseOrderLineId || '—'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    {poAsnResult.cleanError || 'No ASN deliveries associated with this PO yet'}
-                  </div>
-                )}
-
-                {showRawJsonMap['poAsn'] && poAsnResult.rawResponse && (
-                  <pre style={{ marginTop: '0.5rem', padding: '0.65rem', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '4px', maxHeight: '160px', overflow: 'auto', fontSize: '0.72rem', color: '#34d399', whiteSpace: 'pre-wrap' }}>
-                    {formatPayload(poAsnResult.rawResponse)}
-                  </pre>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* --- PO: Direct Save PO --- */}
-        {selectedDocCategory === 'PO' && activeConsoleTab === 'PO_SAVE' && (
+        {/* --- Purchase Order (PO) Payload & Direct Dispatch --- */}
+        {selectedDocCategory === 'PO' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
               <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
@@ -1304,76 +898,8 @@ export default function MawmDispatchPage({
           </div>
         )}
 
-        {/* --- ASN: ASN Verification Search --- */}
-        {selectedDocCategory === 'ASN' && activeConsoleTab === 'ASN_STATUS' && (
-          <div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem', alignItems: 'flex-end' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
-                  AsnId to Search:
-                </label>
-                <input
-                  type="text"
-                  list="available-asn-ids"
-                  value={searchAsnId}
-                  onChange={(e) => setSearchAsnId(e.target.value)}
-                  placeholder="Enter AsnId or select from table below..."
-                  className="input-field"
-                  style={{ width: '100%', padding: '0.45rem 0.75rem', fontSize: '0.82rem', fontFamily: 'var(--font-mono, monospace)' }}
-                />
-                <datalist id="available-asn-ids">
-                  {availableAsnIds.map((id) => (
-                    <option key={id} value={id} />
-                  ))}
-                </datalist>
-              </div>
-
-              <div>
-                <button
-                  onClick={() => handleManualSearchAsn()}
-                  disabled={searchingAsn || !searchAsnId.trim()}
-                  className="btn-primary"
-                  style={{ width: '100%', padding: '0.48rem 1rem', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', backgroundColor: '#0284c7' }}
-                >
-                  <Search size={14} className={searchingAsn ? 'spin-icon' : ''} />
-                  <span>{searchingAsn ? 'Querying MAWM...' : 'Check ASN Status'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* ASN Search Output Box */}
-            {asnSearchResult && (
-              <div style={{ marginTop: '1rem', padding: '0.85rem 1.15rem', borderRadius: '8px', backgroundColor: asnSearchResult.success ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)', border: `1px solid ${asnSearchResult.success ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}` }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.4rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ backgroundColor: asnSearchResult.success ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: asnSearchResult.success ? '#10b981' : '#ef4444', fontSize: '0.74rem', fontWeight: 700, padding: '0.18rem 0.55rem', borderRadius: '4px' }}>
-                      {asnSearchResult.success ? `STATUS: ${asnSearchResult.asnStatus || asnSearchResult.statusDescription || 'OK'}` : `HTTP ${asnSearchResult.statusCode || 500} ERROR`}
-                    </span>
-                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                      AsnId: <strong>{asnSearchResult.asnId || searchAsnId}</strong>
-                    </span>
-                  </div>
-                  <button onClick={() => toggleRawJson('asnSearch')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}>
-                    {showRawJsonMap['asnSearch'] ? 'Hide Technical Response' : 'View Full JSON Response'}
-                  </button>
-                </div>
-
-                <div style={{ fontSize: '0.82rem', color: asnSearchResult.success ? '#10b981' : '#f87171', fontWeight: 600 }}>
-                  {asnSearchResult.success ? `Live Response Fact: ${asnSearchResult.statusDescription || asnSearchResult.asnStatus}` : (asnSearchResult.cleanError || asnSearchResult.error)}
-                </div>
-
-                {showRawJsonMap['asnSearch'] && asnSearchResult.rawResponse && (
-                  <pre style={{ marginTop: '0.5rem', padding: '0.65rem', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '4px', maxHeight: '160px', overflow: 'auto', fontSize: '0.72rem', color: '#34d399', whiteSpace: 'pre-wrap' }}>
-                    {formatPayload(asnSearchResult.rawResponse)}
-                  </pre>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* --- ASN: Direct Save ASN --- */}
-        {selectedDocCategory === 'ASN' && activeConsoleTab === 'ASN_SAVE' && (
+        {/* --- Advanced Shipping Notice (ASN) Payload & Direct Dispatch --- */}
+        {selectedDocCategory === 'ASN' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
               <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
@@ -1382,7 +908,7 @@ export default function MawmDispatchPage({
               <button
                 type="button"
                 onClick={() => setDirectAsnJson(JSON.stringify(DEFAULT_ASN_SAMPLE, null, 2))}
-                style={{ background: 'none', border: 'none', color: '#38bdf8', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}
+                style={{ background: 'none', border: 'none', color: '#10b981', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}
               >
                 Reset Specification Default
               </button>
