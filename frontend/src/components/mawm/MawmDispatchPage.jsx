@@ -20,7 +20,8 @@ import {
   ListOrdered,
   Layers,
   Database,
-  Package
+  Package,
+  Trash2
 } from 'lucide-react';
 import { integrationApi } from '../../services/integrationApi';
 
@@ -145,6 +146,7 @@ export default function MawmDispatchPage({
   const [directItemJson, setDirectItemJson] = useState(JSON.stringify(DEFAULT_ITEM_SAMPLE, null, 2));
   const [savingItemDirect, setSavingItemDirect] = useState(false);
   const [directItemResult, setDirectItemResult] = useState(null);
+  const [cleaningItems, setCleaningItems] = useState(false);
 
   const [showRawJsonMap, setShowRawJsonMap] = useState({});
 
@@ -182,56 +184,50 @@ export default function MawmDispatchPage({
     }
   };
 
-  const isItemRecord = useCallback((job) => {
+  const isPoRecord = useCallback((job) => {
     if (!job) return false;
     const type = (job.transactionType || '').toUpperCase();
-    if (type === 'ITEM' || type.includes('ITEM') || type.includes('PRODUCT') || type.includes('SKU') || type.includes('PART')) return true;
-    const storage = (job.storagePath || '').toLowerCase();
-    if (storage.includes('item')) return true;
-    const profile = (job.mappingProfile || '').toLowerCase();
-    if (profile.includes('item')) return true;
+    if (type === 'PO' || type.includes('PURCHASE') || type.includes('ORDER')) return true;
+    if (job.outputFiles && (job.outputFiles.includes('PurchaseOrderId') || job.outputFiles.includes('purchaseOrder'))) return true;
+    if (job.rawContent && (job.rawContent.includes('PurchaseOrderId') || job.rawContent.includes('purchaseOrder'))) return true;
+    if (job.mawmResponse && (job.mawmResponse.includes('PurchaseOrderId') || job.mawmResponse.includes('purchaseOrder'))) return true;
     const fn = (job.originalFilename || '').toUpperCase();
-    if (fn.includes('ITEM')) return true;
-    if (job.outputFiles && (job.outputFiles.includes('ItemId') || job.outputFiles.includes('itemId') || job.outputFiles.includes('PrimaryBarCode'))) return true;
-    if (job.rawContent && (job.rawContent.includes('ItemId') || job.rawContent.includes('itemId') || job.rawContent.includes('PrimaryBarCode'))) return true;
-    if (job.mawmResponse && (job.mawmResponse.includes('ProfileId') || job.mawmResponse.includes('ItemId') || job.mawmResponse.includes('itemId'))) return true;
+    if (fn.includes('PO') || fn.includes('ORDER') || fn.includes('PURCHASE')) return true;
+    const storage = (job.storagePath || '').toLowerCase();
+    if (storage.includes('po')) return true;
     return false;
   }, []);
 
   const isAsnRecord = useCallback((job) => {
     if (!job) return false;
-    if (isItemRecord(job)) return false;
+    if (isPoRecord(job)) return false;
     const type = (job.transactionType || '').toUpperCase();
     if (type === 'ASN' || type.includes('ASN') || type.includes('SHIPMENT')) return true;
-    const storage = (job.storagePath || '').toLowerCase();
-    if (storage.includes('asn')) return true;
-    const profile = (job.mappingProfile || '').toLowerCase();
-    if (profile.includes('asn')) return true;
-    const fn = (job.originalFilename || '').toUpperCase();
-    if (fn.includes('ASN')) return true;
     if (job.outputFiles && (job.outputFiles.includes('AsnId') || job.outputFiles.includes('asnId') || job.outputFiles.includes('AsnLine'))) return true;
     if (job.rawContent && (job.rawContent.includes('AsnId') || job.rawContent.includes('asnId') || job.rawContent.includes('AsnLine'))) return true;
     if (job.mawmResponse && (job.mawmResponse.includes('AsnId') || job.mawmResponse.includes('asnId') || job.mawmResponse.includes('AsnLine'))) return true;
+    const fn = (job.originalFilename || '').toUpperCase();
+    if (fn.includes('ASN')) return true;
+    const storage = (job.storagePath || '').toLowerCase();
+    if (storage.includes('asn')) return true;
     return false;
-  }, [isItemRecord]);
+  }, [isPoRecord]);
 
-  const isPoRecord = useCallback((job) => {
+  const isItemRecord = useCallback((job) => {
     if (!job) return false;
-    if (isItemRecord(job)) return false;
+    if (isPoRecord(job)) return false;
     if (isAsnRecord(job)) return false;
     const type = (job.transactionType || '').toUpperCase();
-    if (type === 'PO' || type.includes('PURCHASE') || type.includes('ORDER')) return true;
-    const storage = (job.storagePath || '').toLowerCase();
-    if (storage.includes('po')) return true;
-    const profile = (job.mappingProfile || '').toLowerCase();
-    if (profile.includes('po')) return true;
+    if (type === 'ITEM' || type === 'ITEM_MASTER' || type.includes('ITEM')) return true;
+    const topic = (job.kafkaTopic || '').toLowerCase();
+    if (topic.includes('item')) return true;
     const fn = (job.originalFilename || '').toUpperCase();
-    if (fn.includes('PO') || fn.includes('ORDER') || fn.includes('PURCHASE')) return true;
-    if (job.outputFiles && (job.outputFiles.includes('PurchaseOrderId') || job.outputFiles.includes('purchaseOrder'))) return true;
-    if (job.rawContent && (job.rawContent.includes('PurchaseOrderId') || job.rawContent.includes('purchaseOrder'))) return true;
-    if (job.mawmResponse && (job.mawmResponse.includes('PurchaseOrderId') || job.mawmResponse.includes('purchaseOrder'))) return true;
+    if (fn.includes('ITEM')) return true;
+    if (job.rawContent && (job.rawContent.includes('standardQtyUom') || job.rawContent.includes('PrimaryBarCode'))) return true;
+    if (job.outputFiles && (job.outputFiles.includes('standardQtyUom') || job.outputFiles.includes('PrimaryBarCode'))) return true;
+    if (job.mawmResponse && (job.mawmResponse.includes('ProfileId') || job.mawmResponse.includes('/item/save'))) return true;
     return false;
-  }, [isItemRecord, isAsnRecord]);
+  }, [isPoRecord, isAsnRecord]);
 
   // Robust Item ID extraction
   const extractItemId = useCallback((job) => {
@@ -403,15 +399,20 @@ export default function MawmDispatchPage({
   // Extract status directly from actual API response fact
   const extractLiveStatus = useCallback((job) => {
     if (!job) return null;
-    if (rowStatusMap[job.jobId]) return rowStatusMap[job.jobId];
     if (isItemRecord(job)) {
+      if (rowStatusMap[job.jobId] && rowStatusMap[job.jobId] !== 'NO_RECORD_FOUND') return rowStatusMap[job.jobId];
       if (job.dispatchStatus && (job.dispatchStatus.includes('DELIVERED') || job.dispatchStatus.includes('200'))) {
         return 'SAVED / ACTIVE';
       }
       if (job.mawmResponse && (job.mawmResponse.includes('success') || job.mawmResponse.includes('ProfileId'))) {
         return 'SAVED / ACTIVE';
       }
+      if (job.dispatchStatus && job.dispatchStatus.includes('FAILED')) {
+        return 'DISPATCH_FAILED';
+      }
+      return 'PENDING';
     }
+    if (rowStatusMap[job.jobId]) return rowStatusMap[job.jobId];
     if (job.mawmAsnStatus) return job.mawmAsnStatus;
     if (job.mawmResponse && typeof job.mawmResponse === 'string') {
       try {
@@ -614,6 +615,23 @@ export default function MawmDispatchPage({
       });
     } finally {
       setSavingItemDirect(false);
+    }
+  };
+
+  // Clean all Item Master records from DB
+  const handleCleanItemRecords = async () => {
+    if (!window.confirm('Are you sure you want to clean all Item Master records from the database? Purchase Orders (PO) and ASN records will not be affected.')) {
+      return;
+    }
+    setCleaningItems(true);
+    try {
+      const res = await integrationApi.cleanItemRecords();
+      alert(`Cleaned ${res.deleted || 0} Item Master records successfully.`);
+      await loadData(true);
+    } catch (err) {
+      alert(`Failed to clean item records: ${err.message}`);
+    } finally {
+      setCleaningItems(false);
     }
   };
 
@@ -1216,6 +1234,28 @@ export default function MawmDispatchPage({
               >
                 Item Master (ITEM)
               </button>
+              {selectedDocTypeFilter === 'ITEM' && (
+                <button
+                  type="button"
+                  onClick={handleCleanItemRecords}
+                  disabled={cleaningItems}
+                  className="btn-secondary"
+                  style={{
+                    fontSize: '0.7rem',
+                    padding: '0.2rem 0.55rem',
+                    color: '#f87171',
+                    borderColor: 'rgba(239, 68, 68, 0.4)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.3rem',
+                    marginLeft: '0.25rem'
+                  }}
+                  title="Clean all Item Master records from the database"
+                >
+                  <Trash2 size={12} />
+                  <span>{cleaningItems ? 'Cleaning...' : 'Clean Item Records'}</span>
+                </button>
+              )}
             </div>
           </div>
 

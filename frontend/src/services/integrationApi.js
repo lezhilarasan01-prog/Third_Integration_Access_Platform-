@@ -746,6 +746,18 @@ export const integrationApi = {
     return res.json();
   },
 
+  async cleanItemRecords() {
+    const res = await fetch(`${BASE_URL}/api/v1/erp/transactions/items`, {
+      method: 'DELETE'
+    });
+    this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || 'Failed to clean item records');
+    }
+    return res.json();
+  },
+
   async searchPoStatus(purchaseOrderId, facilityId = 'Food_Cbe', username) {
     const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/search-po`, {
       method: 'POST',

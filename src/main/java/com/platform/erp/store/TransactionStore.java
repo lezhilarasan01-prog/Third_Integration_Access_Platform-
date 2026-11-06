@@ -351,6 +351,13 @@ public class TransactionStore {
         return false;
     }
 
+    @Transactional
+    public int deleteItemTrackers() {
+        int count = trackerRepository.deleteItemTrackers();
+        log.info("[DB Tracker] Successfully deleted {} Item Master tracker records", count);
+        return count;
+    }
+
     public List<ErpFileIntakeTracker> getAllTrackers(int page, int size) {
         org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(
                 Math.max(0, page),

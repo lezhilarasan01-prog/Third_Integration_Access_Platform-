@@ -44,6 +44,11 @@ public interface ErpFileIntakeTrackerRepository extends JpaRepository<ErpFileInt
 
     @org.springframework.data.jpa.repository.Modifying
     @org.springframework.transaction.annotation.Transactional
+    @Query("DELETE FROM ErpFileIntakeTracker t WHERE UPPER(t.transactionType) = 'ITEM' OR UPPER(t.transactionType) = 'ITEM_MASTER' OR t.kafkaTopic LIKE '%item%'")
+    int deleteItemTrackers();
+
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
     @Query("UPDATE ErpFileIntakeTracker t SET t.kafkaTopic = :topic, t.kafkaPartition = :partition, t.kafkaOffset = :offset, t.updatedAt = :now WHERE t.jobId = :jobId")
     int updateKafkaCoordinates(
             @org.springframework.data.repository.query.Param("jobId") String jobId,

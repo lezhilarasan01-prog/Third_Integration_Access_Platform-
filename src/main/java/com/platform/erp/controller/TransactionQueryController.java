@@ -144,6 +144,16 @@ public class TransactionQueryController {
     }
 
     /**
+     * Clean all Item Master tracker rows from the database.
+     * Example: DELETE /api/v1/erp/transactions/items
+     */
+    @DeleteMapping("/items")
+    public ResponseEntity<Map<String, Object>> deleteItemTrackers() {
+        int deleted = transactionStore.deleteItemTrackers();
+        return ResponseEntity.ok(Map.of("deleted", deleted, "message", "Successfully cleaned all Item Master records."));
+    }
+
+    /**
      * Download the exact original raw file that the customer sent.
      * Supports both inline payloads and large Claim-Check streamed blobs.
      * Example: GET /api/v1/erp/transactions/{jobId}/download/raw
