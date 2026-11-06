@@ -1,5 +1,6 @@
 package com.platform.erp.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.platform.erp.model.CanonicalEnvelope;
 import com.platform.erp.model.IngestionAckResponse;
@@ -17,6 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.multipart.MultipartHttpServletRequest;
 import org.springframework.web.multipart.MultipartResolver;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
 
@@ -108,8 +110,12 @@ public class ErpIngestionController {
      * Supports multipart form-data file uploads and raw request bodies (JSON, XML, CSV, EDI).
      * Strictly restricted to OPTI host system.
      */
-    @PostMapping(value = { "/{erpSource}/files", "/{erpSource}/ingest", "/{erpSource}",
-            "/{erpSource}/raw", "/files", "/ingest", "/raw" }, consumes = MediaType.ALL_VALUE)
+    @PostMapping(value = { 
+            "/{erpSource}/files", "/{erpSource}/ingest", "/{erpSource}", "/{erpSource}/raw", 
+            "/files", "/ingest", "/raw",
+            "/intake/{erpSource}/files", "/intake/{erpSource}/ingest", "/intake/{erpSource}",
+            "/intake/files", "/intake/ingest", "/intake"
+    }, consumes = MediaType.ALL_VALUE)
     public ResponseEntity<?> ingestPayload(
             @PathVariable(value = "erpSource", required = false) String erpSourcePath,
             @RequestParam(value = "erpSource", required = false) String erpSourceParam,
@@ -136,6 +142,20 @@ public class ErpIngestionController {
         if (erpSource == null || erpSource.isBlank()
                 || "files".equalsIgnoreCase(erpSource)
                 || "ingest".equalsIgnoreCase(erpSource)
+                || "intake".equalsIgnoreCase(erpSource)
+                || "raw".equalsIgnoreCase(erpSource)) {
+            String uri = request != null ? request.getRequestURI() : null;
+            if (uri != null) {
+                if (uri.toLowerCase().contains("/opti")) {
+                    erpSource = "Opti";
+                }
+            }
+        }
+
+        if (erpSource == null || erpSource.isBlank()
+                || "files".equalsIgnoreCase(erpSource)
+                || "ingest".equalsIgnoreCase(erpSource)
+                || "intake".equalsIgnoreCase(erpSource)
                 || "raw".equalsIgnoreCase(erpSource)) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "MISSING_HOST_SOURCE", "message", "Host Source is mandatory. Please specify a valid host source system"));
         }
@@ -191,18 +211,18 @@ public class ErpIngestionController {
                 resolvedFilename = extractFilenameFromContentDisposition(contentDisposition);
             }
 
-            // 5. Document Type Resolution (Read strictly from docType: PO or ASN, else null)
+            // 5. Document Type Resolution (Reads from params, headers, or auto-detects from filename and dynamic payload)
             String requestedDocType = (docTypeParam != null && !docTypeParam.isBlank()) ? docTypeParam
                     : (typeParam != null && !typeParam.isBlank()) ? typeParam
                     : (headerDocType != null && !headerDocType.isBlank()) ? headerDocType
                     : (customTopic != null && !customTopic.isBlank()) ? customTopic
                     : headerTopic;
-            String docType = resolveDocType(requestedDocType);
+            String docType = resolveDocType(requestedDocType, resolvedFilename, payload);
 
             if (docType == null) {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
                         "error", "INVALID_DOCUMENT_TYPE",
-                        "message", "Document type is invalid or missing. Must be either 'PO', 'ASN', or 'ITEM'."
+                        "message", "Document type could not be determined. Must be 'DO', 'PO', 'ASN', or 'ITEM', or contain distribution/order/asn/item payload fields."
                 ));
             }
 
@@ -296,20 +316,104 @@ public class ErpIngestionController {
         }
     }
 
-    private String resolveDocType(String requestedDocType) {
+    private String resolveDocType(String requestedDocType, String filename, byte[] payload) {
         if (requestedDocType != null && !requestedDocType.isBlank()) {
             String upper = requestedDocType.trim().toUpperCase();
+            if (upper.equals("DO") || upper.contains("DISTRIBUTION") || upper.contains("DCORDER") || upper.contains("DC_ORDER") || upper.startsWith("DO_") || upper.startsWith("DO-")) {
+                return "DO";
+            }
             if (upper.contains("ASN") || upper.contains("DESADV") || upper.contains("SHIP")) {
                 return "ASN";
-            }
-            if (upper.contains("PO") || upper.contains("ORDER") || upper.contains("PURCHASE")) {
-                return "PO";
             }
             if (upper.contains("ITEM") || upper.contains("PART") || upper.contains("SKU") || upper.contains("PRODUCT")) {
                 return "ITEM";
             }
+            if (upper.contains("PURCHASE") || upper.startsWith("PO_") || upper.startsWith("PO-") || upper.equals("PO")) {
+                return "PO";
+            }
+            if (upper.contains("ORDER")) {
+                if (isDistributionOrder(filename, payload)) {
+                    return "DO";
+                }
+                return "PO";
+            }
         }
+
+        // Automatic content-based detection: check filename first
+        if (filename != null && !filename.isBlank()) {
+            String upperFn = filename.toUpperCase();
+            if (upperFn.contains("DISTRIBUTION") || upperFn.contains("DCORDER") || upperFn.startsWith("DO_") || upperFn.startsWith("DO-") || upperFn.contains("_DO_") || upperFn.contains("-DO-")) {
+                return "DO";
+            }
+            if (upperFn.contains("ASN") || upperFn.contains("DESADV") || upperFn.contains("SHIP")) {
+                return "ASN";
+            }
+            if (upperFn.contains("ITEM") || upperFn.contains("SKU") || upperFn.contains("PART")) {
+                return "ITEM";
+            }
+            if (upperFn.contains("PURCHASE") || upperFn.startsWith("PO_") || upperFn.startsWith("PO-")) {
+                return "PO";
+            }
+        }
+
+        // Automatic content-based detection: check payload JSON
+        if (payload != null && payload.length > 0) {
+            try {
+                String str = new String(payload, StandardCharsets.UTF_8).trim();
+                if (str.startsWith("{") || str.startsWith("[")) {
+                    JsonNode node = objectMapper.readTree(str);
+                    if (node.isArray() && node.size() > 0) node = node.get(0);
+                    if (node.has("data") && node.get("data").isObject()) node = node.get("data");
+                    if (node.has("Data") && node.get("Data").isArray() && node.get("Data").size() > 0) node = node.get("Data").get(0);
+
+                    if (isDistributionOrderNode(node)) {
+                        return "DO";
+                    }
+                    if (node.has("AsnId") || node.has("asnId") || node.has("inboundDelivery") || node.has("AsnLine")) {
+                        return "ASN";
+                    }
+                    if (node.has("PurchaseOrderId") || node.has("purchaseOrderId") || node.has("PurchaseOrderLine")) {
+                        return "PO";
+                    }
+                    if (node.has("ItemId") || node.has("itemId") || node.has("PrimaryBarCode")) {
+                        return "ITEM";
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
         return null;
+    }
+
+    private boolean isDistributionOrder(String filename, byte[] payload) {
+        if (filename != null) {
+            String upper = filename.toUpperCase();
+            if (upper.contains("DISTRIBUTION") || upper.contains("DCORDER") || upper.startsWith("DO_") || upper.startsWith("DO-")) {
+                return true;
+            }
+        }
+        if (payload != null && payload.length > 0) {
+            try {
+                JsonNode node = objectMapper.readTree(payload);
+                if (node.isArray() && node.size() > 0) node = node.get(0);
+                return isDistributionOrderNode(node);
+            } catch (Exception ignored) {}
+        }
+        return false;
+    }
+
+    private boolean isDistributionOrderNode(JsonNode node) {
+        if (node == null || !node.isObject()) return false;
+        if (node.has("DistributionOrderId") || node.has("distributionOrderId")) return true;
+        if (node.has("dcorder") || node.has("dcOrder")) return true;
+        if (node.has("OriginFacilityId") || node.has("originFacilityId")) return true;
+        if (node.has("OrderLine") || node.has("orderLine")) {
+            return !node.has("PurchaseOrderId") && !node.has("purchaseOrderId") && !node.has("PurchaseOrderLine");
+        }
+        if (node.has("OrderId") || node.has("orderId")) {
+            return !node.has("PurchaseOrderId") && !node.has("purchaseOrderId") && !node.has("AsnId") && !node.has("asnId");
+        }
+        return false;
     }
 
     private String extractFilenameFromContentDisposition(String contentDisposition) {

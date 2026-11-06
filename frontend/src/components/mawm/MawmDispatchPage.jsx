@@ -93,7 +93,77 @@ const PRESET_QUERIES = {
       needTotalCount: 'true',
       query: 'UpdatedTimestamp>2026-10-30T00:00:00'
     }
+  },
+  DO_STATUS: {
+    api: 'DO',
+    label: 'Search DO Status (5.5.4)',
+    endpoint: '/dcorder/api/dcorder/order/search',
+    payload: {
+      "Query": "OrderId = 'DO-2026-0001'",
+      "Template": {
+        "OrderId": "",
+        "MinimumStatusDescription": "",
+        "MaximumStatusDescription": ""
+      }
+    }
+  },
+  DO_LINES: {
+    api: 'DO_LINE',
+    label: 'Search DO Line Progress (5.5.5)',
+    endpoint: '/dcorder/api/dcorder/orderLine/search',
+    payload: {
+      "Query": "OrderId = 'DO-2026-0001'",
+      "Template": {
+        "OrderLineId": "",
+        "Status": "",
+        "OrderedQuantity": "",
+        "AllocatedQuantity": "",
+        "PackedQuantity": "",
+        "ShippedQuantity": "",
+        "ParentOrderLineId": ""
+      }
+    }
   }
+};
+
+const DEFAULT_DO_SAMPLE = {
+  OrderId: "DO-2026-0001",
+  OrderType: "Standard",
+  Priority: 1,
+  BillToName: "Retail Store 105",
+  OriginFacilityId: "Food_Cbe",
+  DestinationFacilityId: "STORE_105",
+  OriginAddress: {
+    Address1: "100 Warehouse Way",
+    Address2: "Building B",
+    Address3: "",
+    City: "Coimbatore",
+    State: "Tamil Nadu",
+    PostalCode: "641001",
+    Country: "IND",
+    Phone: "9876543210",
+    Email: "warehouse@example.com"
+  },
+  DestinationAddress: {
+    Address1: "45 Mall Road",
+    Address2: "Ground Floor",
+    Address3: "",
+    City: "Chennai",
+    State: "Tamil Nadu",
+    PostalCode: "600002",
+    Country: "IND",
+    Phone: "9876543211",
+    Email: "store105@example.com"
+  },
+  OrderLine: [
+    {
+      OrderLineId: "1",
+      ItemId: "SKU-MILK-1001",
+      OrderedQuantity: 240,
+      QuantityUomId: "EA",
+      Canceled: false
+    }
+  ]
 };
 
 const DEFAULT_PO_SAMPLE = {
@@ -219,8 +289,14 @@ export default function MawmDispatchPage({
   const [directItemResult, setDirectItemResult] = useState(null);
   const [cleaningItems, setCleaningItems] = useState(false);
 
+  // Direct Distribution Order (DO) Save State
+  const [directDoJson, setDirectDoJson] = useState(JSON.stringify(DEFAULT_DO_SAMPLE, null, 2));
+  const [savingDoDirect, setSavingDoDirect] = useState(false);
+  const [directDoResult, setDirectDoResult] = useState(null);
+  const [cleaningDo, setCleaningDo] = useState(false);
+
   // Dynamic Query & Sync Explorer State (Non-Standard ERP Gateway)
-  const [selectedQueryApi, setSelectedQueryApi] = useState('ASN'); // 'ASN' | 'PO' | 'PO_LINE' | 'ASN_LINE' | 'ITEM_SYNC'
+  const [selectedQueryApi, setSelectedQueryApi] = useState('ASN'); // 'ASN' | 'PO' | 'PO_LINE' | 'ASN_LINE' | 'ITEM_SYNC' | 'DO' | 'DO_LINE'
   const [dynamicQueryJson, setDynamicQueryJson] = useState(JSON.stringify(PRESET_QUERIES.ASN_VERIFIED.payload, null, 2));
   const [dynamicItemParams, setDynamicItemParams] = useState({ ...PRESET_QUERIES.ITEM_SYNC.queryParams });
   const [storeQueryAudit, setStoreQueryAudit] = useState(false);
@@ -271,22 +347,38 @@ export default function MawmDispatchPage({
     }
   };
 
-  const isPoRecord = useCallback((job) => {
+  const isDoRecord = useCallback((job) => {
     if (!job) return false;
     const type = (job.transactionType || '').toUpperCase();
-    if (type === 'PO' || type.includes('PURCHASE') || type.includes('ORDER')) return true;
+    if (type === 'DO' || type === 'DCORDER' || type === 'DISTRIBUTION_ORDER' || type.includes('DISTRIBUTION') || type.includes('DCORDER')) return true;
+    if (job.outputFiles && (job.outputFiles.includes('OriginFacilityId') || (job.outputFiles.includes('OrderId') && !job.outputFiles.includes('PurchaseOrderId')))) return true;
+    if (job.rawContent && (job.rawContent.includes('OriginFacilityId') || (job.rawContent.includes('OrderId') && !job.rawContent.includes('PurchaseOrderId')))) return true;
+    const fn = (job.originalFilename || '').toUpperCase();
+    if (fn.includes('DCORDER') || fn.includes('DISTRIBUTION') || fn.startsWith('DO_') || fn.startsWith('DO-') || fn.includes('_DO_') || fn.includes('-DO-')) return true;
+    const storage = (job.storagePath || '').toLowerCase();
+    if (storage.includes('dcorder') || storage.includes('do')) return true;
+    return false;
+  }, []);
+
+  const isPoRecord = useCallback((job) => {
+    if (!job) return false;
+    if (isDoRecord(job)) return false;
+    const type = (job.transactionType || '').toUpperCase();
+    if (type === 'PO' || type.includes('PURCHASE')) return true;
+    if (type.includes('ORDER') && !type.includes('DISTRIBUTION') && !type.includes('DCORDER')) return true;
     if (job.outputFiles && (job.outputFiles.includes('PurchaseOrderId') || job.outputFiles.includes('purchaseOrder'))) return true;
     if (job.rawContent && (job.rawContent.includes('PurchaseOrderId') || job.rawContent.includes('purchaseOrder'))) return true;
     if (job.mawmResponse && (job.mawmResponse.includes('PurchaseOrderId') || job.mawmResponse.includes('purchaseOrder'))) return true;
     const fn = (job.originalFilename || '').toUpperCase();
-    if (fn.includes('PO') || fn.includes('ORDER') || fn.includes('PURCHASE')) return true;
+    if (fn.includes('PO') || fn.includes('PURCHASE') || (fn.includes('ORDER') && !fn.includes('DISTRIBUTION') && !fn.includes('DCORDER'))) return true;
     const storage = (job.storagePath || '').toLowerCase();
     if (storage.includes('po')) return true;
     return false;
-  }, []);
+  }, [isDoRecord]);
 
   const isAsnRecord = useCallback((job) => {
     if (!job) return false;
+    if (isDoRecord(job)) return false;
     if (isPoRecord(job)) return false;
     const type = (job.transactionType || '').toUpperCase();
     if (type === 'ASN' || type.includes('ASN') || type.includes('SHIPMENT')) return true;
@@ -298,10 +390,11 @@ export default function MawmDispatchPage({
     const storage = (job.storagePath || '').toLowerCase();
     if (storage.includes('asn')) return true;
     return false;
-  }, [isPoRecord]);
+  }, [isDoRecord, isPoRecord]);
 
   const isItemRecord = useCallback((job) => {
     if (!job) return false;
+    if (isDoRecord(job)) return false;
     if (isPoRecord(job)) return false;
     if (isAsnRecord(job)) return false;
     const type = (job.transactionType || '').toUpperCase();
@@ -314,7 +407,40 @@ export default function MawmDispatchPage({
     if (job.outputFiles && (job.outputFiles.includes('standardQtyUom') || job.outputFiles.includes('PrimaryBarCode'))) return true;
     if (job.mawmResponse && (job.mawmResponse.includes('ProfileId') || job.mawmResponse.includes('/item/save'))) return true;
     return false;
-  }, [isPoRecord, isAsnRecord]);
+  }, [isDoRecord, isPoRecord, isAsnRecord]);
+
+  // Robust Distribution Order (DO) ID extraction
+  const extractDoId = useCallback((job) => {
+    if (!job) return '';
+    if (job.outputFiles && typeof job.outputFiles === 'string') {
+      try {
+        const parsed = JSON.parse(job.outputFiles);
+        const dataArr = parsed.Data || parsed.data || (Array.isArray(parsed) ? parsed : null);
+        if (Array.isArray(dataArr) && dataArr[0]?.OrderId) return String(dataArr[0].OrderId);
+        if (parsed.OrderId) return String(parsed.OrderId);
+        if (parsed.orderId) return String(parsed.orderId);
+      } catch (e) {}
+      const m = job.outputFiles.match(/"OrderId"\s*:\s*"([^"]+)"/i) || job.outputFiles.match(/"orderId"\s*:\s*"([^"]+)"/i);
+      if (m && m[1]) return m[1];
+    }
+    if (job.rawContent && typeof job.rawContent === 'string') {
+      try {
+        const parsed = JSON.parse(job.rawContent);
+        if (parsed.OrderId) return String(parsed.OrderId);
+        if (parsed.orderId) return String(parsed.orderId);
+      } catch (e) {}
+      const m = job.rawContent.match(/"OrderId"\s*:\s*"([^"]+)"/i) || job.rawContent.match(/"orderId"\s*:\s*"([^"]+)"/i);
+      if (m && m[1]) return m[1];
+    }
+    if (job.originalFilename) {
+      const m = job.originalFilename.match(/(DO[-_A-Za-z0-9]+)/i);
+      if (m && m[1]) return m[1];
+    }
+    if (job.jobId) {
+      return `DO-${job.jobId.slice(0, 8).toUpperCase()}`;
+    }
+    return 'DO-2026-0001';
+  }, []);
 
   // Robust Item ID extraction
   const extractItemId = useCallback((job) => {
@@ -440,6 +566,9 @@ export default function MawmDispatchPage({
   // Unified Document ID extraction
   const extractDocId = useCallback((job) => {
     if (!job) return { id: '', type: 'PO' };
+    if (isDoRecord(job)) {
+      return { id: extractDoId(job), type: 'DO' };
+    }
     if (isItemRecord(job)) {
       return { id: extractItemId(job), type: 'ITEM' };
     }
@@ -450,6 +579,9 @@ export default function MawmDispatchPage({
       return { id: extractPoId(job), type: 'PO' };
     }
     const fn = (job.originalFilename || '').toUpperCase();
+    if (fn.includes('DCORDER') || fn.includes('DISTRIBUTION') || fn.startsWith('DO_') || fn.startsWith('DO-')) {
+      return { id: extractDoId(job), type: 'DO' };
+    }
     if (fn.includes('ITEM')) {
       return { id: extractItemId(job), type: 'ITEM' };
     }
@@ -457,7 +589,7 @@ export default function MawmDispatchPage({
       return { id: extractAsnId(job), type: 'ASN' };
     }
     return { id: extractPoId(job), type: 'PO' };
-  }, [isItemRecord, isAsnRecord, isPoRecord, extractItemId, extractAsnId, extractPoId]);
+  }, [isDoRecord, isItemRecord, isAsnRecord, isPoRecord, extractDoId, extractItemId, extractAsnId, extractPoId]);
 
   // Robust Destination Facility extraction
   const extractFacility = useCallback((job) => {
@@ -466,6 +598,7 @@ export default function MawmDispatchPage({
       try {
         const parsed = JSON.parse(job.mawmResponse);
         const data = parsed.data || parsed.Data || parsed;
+        if (data?.OriginFacilityId) return data.OriginFacilityId;
         if (data?.DestinationFacilityId) return data.DestinationFacilityId;
         if (data?.FacilityId && data.FacilityId !== 'OPTI' && data.FacilityId !== 'SAMPLE') return data.FacilityId;
       } catch (e) {}
@@ -473,7 +606,9 @@ export default function MawmDispatchPage({
     if (job.outputFiles && typeof job.outputFiles === 'string') {
       try {
         const parsed = JSON.parse(job.outputFiles);
+        if (parsed.OriginFacilityId) return parsed.OriginFacilityId;
         if (parsed.DestinationFacilityId) return parsed.DestinationFacilityId;
+        if (Array.isArray(parsed) && parsed[0]?.OriginFacilityId) return parsed[0].OriginFacilityId;
         if (Array.isArray(parsed) && parsed[0]?.DestinationFacilityId) return parsed[0].DestinationFacilityId;
       } catch (e) {}
     }
@@ -486,6 +621,28 @@ export default function MawmDispatchPage({
   // Extract status directly from actual API response fact
   const extractLiveStatus = useCallback((job) => {
     if (!job) return null;
+    if (isDoRecord(job)) {
+      if (rowStatusMap[job.jobId] && rowStatusMap[job.jobId] !== 'NO_RECORD_FOUND') return rowStatusMap[job.jobId];
+      if (job.mawmAsnStatus && job.mawmAsnStatus !== 'NO_RECORD_FOUND') return job.mawmAsnStatus;
+      if (job.statusDescription && job.statusDescription !== 'NO_RECORD_FOUND') return job.statusDescription;
+      if (job.mawmResponse && typeof job.mawmResponse === 'string') {
+        try {
+          const parsed = JSON.parse(job.mawmResponse);
+          const data = parsed.data || parsed.Data || parsed;
+          if (Array.isArray(data) && data[0]?.MinimumStatusDescription) return data[0].MinimumStatusDescription;
+          if (Array.isArray(data) && data[0]?.Status) return data[0].Status;
+          if (data?.MinimumStatusDescription) return data.MinimumStatusDescription;
+          if (data?.Status) return data.Status;
+        } catch (e) {}
+      }
+      if (job.dispatchStatus && (job.dispatchStatus.includes('DELIVERED') || job.dispatchStatus.includes('200'))) {
+        return 'CREATED / ACTIVE';
+      }
+      if (job.dispatchStatus && job.dispatchStatus.includes('FAILED')) {
+        return 'DISPATCH_FAILED';
+      }
+      return 'PENDING';
+    }
     if (isItemRecord(job)) {
       if (rowStatusMap[job.jobId] && rowStatusMap[job.jobId] !== 'NO_RECORD_FOUND') return rowStatusMap[job.jobId];
       if (job.dispatchStatus && (job.dispatchStatus.includes('DELIVERED') || job.dispatchStatus.includes('200'))) {
@@ -506,10 +663,12 @@ export default function MawmDispatchPage({
         const parsed = JSON.parse(job.mawmResponse);
         const data = parsed.data || parsed.Data;
         if (Array.isArray(data) && data[0]) {
+          if (data[0].MinimumStatusDescription) return String(data[0].MinimumStatusDescription);
           if (data[0].PurchaseOrderStatus) return String(data[0].PurchaseOrderStatus);
           if (data[0].purchaseOrderStatusDescription) return String(data[0].purchaseOrderStatusDescription);
           if (data[0].AsnStatus) return String(data[0].AsnStatus);
         }
+        if (data?.MinimumStatusDescription) return String(data.MinimumStatusDescription);
         if (data?.PurchaseOrderStatus) return String(data.PurchaseOrderStatus);
         if (data?.purchaseOrderStatusDescription) return String(data.purchaseOrderStatusDescription);
         if (data?.AsnStatus) return String(data.AsnStatus);
@@ -517,7 +676,7 @@ export default function MawmDispatchPage({
       } catch (e) {}
     }
     return null;
-  }, [rowStatusMap]);
+  }, [isDoRecord, isItemRecord, rowStatusMap]);
 
   const loadData = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true);
@@ -722,6 +881,111 @@ export default function MawmDispatchPage({
     }
   };
 
+  // Direct Save Distribution Order (DO) Action
+  const handleDirectDoSave = async () => {
+    setSavingDoDirect(true);
+    setDirectDoResult(null);
+    try {
+      let parsed;
+      try {
+        parsed = JSON.parse(directDoJson);
+      } catch (jsonErr) {
+        throw new Error('Invalid JSON format: ' + jsonErr.message);
+      }
+      const res = await integrationApi.saveDoDirect(parsed, searchUsername, true);
+      setDirectDoResult(res);
+      await loadData(true);
+    } catch (err) {
+      setDirectDoResult({
+        success: false,
+        statusCode: 500,
+        cleanError: err.message || 'Direct Distribution Order save failed'
+      });
+    } finally {
+      setSavingDoDirect(false);
+    }
+  };
+
+  // Check if DO Exists (5.5.1)
+  const handleCheckDoExists = async () => {
+    setSavingDoDirect(true);
+    try {
+      let parsed = {};
+      try { parsed = JSON.parse(directDoJson); } catch (e) {}
+      const orderId = parsed.OrderId || parsed.orderId || 'DO-2026-0001';
+      const fac = parsed.OriginFacilityId || parsed.DestinationFacilityId || searchFacility;
+      const res = await integrationApi.checkDoExists(orderId, fac, searchUsername);
+      setDirectDoResult(res);
+    } catch (err) {
+      setDirectDoResult({
+        success: false,
+        statusCode: 500,
+        cleanError: err.message || 'Check DO exists failed'
+      });
+    } finally {
+      setSavingDoDirect(false);
+    }
+  };
+
+  // Search DO Status (5.5.4)
+  const handleSearchDoStatusDirect = async () => {
+    setSavingDoDirect(true);
+    try {
+      let parsed = {};
+      try { parsed = JSON.parse(directDoJson); } catch (e) {}
+      const orderId = parsed.OrderId || parsed.orderId || 'DO-2026-0001';
+      const fac = parsed.OriginFacilityId || parsed.DestinationFacilityId || searchFacility;
+      const res = await integrationApi.searchDoStatus(orderId, fac, searchUsername);
+      setDirectDoResult(res);
+    } catch (err) {
+      setDirectDoResult({
+        success: false,
+        statusCode: 500,
+        cleanError: err.message || 'Search DO status failed'
+      });
+    } finally {
+      setSavingDoDirect(false);
+    }
+  };
+
+  // Search DO Lines Progress (5.5.5)
+  const handleSearchDoLinesDirect = async () => {
+    setSavingDoDirect(true);
+    try {
+      let parsed = {};
+      try { parsed = JSON.parse(directDoJson); } catch (e) {}
+      const orderId = parsed.OrderId || parsed.orderId || 'DO-2026-0001';
+      const fac = parsed.OriginFacilityId || parsed.DestinationFacilityId || searchFacility;
+      const res = await integrationApi.searchDoLines(orderId, fac, searchUsername);
+      setDirectDoResult(res);
+    } catch (err) {
+      setDirectDoResult({
+        success: false,
+        statusCode: 500,
+        cleanError: err.message || 'Search DO lines progress failed'
+      });
+    } finally {
+      setSavingDoDirect(false);
+    }
+  };
+
+  // Clean all Distribution Order records from DB
+  const handleCleanDoRecords = async () => {
+    if (!window.confirm('Are you sure you want to clean all Distribution Order (DO) records from the database? PO, ASN, and ITEM records will not be affected.')) {
+      return;
+    }
+    setCleaningDo(true);
+    try {
+      const res = await integrationApi.cleanDoRecords();
+      alert(`Cleaned ${res.deletedCount || 0} Distribution Order records successfully.`);
+      await loadData(true);
+    } catch (err) {
+      alert(`Failed to clean Distribution Order records: ${err.message}`);
+    } finally {
+      setCleaningDo(false);
+    }
+  };
+
   // Dynamic Query Preset Applicator
   const handleApplyPreset = (key) => {
     const preset = PRESET_QUERIES[key];
@@ -758,6 +1022,10 @@ export default function MawmDispatchPage({
           res = await integrationApi.queryPoLineDynamic(parsed, searchFacility, searchUsername, storeQueryAudit);
         } else if (selectedQueryApi === 'ASN_LINE') {
           res = await integrationApi.queryAsnLineDynamic(parsed, searchFacility, searchUsername, storeQueryAudit);
+        } else if (selectedQueryApi === 'DO') {
+          res = await integrationApi.queryDoDynamic(parsed, searchFacility, searchUsername, storeQueryAudit);
+        } else if (selectedQueryApi === 'DO_LINE') {
+          res = await integrationApi.queryDoLineDynamic(parsed, searchFacility, searchUsername, storeQueryAudit);
         }
       }
       setDynamicQueryResult(res);
@@ -809,7 +1077,11 @@ export default function MawmDispatchPage({
     const fac = extractFacility(job) || 'Food_Cbe';
     setVerifyingJobId(jobId);
     try {
-      if (type === 'ITEM') {
+      if (type === 'DO') {
+        const res = await integrationApi.searchDoStatus(id, fac, searchUsername);
+        const actualStatus = res.statusDescription || res.minimumStatusDescription || (res.success ? 'ALLOCATED' : 'ERROR');
+        setRowStatusMap(prev => ({ ...prev, [jobId]: actualStatus }));
+      } else if (type === 'ITEM') {
         const res = await integrationApi.verifyJob(jobId);
         const actualStatus = res.statusDescription || res.mawmStatus || (res.success ? 'SAVED / ACTIVE' : 'PENDING');
         setRowStatusMap(prev => ({ ...prev, [jobId]: actualStatus }));
@@ -870,6 +1142,15 @@ export default function MawmDispatchPage({
       console.warn('Could not load full tracker details:', e);
     }
 
+    if (type === 'DO' && id) {
+      integrationApi.searchDoLines(id, fac, searchUsername)
+        .then(linesRes => setInspectingDetails(prev => ({ ...prev, doLines: linesRes })))
+        .catch(() => {});
+      integrationApi.searchDoStatus(id, fac, searchUsername)
+        .then(statusRes => setInspectingDetails(prev => ({ ...prev, doStatus: statusRes })))
+        .catch(() => {});
+    }
+
     if (type === 'PO' && id && !id.startsWith('PO-RECORD')) {
       integrationApi.searchPoLines(id, fac, searchUsername)
         .then(linesRes => setInspectingDetails(prev => ({ ...prev, lines: linesRes })))
@@ -883,19 +1164,22 @@ export default function MawmDispatchPage({
   // Filtered trackers by ERP Source selector, DocType, and Query
   const filteredTrackers = useMemo(() => {
     return trackers.filter((r) => {
+      const isDo = isDoRecord(r);
       const isAsn = isAsnRecord(r);
       const isPo = isPoRecord(r);
       const isItem = isItemRecord(r);
 
-      // 1. DocType filter (Strictly Purchase Orders, ASN Deliveries, or Item Master)
-      if (selectedDocTypeFilter === 'PO') {
+      // 1. DocType filter (Purchase Orders, ASN Deliveries, Item Master, or Distribution Orders)
+      if (selectedDocTypeFilter === 'DO') {
+        if (!isDo) return false;
+      } else if (selectedDocTypeFilter === 'PO') {
         if (!isPo) return false;
       } else if (selectedDocTypeFilter === 'ASN') {
         if (!isAsn) return false;
       } else if (selectedDocTypeFilter === 'ITEM') {
         if (!isItem) return false;
       } else {
-        if (!isPo && !isAsn && !isItem) return false;
+        if (!isPo && !isAsn && !isItem && !isDo) return false;
       }
 
       // 2. ERP Source Filter (Dropdown selection: OPTI, SAP, HM, OTHER)
@@ -925,7 +1209,7 @@ export default function MawmDispatchPage({
 
       return true;
     });
-  }, [trackers, selectedErp, selectedDocTypeFilter, searchQuery, isAsnRecord, isPoRecord, isItemRecord, extractDocId, extractFacility]);
+  }, [trackers, selectedErp, selectedDocTypeFilter, searchQuery, isDoRecord, isAsnRecord, isPoRecord, isItemRecord, extractDocId, extractFacility]);
 
   // Available real PO and ASN IDs extracted dynamically from actual trackers
   const availablePoIds = useMemo(() => {
@@ -1254,6 +1538,27 @@ export default function MawmDispatchPage({
 
             <button
               onClick={() => {
+                setSelectedDocCategory('DO');
+                setSelectedDocTypeFilter('DO');
+                setCurrentPage(1);
+              }}
+              className={`filter-pill ${selectedDocCategory === 'DO' ? 'active' : ''}`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                padding: '0.4rem 0.95rem',
+                borderRadius: '6px'
+              }}
+            >
+              <Layers size={15} />
+              <span>Distribution Orders (DO)</span>
+            </button>
+
+            <button
+              onClick={() => {
                 setSelectedDocCategory('QUERY');
               }}
               className={`filter-pill ${selectedDocCategory === 'QUERY' ? 'active' : ''}`}
@@ -1458,6 +1763,90 @@ export default function MawmDispatchPage({
           </div>
         )}
 
+        {/* --- Distribution Order (DO) Payload & Direct Dispatch --- */}
+        {selectedDocCategory === 'DO' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                Distribution Order Payload (Dynamic Zero-Loss Passthrough: ERP can send any structure):
+              </span>
+              <button
+                type="button"
+                onClick={() => setDirectDoJson(JSON.stringify(DEFAULT_DO_SAMPLE, null, 2))}
+                style={{ background: 'none', border: 'none', color: '#f59e0b', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Reset Specification Default
+              </button>
+            </div>
+
+            <textarea
+              rows={8}
+              value={directDoJson}
+              onChange={(e) => setDirectDoJson(e.target.value)}
+              className="input-field"
+              style={{ width: '100%', fontFamily: 'var(--font-mono, monospace)', fontSize: '0.78rem', boxSizing: 'border-box' }}
+            />
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.6rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={handleCheckDoExists}
+                  disabled={savingDoDirect}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem', color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.4)' }}
+                  title="5.5.1 Check if DO Exists in MAWM"
+                >
+                  <span>5.5.1 Check If Exists</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSearchDoStatusDirect}
+                  disabled={savingDoDirect}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)' }}
+                  title="5.5.4 Search Distribution Order Status"
+                >
+                  <span>5.5.4 Search Status</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSearchDoLinesDirect}
+                  disabled={savingDoDirect}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem', color: '#c084fc', borderColor: 'rgba(168, 85, 247, 0.4)' }}
+                  title="5.5.5 Search Order Line Progress"
+                >
+                  <span>5.5.5 Check Line Progress</span>
+                </button>
+              </div>
+
+              <button
+                onClick={handleDirectDoSave}
+                disabled={savingDoDirect}
+                className="btn-primary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1.1rem', fontSize: '0.82rem', backgroundColor: '#d97706', borderColor: '#d97706' }}
+              >
+                <Send size={14} className={savingDoDirect ? 'spin-icon' : ''} />
+                <span>{savingDoDirect ? 'Dispatching DO to MAWM...' : 'Dispatch / Save DO to MAWM Cloud (5.5.2)'}</span>
+              </button>
+            </div>
+
+            {directDoResult && (
+              <div style={{ marginTop: '0.85rem', padding: '0.75rem 1rem', borderRadius: '6px', backgroundColor: directDoResult.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', border: `1px solid ${directDoResult.success ? '#10b981' : '#ef4444'}` }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: directDoResult.success ? '#10b981' : '#ef4444' }}>
+                  {directDoResult.success ? (directDoResult.message || `200 OK - Distribution Order Response Received (${directDoResult.latencyMs || 0}ms)`) : (directDoResult.cleanError || directDoResult.error)}
+                </div>
+                {directDoResult.rawResponse && (
+                  <pre style={{ marginTop: '0.4rem', padding: '0.5rem', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '4px', maxHeight: '160px', overflow: 'auto', fontSize: '0.72rem', color: '#34d399', whiteSpace: 'pre-wrap' }}>
+                    {formatPayload(directDoResult.rawResponse)}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* --- Dynamic Query & Inbound Sync Gateway (Non-standard ERP Payloads) --- */}
         {selectedDocCategory === 'QUERY' && (
           <div>
@@ -1543,6 +1932,36 @@ export default function MawmDispatchPage({
                 >
                   5.2.2 Fetch Items (Inbound Sync)
                 </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('DO_STATUS')}
+                  className="btn-secondary"
+                  style={{
+                    fontSize: '0.72rem',
+                    padding: '0.25rem 0.65rem',
+                    borderColor: 'rgba(245, 158, 11, 0.35)',
+                    color: '#f59e0b',
+                    fontWeight: selectedQueryApi === 'DO' ? 700 : 500,
+                    backgroundColor: selectedQueryApi === 'DO' ? 'rgba(245, 158, 11, 0.15)' : 'transparent'
+                  }}
+                >
+                  5.5.4 Search DO Status
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('DO_LINES')}
+                  className="btn-secondary"
+                  style={{
+                    fontSize: '0.72rem',
+                    padding: '0.25rem 0.65rem',
+                    borderColor: 'rgba(251, 146, 60, 0.35)',
+                    color: '#fb923c',
+                    fontWeight: selectedQueryApi === 'DO_LINE' ? 700 : 500,
+                    backgroundColor: selectedQueryApi === 'DO_LINE' ? 'rgba(251, 146, 60, 0.15)' : 'transparent'
+                  }}
+                >
+                  5.5.5 Search DO Line Progress
+                </button>
               </div>
             </div>
 
@@ -1566,6 +1985,10 @@ export default function MawmDispatchPage({
                       setDynamicQueryJson(JSON.stringify(PRESET_QUERIES.PO_LINES.payload, null, 2));
                     } else if (newApi === 'ITEM_SYNC') {
                       setDynamicItemParams({ ...PRESET_QUERIES.ITEM_SYNC.queryParams });
+                    } else if (newApi === 'DO') {
+                      setDynamicQueryJson(JSON.stringify(PRESET_QUERIES.DO_STATUS.payload, null, 2));
+                    } else if (newApi === 'DO_LINE') {
+                      setDynamicQueryJson(JSON.stringify(PRESET_QUERIES.DO_LINES.payload, null, 2));
                     }
                   }}
                   className="input-field"
@@ -1576,6 +1999,8 @@ export default function MawmDispatchPage({
                   <option value="PO">POST /receiving/api/receiving/purchaseOrder/search (5.3.2 Query PO Status)</option>
                   <option value="PO_LINE">POST /receiving/api/receiving/purchaseOrderLine/search (5.3.3 Query PO Lines)</option>
                   <option value="ITEM_SYNC">GET /item-master/api/item-master/item (5.2.2 Fetch Items from MAWM / Inbound Sync)</option>
+                  <option value="DO">POST /dcorder/api/dcorder/order/search (5.5.4 Search Distribution Order Status)</option>
+                  <option value="DO_LINE">POST /dcorder/api/dcorder/orderLine/search (5.5.5 Search Distribution Order Line Progress)</option>
                 </select>
               </div>
 
@@ -1833,6 +2258,36 @@ export default function MawmDispatchPage({
                   <span>{cleaningItems ? 'Cleaning...' : 'Clean Item Records'}</span>
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => { setSelectedDocTypeFilter('DO'); setSelectedDocCategory('DO'); setSelectedJobIds([]); setCurrentPage(1); }}
+                className={`filter-pill ${selectedDocTypeFilter === 'DO' ? 'active' : ''}`}
+                style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
+              >
+                Distribution Orders (DO)
+              </button>
+              {selectedDocTypeFilter === 'DO' && (
+                <button
+                  type="button"
+                  onClick={handleCleanDoRecords}
+                  disabled={cleaningDo}
+                  className="btn-secondary"
+                  style={{
+                    fontSize: '0.7rem',
+                    padding: '0.2rem 0.55rem',
+                    color: '#f87171',
+                    borderColor: 'rgba(239, 68, 68, 0.4)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.3rem',
+                    marginLeft: '0.25rem'
+                  }}
+                  title="Clean all Distribution Order records from the database"
+                >
+                  <Trash2 size={12} />
+                  <span>{cleaningDo ? 'Cleaning...' : 'Clean DO Records'}</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -1978,7 +2433,7 @@ export default function MawmDispatchPage({
         ) : filteredTrackers.length === 0 ? (
           <div style={{ padding: '3rem 1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
             <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
-              No dispatch records found for {selectedErp} ERP ({selectedDocTypeFilter === 'PO' ? 'Purchase Orders' : selectedDocTypeFilter === 'ASN' ? 'ASN Deliveries' : 'Item Master'})
+              No dispatch records found for {selectedErp} ERP ({selectedDocTypeFilter === 'PO' ? 'Purchase Orders' : selectedDocTypeFilter === 'ASN' ? 'ASN Deliveries' : selectedDocTypeFilter === 'DO' ? 'Distribution Orders' : 'Item Master'})
             </div>
             <div style={{ fontSize: '0.78rem' }}>
               Select "Opti ERP" to view active dispatch logs, or send a new PO/ASN payload via Files API.
@@ -2064,7 +2519,7 @@ export default function MawmDispatchPage({
                             padding: 0,
                             fontFamily: 'var(--font-mono, monospace)',
                             fontWeight: 600,
-                            color: docType === 'PO' ? '#38bdf8' : docType === 'ITEM' ? '#c084fc' : '#34d399',
+                            color: docType === 'PO' ? '#38bdf8' : docType === 'ITEM' ? '#c084fc' : docType === 'DO' ? '#f59e0b' : '#34d399',
                             cursor: 'pointer',
                             textDecoration: 'underline',
                             fontSize: '0.78rem'
@@ -2082,9 +2537,9 @@ export default function MawmDispatchPage({
                           fontWeight: 700,
                           padding: '0.12rem 0.45rem',
                           borderRadius: '4px',
-                          backgroundColor: docType === 'PO' ? 'rgba(56, 189, 248, 0.15)' : docType === 'ITEM' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                          color: docType === 'PO' ? '#38bdf8' : docType === 'ITEM' ? '#c084fc' : '#10b981',
-                          border: `1px solid ${docType === 'PO' ? 'rgba(56, 189, 248, 0.3)' : docType === 'ITEM' ? 'rgba(168, 85, 247, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
+                          backgroundColor: docType === 'PO' ? 'rgba(56, 189, 248, 0.15)' : docType === 'ITEM' ? 'rgba(168, 85, 247, 0.15)' : docType === 'DO' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                          color: docType === 'PO' ? '#38bdf8' : docType === 'ITEM' ? '#c084fc' : docType === 'DO' ? '#f59e0b' : '#10b981',
+                          border: `1px solid ${docType === 'PO' ? 'rgba(56, 189, 248, 0.3)' : docType === 'ITEM' ? 'rgba(168, 85, 247, 0.3)' : docType === 'DO' ? 'rgba(245, 158, 11, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
                         }}>
                           {docType}
                         </span>
@@ -2424,6 +2879,24 @@ export default function MawmDispatchPage({
                     </button>
                   </>
                 )}
+                {isDoRecord(inspectingJob) && (
+                  <>
+                    <button
+                      onClick={() => setInspectPayloadTab('doLines')}
+                      className={`filter-pill ${inspectPayloadTab === 'doLines' ? 'active' : ''}`}
+                      style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
+                    >
+                      5.5.5 DO Line Progress
+                    </button>
+                    <button
+                      onClick={() => setInspectPayloadTab('doStatus')}
+                      className={`filter-pill ${inspectPayloadTab === 'doStatus' ? 'active' : ''}`}
+                      style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
+                    >
+                      5.5.4 DO Status
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={() => setInspectPayloadTab('raw')}
                   className={`filter-pill ${inspectPayloadTab === 'raw' ? 'active' : ''}`}
@@ -2460,7 +2933,11 @@ export default function MawmDispatchPage({
                       ? formatPayload(inspectingDetails.lines?.rawResponse || inspectingDetails.lines?.data || inspectingDetails.lines || 'Loading or no lines returned')
                       : inspectPayloadTab === 'asns'
                         ? formatPayload(inspectingDetails.asns?.rawResponse || inspectingDetails.asns?.data || inspectingDetails.asns || 'Loading or no associated ASNs')
-                        : formatPayload(inspectingJob.rawContent || inspectingJob.outputFiles || 'No raw payload available')}
+                        : inspectPayloadTab === 'doLines'
+                          ? formatPayload(inspectingDetails.doLines?.rawResponse || inspectingDetails.doLines?.data || inspectingDetails.doLines || 'Loading or no DO line progress returned')
+                          : inspectPayloadTab === 'doStatus'
+                            ? formatPayload(inspectingDetails.doStatus?.rawResponse || inspectingDetails.doStatus?.data || inspectingDetails.doStatus || 'Loading or no DO status returned')
+                            : formatPayload(inspectingJob.rawContent || inspectingJob.outputFiles || 'No raw payload available')}
               </pre>
             </div>
 

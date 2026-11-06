@@ -56,7 +56,9 @@ public class FileToJsonTransformer {
         if (records != null && !records.isEmpty()) {
             for (Map<String, Object> r : records) {
                 if (payloadDestinationFacility == null) {
-                    if (r.get("DestinationFacilityId") != null && !String.valueOf(r.get("DestinationFacilityId")).isBlank()) {
+                    if (r.get("OriginFacilityId") != null && !String.valueOf(r.get("OriginFacilityId")).isBlank()) {
+                        payloadDestinationFacility = String.valueOf(r.get("OriginFacilityId")).trim();
+                    } else if (r.get("DestinationFacilityId") != null && !String.valueOf(r.get("DestinationFacilityId")).isBlank()) {
                         payloadDestinationFacility = String.valueOf(r.get("DestinationFacilityId")).trim();
                     } else if (r.get("destinationFacilityId") != null && !String.valueOf(r.get("destinationFacilityId")).isBlank()) {
                         payloadDestinationFacility = String.valueOf(r.get("destinationFacilityId")).trim();
@@ -79,7 +81,8 @@ public class FileToJsonTransformer {
                 if (str.trim().startsWith("{") || str.trim().startsWith("[")) {
                     com.fasterxml.jackson.databind.JsonNode rootNode = new com.fasterxml.jackson.databind.ObjectMapper().readTree(rawPayload);
                     if (payloadDestinationFacility == null) {
-                        if (rootNode.has("DestinationFacilityId")) payloadDestinationFacility = rootNode.get("DestinationFacilityId").asText();
+                        if (rootNode.has("OriginFacilityId")) payloadDestinationFacility = rootNode.get("OriginFacilityId").asText();
+                        else if (rootNode.has("DestinationFacilityId")) payloadDestinationFacility = rootNode.get("DestinationFacilityId").asText();
                         else if (rootNode.has("destinationFacilityId")) payloadDestinationFacility = rootNode.get("destinationFacilityId").asText();
                     }
                     if (payloadCreatedBy == null) {

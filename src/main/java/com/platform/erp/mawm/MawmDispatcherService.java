@@ -63,17 +63,22 @@ public class MawmDispatcherService {
 
         boolean isItem = "ITEM".equalsIgnoreCase(envelope.getDocumentType()) || "ITEM_MASTER".equalsIgnoreCase(envelope.getDocumentType());
         boolean isAsn = "ASN".equalsIgnoreCase(envelope.getDocumentType());
+        boolean isDo = "DO".equalsIgnoreCase(envelope.getDocumentType()) || "DCORDER".equalsIgnoreCase(envelope.getDocumentType()) || "DISTRIBUTION_ORDER".equalsIgnoreCase(envelope.getDocumentType());
 
         String targetEndpoint = mawmProperties.getBaseUrl() +
-                (isItem ? mawmProperties.getItemPath() : isAsn ? mawmProperties.getAsnPath() : mawmProperties.getPoPath());
+                (isItem ? mawmProperties.getItemPath() : isAsn ? mawmProperties.getAsnPath() : isDo ? mawmProperties.getDoSavePath() : mawmProperties.getPoPath());
 
         try {
             // Extract DestinationFacilityId directly from data records or envelope (mandatory for MAWM headers)
             String destinationFacilityId = null;
             if (envelope.getData() != null && !envelope.getData().isEmpty()) {
                 Map<String, Object> first = envelope.getData().get(0);
-                if (first.get("DestinationFacilityId") != null && !String.valueOf(first.get("DestinationFacilityId")).isBlank()) {
+                if (isDo && first.get("OriginFacilityId") != null && !String.valueOf(first.get("OriginFacilityId")).isBlank()) {
+                    destinationFacilityId = String.valueOf(first.get("OriginFacilityId")).trim();
+                } else if (first.get("DestinationFacilityId") != null && !String.valueOf(first.get("DestinationFacilityId")).isBlank()) {
                     destinationFacilityId = String.valueOf(first.get("DestinationFacilityId")).trim();
+                } else if (first.get("OriginFacilityId") != null && !String.valueOf(first.get("OriginFacilityId")).isBlank()) {
+                    destinationFacilityId = String.valueOf(first.get("OriginFacilityId")).trim();
                 } else if (first.get("destinationFacilityId") != null && !String.valueOf(first.get("destinationFacilityId")).isBlank()) {
                     destinationFacilityId = String.valueOf(first.get("destinationFacilityId")).trim();
                 } else if (first.get("FacilityId") != null && !String.valueOf(first.get("FacilityId")).isBlank()) {
@@ -127,6 +132,14 @@ public class MawmDispatcherService {
                 } else {
                     payloadToSend = envelope.toMawmPayload();
                 }
+            } else if (isDo) {
+                if (envelope.getData() != null && !envelope.getData().isEmpty()) {
+                    payloadToSend = envelope.getData().get(0);
+                } else if (envelope.getRecords() != null && !envelope.getRecords().isEmpty()) {
+                    payloadToSend = envelope.getRecords().get(0);
+                } else {
+                    payloadToSend = envelope.toMawmPayload();
+                }
             } else {
                 if (envelope.getData() != null && !envelope.getData().isEmpty()) {
                     payloadToSend = Map.of("Data", envelope.getData());
@@ -138,7 +151,7 @@ public class MawmDispatcherService {
             String jsonPayload = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(payloadToSend);
 
             log.info("[MAWM Dispatcher] Dispatching converted {} to MAWM Cloud Endpoint: {} (TrackingId: {}, Facility: {}, User: {})",
-                    (isItem ? "ITEM" : isAsn ? "ASN" : "PO"), targetEndpoint, trackingId, destinationFacilityId, effectiveUsername);
+                    (isDo ? "DO" : isItem ? "ITEM" : isAsn ? "ASN" : "PO"), targetEndpoint, trackingId, destinationFacilityId, effectiveUsername);
 
             // Execute HTTP POST with automatic token regeneration & retry on 401/403 (zero process interruption)
             String responseBody = executeWithAuthRetry(targetEndpoint, destinationFacilityId, effectiveUsername, jsonPayload);
@@ -265,6 +278,24 @@ public class MawmDispatcherService {
     public Map<String, Object> searchPoAsnLineDynamic(JsonNode body, String facility, String username, boolean storeTracker) {
         String targetEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getAsnLineSearchPath();
         return executeDynamicSearch(targetEndpoint, "ASN_LINE", facility, username, body, "PurchaseOrderId", storeTracker);
+    }
+
+    /**
+     * Dynamic Search for Distribution Orders (5.5.4 /dcorder/api/dcorder/order/search)
+     * Handles arbitrary dynamic JSON payloads from ERPs (Query + Template).
+     */
+    public Map<String, Object> searchDoDynamic(JsonNode body, String facility, String username, boolean storeTracker) {
+        String targetEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getDoSearchPath();
+        return executeDynamicSearch(targetEndpoint, "DO", facility, username, body, "OrderId", storeTracker);
+    }
+
+    /**
+     * Dynamic Search for Distribution Order Lines (5.5.5 /dcorder/api/dcorder/orderLine/search)
+     * Handles arbitrary dynamic JSON payloads from ERPs (Query + Template).
+     */
+    public Map<String, Object> searchDoLineDynamic(JsonNode body, String facility, String username, boolean storeTracker) {
+        String targetEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getDoLineSearchPath();
+        return executeDynamicSearch(targetEndpoint, "DO_LINE", facility, username, body, "OrderId", storeTracker);
     }
 
     /**
@@ -455,6 +486,11 @@ public class MawmDispatcherService {
             if (!val.isBlank()) {
                 queryString = "PurchaseOrderId='" + val.trim() + "'";
             }
+        } else if ("OrderId".equalsIgnoreCase(defaultQueryField)) {
+            String val = node.has("OrderId") ? node.get("OrderId").asText() : (node.has("orderId") ? node.get("orderId").asText() : "");
+            if (!val.isBlank()) {
+                queryString = "OrderId = '" + val.trim() + "'";
+            }
         }
 
         if (queryString == null || queryString.isBlank()) {
@@ -473,6 +509,8 @@ public class MawmDispatcherService {
             result.put("Template", Map.of("AsnId", "", "AsnStatus", ""));
         } else if ("PurchaseOrderId".equalsIgnoreCase(defaultQueryField)) {
             result.put("Template", Map.of("PurchaseOrderId", "", "PurchaseOrderStatus", "", "PurchaseOrderStatusDescription", ""));
+        } else if ("OrderId".equalsIgnoreCase(defaultQueryField)) {
+            result.put("Template", Map.of("OrderId", "", "MinimumStatusDescription", "", "MaximumStatusDescription", ""));
         } else {
             result.put("Template", Map.of());
         }
@@ -485,6 +523,9 @@ public class MawmDispatcherService {
             return destinationFacilityId.trim();
         }
         if (bodyNode != null && bodyNode.isObject()) {
+            if (bodyNode.has("OriginFacilityId") && !bodyNode.get("OriginFacilityId").asText().isBlank()) {
+                return bodyNode.get("OriginFacilityId").asText().trim();
+            }
             if (bodyNode.has("DestinationFacilityId") && !bodyNode.get("DestinationFacilityId").asText().isBlank()) {
                 return bodyNode.get("DestinationFacilityId").asText().trim();
             }
@@ -1108,18 +1149,509 @@ public class MawmDispatcherService {
     }
 
     /**
-     * Unified job verification for both ASN and PO jobs
+     * Unified job verification for ASN, PO, and DO jobs
      */
     public Map<String, Object> verifyJob(String jobId) {
         var optTracker = transactionStore.getTracker(jobId);
         if (optTracker.isPresent()) {
             var t = optTracker.get();
-            if ("PO".equalsIgnoreCase(t.getTransactionType()) ||
-                    (t.getOriginalFilename() != null && t.getOriginalFilename().toUpperCase().contains("PO"))) {
+            String docType = t.getTransactionType();
+            String filename = t.getOriginalFilename();
+            if ("DO".equalsIgnoreCase(docType) || "DCORDER".equalsIgnoreCase(docType) || "DISTRIBUTION_ORDER".equalsIgnoreCase(docType) ||
+                    (filename != null && (filename.toUpperCase().contains("DO") || filename.toUpperCase().contains("DCORDER")))) {
+                return verifyJobDo(jobId);
+            }
+            if ("PO".equalsIgnoreCase(docType) ||
+                    (filename != null && filename.toUpperCase().contains("PO"))) {
                 return verifyJobPo(jobId);
             }
         }
         return verifyJobAsn(jobId);
+    }
+
+    /**
+     * 5.5.1 Check if DO Exists (by OrderId)
+     * GET /dcorder/api/dcorder/order/orderId/{orderId}
+     */
+    public Map<String, Object> checkDoExists(String orderId, String facilityId, String username) {
+        if (orderId == null || orderId.isBlank()) {
+            return Map.of("success", false, "error", "OrderId is mandatory for DO existence check");
+        }
+
+        String facility = (facilityId != null && !facilityId.isBlank())
+                ? facilityId.trim()
+                : (mawmProperties.getDefaultFacility() != null ? mawmProperties.getDefaultFacility().trim() : "Food_Cbe");
+
+        String effectiveUsername = (username != null && !username.isBlank())
+                ? username.trim()
+                : mawmProperties.getUsername();
+
+        String targetEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getDoGetPath() + orderId.trim();
+
+        try {
+            log.info("[MAWM DO Check] Checking if DO exists for OrderId: '{}' at {} (Facility: {}, User: {})",
+                    orderId, targetEndpoint, facility, effectiveUsername);
+
+            long startTime = System.currentTimeMillis();
+            String responseBody = executeWithAuthRetryGet(targetEndpoint, facility, effectiveUsername, null);
+            long latencyMs = System.currentTimeMillis() - startTime;
+
+            JsonNode rootNode = objectMapper.readTree(responseBody);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("orderExists", true);
+            result.put("orderId", orderId.trim());
+            result.put("statusCode", 200);
+            result.put("latencyMs", latencyMs);
+            result.put("endpoint", targetEndpoint);
+            result.put("facilityId", facility);
+            result.put("username", effectiveUsername);
+            result.put("rawResponse", responseBody);
+            if (rootNode.has("data")) {
+                result.put("data", rootNode.get("data"));
+                if (rootNode.get("data").has("PK")) {
+                    result.put("pk", rootNode.get("data").get("PK").asText());
+                }
+            } else {
+                result.put("data", rootNode);
+            }
+            return result;
+        } catch (Exception ex) {
+            log.error("[MAWM DO Check] Failed checking DO exists for {}: {}", orderId, ex.getMessage(), ex);
+            int statusCode = 500;
+            String rawErrorBody = null;
+            if (ex instanceof RestClientResponseException rcre) {
+                statusCode = rcre.getStatusCode().value();
+                rawErrorBody = rcre.getResponseBodyAsString();
+            }
+            Map<String, Object> errResult = new LinkedHashMap<>();
+            errResult.put("success", false);
+            errResult.put("orderExists", false);
+            errResult.put("orderId", orderId.trim());
+            errResult.put("statusCode", statusCode);
+            if (statusCode == 404) {
+                errResult.put("error", "Distribution Order '" + orderId + "' does not exist in MAWM Cloud (404 Not Found).");
+            } else {
+                String cleanMessage = extractCleanErrorMessage(rawErrorBody, statusCode, facility, effectiveUsername);
+                errResult.put("error", cleanMessage);
+                errResult.put("cleanError", cleanMessage);
+            }
+            errResult.put("endpoint", targetEndpoint);
+            errResult.put("facilityId", facility);
+            errResult.put("username", effectiveUsername);
+            if (rawErrorBody != null && !rawErrorBody.isBlank()) {
+                errResult.put("rawResponse", rawErrorBody);
+            }
+            return errResult;
+        }
+    }
+
+    /**
+     * 5.5.2 Create New Distribution Order (Add)
+     * POST /dcorder/api/dcorder/order
+     * Also mapped to /create-do-active
+     */
+    /**
+     * 5.5.2 Create New Distribution Order (Add) - Zero-Loss Dynamic Payload Passthrough
+     * Accepts arbitrary dynamic JSON from ERPs with no rigid or static schema constraints.
+     * POST /dcorder/api/dcorder/order
+     * Also mapped to /create-do-active
+     */
+    public Map<String, Object> saveDoDirectDynamic(JsonNode doPayloadNode, String username, boolean storeTracker) {
+        String targetEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getDoSavePath();
+        String facility = resolveDynamicFacility(null, doPayloadNode);
+        String effectiveUsername = resolveDynamicUsername(username, doPayloadNode);
+
+        try {
+            if (doPayloadNode == null || doPayloadNode.isNull() || doPayloadNode.isEmpty()) {
+                throw new IllegalArgumentException("Distribution Order payload cannot be empty");
+            }
+
+            JsonNode payloadToSend = doPayloadNode;
+            if (payloadToSend.isArray() && payloadToSend.size() > 0) {
+                payloadToSend = payloadToSend.get(0);
+            } else if (payloadToSend.has("Data") && payloadToSend.get("Data").isArray() && payloadToSend.get("Data").size() > 0) {
+                payloadToSend = payloadToSend.get("Data").get(0);
+            } else if (payloadToSend.has("data") && payloadToSend.get("data").isArray() && payloadToSend.get("data").size() > 0) {
+                payloadToSend = payloadToSend.get("data").get(0);
+            }
+
+            String jsonPayload = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(payloadToSend);
+            log.info("[MAWM Direct DO Save] Forwarding dynamic Distribution Order to {} (Facility: {}, User: {})",
+                    targetEndpoint, facility, effectiveUsername);
+            long startTime = System.currentTimeMillis();
+            String responseBody = executeWithAuthRetry(targetEndpoint, facility, effectiveUsername, jsonPayload);
+            long latencyMs = System.currentTimeMillis() - startTime;
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("statusCode", 200);
+            result.put("latencyMs", latencyMs);
+            result.put("endpoint", targetEndpoint);
+            result.put("facilityId", facility);
+            result.put("username", effectiveUsername);
+            result.put("message", "200 OK - Distribution Order Created Successfully in MAWM");
+            result.put("rawResponse", responseBody);
+            try {
+                result.put("data", objectMapper.readTree(responseBody));
+            } catch (Exception ignored) {}
+
+            String orderId = null;
+            if (payloadToSend.has("OrderId")) orderId = payloadToSend.get("OrderId").asText();
+            else if (payloadToSend.has("orderId")) orderId = payloadToSend.get("orderId").asText();
+
+            if (storeTracker && orderId != null) {
+                String trackingId = "DO-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+                transactionStore.recordQueryAudit(trackingId, "DO", facility, effectiveUsername, jsonPayload, responseBody, "DELIVERED_TO_MAWM (200 OK)");
+                result.put("jobId", trackingId);
+            }
+
+            return result;
+        } catch (Exception ex) {
+            log.error("[MAWM Direct DO Save] Failed saving DO to {}: {}", targetEndpoint, ex.getMessage(), ex);
+            int statusCode = 500;
+            String rawErrorBody = null;
+            if (ex instanceof RestClientResponseException rcre) {
+                statusCode = rcre.getStatusCode().value();
+                rawErrorBody = rcre.getResponseBodyAsString();
+            }
+            String cleanMessage = extractCleanErrorMessage(rawErrorBody, statusCode, facility, effectiveUsername);
+            Map<String, Object> errResult = new LinkedHashMap<>();
+            errResult.put("success", false);
+            errResult.put("statusCode", statusCode);
+            errResult.put("error", cleanMessage);
+            errResult.put("cleanError", cleanMessage);
+            errResult.put("endpoint", targetEndpoint);
+            errResult.put("facilityId", facility);
+            errResult.put("username", effectiveUsername);
+            if (rawErrorBody != null && !rawErrorBody.isBlank()) {
+                errResult.put("rawResponse", rawErrorBody);
+            }
+            return errResult;
+        }
+    }
+
+    public Map<String, Object> saveDoDirect(Map<String, Object> doPayload, String username) {
+        return saveDoDirectDynamic(objectMapper.valueToTree(doPayload), username, false);
+    }
+
+    /**
+     * 5.5.3 Update Existing Distribution Order - Dynamic Payload Passthrough
+     * Accepts arbitrary dynamic JSON from ERPs.
+     * POST /dcorder/api/dcorder/order/{pk}
+     */
+    public Map<String, Object> updateDoDirectDynamic(String pk, JsonNode doPayloadNode, String username) {
+        if (pk == null || pk.isBlank()) {
+            return Map.of("success", false, "error", "PK is mandatory for DO update");
+        }
+        String targetEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getDoUpdatePath() + pk.trim();
+        String facility = resolveDynamicFacility(null, doPayloadNode);
+        String effectiveUsername = resolveDynamicUsername(username, doPayloadNode);
+
+        try {
+            JsonNode payloadToSend = doPayloadNode;
+            if (payloadToSend != null && payloadToSend.isArray() && payloadToSend.size() > 0) {
+                payloadToSend = payloadToSend.get(0);
+            }
+            String jsonPayload = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(payloadToSend);
+            log.info("[MAWM Direct DO Update] Updating Distribution Order at {} (PK: {}, Facility: {}, User: {})", targetEndpoint, pk, facility, effectiveUsername);
+            long startTime = System.currentTimeMillis();
+            String responseBody = executeWithAuthRetry(targetEndpoint, facility, effectiveUsername, jsonPayload);
+            long latencyMs = System.currentTimeMillis() - startTime;
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("statusCode", 200);
+            result.put("pk", pk.trim());
+            result.put("latencyMs", latencyMs);
+            result.put("endpoint", targetEndpoint);
+            result.put("facilityId", facility);
+            result.put("username", effectiveUsername);
+            result.put("message", "200 OK - Distribution Order Updated Successfully in MAWM");
+            result.put("rawResponse", responseBody);
+            try {
+                result.put("data", objectMapper.readTree(responseBody));
+            } catch (Exception ignored) {}
+            return result;
+        } catch (Exception ex) {
+            log.error("[MAWM Direct DO Update] Failed updating DO at {}: {}", targetEndpoint, ex.getMessage(), ex);
+            int statusCode = 500;
+            String rawErrorBody = null;
+            if (ex instanceof RestClientResponseException rcre) {
+                statusCode = rcre.getStatusCode().value();
+                rawErrorBody = rcre.getResponseBodyAsString();
+            }
+            String cleanMessage = extractCleanErrorMessage(rawErrorBody, statusCode, facility, effectiveUsername);
+            Map<String, Object> errResult = new LinkedHashMap<>();
+            errResult.put("success", false);
+            errResult.put("pk", pk.trim());
+            errResult.put("statusCode", statusCode);
+            errResult.put("error", cleanMessage);
+            errResult.put("cleanError", cleanMessage);
+            errResult.put("endpoint", targetEndpoint);
+            errResult.put("facilityId", facility);
+            errResult.put("username", effectiveUsername);
+            if (rawErrorBody != null && !rawErrorBody.isBlank()) {
+                errResult.put("rawResponse", rawErrorBody);
+            }
+            return errResult;
+        }
+    }
+
+    public Map<String, Object> updateDoDirect(String pk, Map<String, Object> doPayload, String username) {
+        return updateDoDirectDynamic(pk, objectMapper.valueToTree(doPayload), username);
+    }
+
+    /**
+     * 5.5.4 Search Distribution Order Status
+     * POST /dcorder/api/dcorder/order/search
+     * Also mapped to /check-do-status-active
+     */
+    public Map<String, Object> searchDoStatus(String orderId, String destinationFacilityId, String username) {
+        if (orderId == null || orderId.isBlank()) {
+            return Map.of("success", false, "error", "OrderId is mandatory for DO status search");
+        }
+
+        String facility = (destinationFacilityId != null && !destinationFacilityId.isBlank())
+                ? destinationFacilityId.trim()
+                : (mawmProperties.getDefaultFacility() != null ? mawmProperties.getDefaultFacility().trim() : "Food_Cbe");
+
+        String effectiveUsername = (username != null && !username.isBlank())
+                ? username.trim()
+                : mawmProperties.getUsername();
+
+        String searchEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getDoSearchPath();
+
+        Map<String, Object> requestPayload = Map.of(
+                "Query", "OrderId = '" + orderId.trim() + "'",
+                "Template", Map.of(
+                        "OrderId", "",
+                        "MinimumStatusDescription", "",
+                        "MaximumStatusDescription", ""
+                )
+        );
+
+        try {
+            String jsonPayload = objectMapper.writeValueAsString(requestPayload);
+            log.info("[MAWM DO Search] Querying DO status for '{}' at {} (Facility: {}, User: {})",
+                    orderId, searchEndpoint, facility, effectiveUsername);
+
+            long startTime = System.currentTimeMillis();
+            String responseBody = executeWithAuthRetry(searchEndpoint, facility, effectiveUsername, jsonPayload);
+            long latencyMs = System.currentTimeMillis() - startTime;
+
+            JsonNode rootNode = objectMapper.readTree(responseBody);
+            String minStatus = null;
+            String maxStatus = null;
+
+            if (rootNode.has("data") && rootNode.get("data").isArray() && rootNode.get("data").size() > 0) {
+                JsonNode firstMatch = rootNode.get("data").get(0);
+                if (firstMatch.has("MinimumStatusDescription")) {
+                    minStatus = firstMatch.get("MinimumStatusDescription").asText();
+                }
+                if (firstMatch.has("MaximumStatusDescription")) {
+                    maxStatus = firstMatch.get("MaximumStatusDescription").asText();
+                }
+            }
+
+            String statusDesc = minStatus != null ? minStatus : (maxStatus != null ? maxStatus : "NO_RECORD_FOUND");
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("orderId", orderId.trim());
+            result.put("minimumStatusDescription", minStatus != null ? minStatus : "UNKNOWN");
+            result.put("maximumStatusDescription", maxStatus != null ? maxStatus : "UNKNOWN");
+            result.put("statusDescription", statusDesc);
+            result.put("latencyMs", latencyMs);
+            result.put("rawResponse", responseBody);
+            result.put("endpoint", searchEndpoint);
+            result.put("facilityId", facility);
+            result.put("username", effectiveUsername);
+            result.put("queryPayload", requestPayload);
+            if (rootNode.has("data")) {
+                result.put("data", rootNode.get("data"));
+            }
+            return result;
+        } catch (Exception ex) {
+            log.error("[MAWM DO Search] Failed querying DO status for {}: {}", orderId, ex.getMessage(), ex);
+            int statusCode = 500;
+            String rawErrorBody = null;
+            if (ex instanceof RestClientResponseException rcre) {
+                statusCode = rcre.getStatusCode().value();
+                rawErrorBody = rcre.getResponseBodyAsString();
+            }
+            String cleanMessage = extractCleanErrorMessage(rawErrorBody, statusCode, facility, effectiveUsername);
+            Map<String, Object> errResult = new LinkedHashMap<>();
+            errResult.put("success", false);
+            errResult.put("orderId", orderId);
+            errResult.put("statusCode", statusCode);
+            errResult.put("error", cleanMessage);
+            errResult.put("cleanError", cleanMessage);
+            errResult.put("endpoint", searchEndpoint);
+            errResult.put("facilityId", facility);
+            errResult.put("username", effectiveUsername);
+            if (rawErrorBody != null && !rawErrorBody.isBlank()) {
+                errResult.put("rawResponse", rawErrorBody);
+            }
+            return errResult;
+        }
+    }
+
+    /**
+     * 5.5.5 Search Distribution Order Line Progress
+     * POST /dcorder/api/dcorder/orderLine/search
+     */
+    public Map<String, Object> searchDoLines(String orderId, String destinationFacilityId, String username) {
+        if (orderId == null || orderId.isBlank()) {
+            return Map.of("success", false, "error", "OrderId is mandatory for DO line search");
+        }
+
+        String facility = (destinationFacilityId != null && !destinationFacilityId.isBlank())
+                ? destinationFacilityId.trim()
+                : (mawmProperties.getDefaultFacility() != null ? mawmProperties.getDefaultFacility().trim() : "Food_Cbe");
+
+        String effectiveUsername = (username != null && !username.isBlank())
+                ? username.trim()
+                : mawmProperties.getUsername();
+
+        String searchEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getDoLineSearchPath();
+
+        Map<String, Object> requestPayload = Map.of(
+                "Query", "OrderId = '" + orderId.trim() + "'",
+                "Template", Map.of(
+                        "OrderLineId", "",
+                        "Status", "",
+                        "OrderedQuantity", "",
+                        "AllocatedQuantity", "",
+                        "PackedQuantity", "",
+                        "ShippedQuantity", "",
+                        "ParentOrderLineId", ""
+                )
+        );
+
+        try {
+            String jsonPayload = objectMapper.writeValueAsString(requestPayload);
+            log.info("[MAWM DO Line Search] Querying DO lines for '{}' at {} (Facility: {}, User: {})",
+                    orderId, searchEndpoint, facility, effectiveUsername);
+
+            long startTime = System.currentTimeMillis();
+            String responseBody = executeWithAuthRetry(searchEndpoint, facility, effectiveUsername, jsonPayload);
+            long latencyMs = System.currentTimeMillis() - startTime;
+
+            JsonNode rootNode = objectMapper.readTree(responseBody);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("orderId", orderId.trim());
+            result.put("latencyMs", latencyMs);
+            result.put("rawResponse", responseBody);
+            result.put("endpoint", searchEndpoint);
+            result.put("facilityId", facility);
+            result.put("username", effectiveUsername);
+            result.put("queryPayload", requestPayload);
+            if (rootNode.has("data")) {
+                result.put("data", rootNode.get("data"));
+            }
+            return result;
+        } catch (Exception ex) {
+            log.error("[MAWM DO Line Search] Failed querying DO lines for {}: {}", orderId, ex.getMessage(), ex);
+            int statusCode = 500;
+            String rawErrorBody = null;
+            if (ex instanceof RestClientResponseException rcre) {
+                statusCode = rcre.getStatusCode().value();
+                rawErrorBody = rcre.getResponseBodyAsString();
+            }
+            String cleanMessage = extractCleanErrorMessage(rawErrorBody, statusCode, facility, effectiveUsername);
+            Map<String, Object> errResult = new LinkedHashMap<>();
+            errResult.put("success", false);
+            errResult.put("orderId", orderId);
+            errResult.put("statusCode", statusCode);
+            errResult.put("error", cleanMessage);
+            errResult.put("cleanError", cleanMessage);
+            errResult.put("endpoint", searchEndpoint);
+            errResult.put("facilityId", facility);
+            errResult.put("username", effectiveUsername);
+            if (rawErrorBody != null && !rawErrorBody.isBlank()) {
+                errResult.put("rawResponse", rawErrorBody);
+            }
+            return errResult;
+        }
+    }
+
+    /**
+     * Checks Distribution Order (DO) status for a specific job and updates DB tracker row
+     */
+    public Map<String, Object> verifyJobDo(String jobId) {
+        var optTracker = transactionStore.getTracker(jobId);
+        if (optTracker.isEmpty()) {
+            return Map.of("success", false, "error", "Job not found: " + jobId);
+        }
+        var tracker = optTracker.get();
+        String outputFiles = tracker.getOutputFiles();
+        String rawContent = tracker.getRawContent();
+        String orderId = null;
+        String facility = tracker.getFacilityId();
+        String createdBy = tracker.getCreatedBy();
+
+        if (outputFiles != null && !outputFiles.isBlank() && !outputFiles.startsWith("[CLAIM_CHECK:")) {
+            try {
+                JsonNode root = objectMapper.readTree(outputFiles);
+                JsonNode dataNode = root.has("Data") ? root.get("Data") : (root.has("data") ? root.get("data") : root);
+                if (dataNode.isArray() && dataNode.size() > 0) {
+                    JsonNode first = dataNode.get(0);
+                    if (first.has("OrderId")) orderId = first.get("OrderId").asText();
+                    else if (first.has("orderId")) orderId = first.get("orderId").asText();
+                    if (first.has("OriginFacilityId")) facility = first.get("OriginFacilityId").asText();
+                    else if (first.has("DestinationFacilityId")) facility = first.get("DestinationFacilityId").asText();
+                    if (createdBy == null || createdBy.isBlank()) {
+                        if (first.has("CreatedBy")) createdBy = first.get("CreatedBy").asText();
+                    }
+                } else if (dataNode.isObject()) {
+                    if (dataNode.has("OrderId")) orderId = dataNode.get("OrderId").asText();
+                    else if (dataNode.has("orderId")) orderId = dataNode.get("orderId").asText();
+                    if (dataNode.has("OriginFacilityId")) facility = dataNode.get("OriginFacilityId").asText();
+                    else if (dataNode.has("DestinationFacilityId")) facility = dataNode.get("DestinationFacilityId").asText();
+                    if (createdBy == null || createdBy.isBlank()) {
+                        if (dataNode.has("CreatedBy")) createdBy = dataNode.get("CreatedBy").asText();
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (rawContent != null && !rawContent.isBlank() && !rawContent.startsWith("[CLAIM_CHECK:")) {
+            try {
+                JsonNode root = objectMapper.readTree(rawContent);
+                if (facility == null) {
+                    if (root.has("OriginFacilityId")) facility = root.get("OriginFacilityId").asText();
+                    else if (root.has("DestinationFacilityId")) facility = root.get("DestinationFacilityId").asText();
+                }
+                if (orderId == null) {
+                    if (root.has("OrderId")) orderId = root.get("OrderId").asText();
+                    else if (root.has("orderId")) orderId = root.get("orderId").asText();
+                }
+                if (createdBy == null || createdBy.isBlank()) {
+                    if (root.has("CreatedBy")) createdBy = root.get("CreatedBy").asText();
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (facility == null || facility.isBlank() || "OPTI".equalsIgnoreCase(facility) || "SAMPLE".equalsIgnoreCase(facility)) {
+            facility = tracker.getFacilityId();
+        }
+        if (facility == null || facility.isBlank() || "OPTI".equalsIgnoreCase(facility) || "SAMPLE".equalsIgnoreCase(facility)) {
+            facility = mawmProperties.getDefaultFacility() != null && !mawmProperties.getDefaultFacility().isBlank()
+                    ? mawmProperties.getDefaultFacility() : "Food_Cbe";
+        }
+
+        if (orderId == null || orderId.isBlank()) {
+            orderId = tracker.getJobId();
+        }
+
+        Map<String, Object> searchResult = searchDoStatus(orderId, facility, createdBy);
+        if (Boolean.TRUE.equals(searchResult.get("success"))) {
+            String statusDesc = (String) searchResult.get("statusDescription");
+            transactionStore.recordMawmAsnStatus(jobId, statusDesc);
+        }
+        return searchResult;
     }
 
     public String extractCleanErrorMessage(String rawErrorBody, int statusCode, String facility, String username) {

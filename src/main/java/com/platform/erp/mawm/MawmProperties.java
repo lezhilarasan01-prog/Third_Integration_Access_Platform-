@@ -24,6 +24,11 @@ public class MawmProperties {
     private String asnLineSearchPath = "/receiving/api/receiving/asnLine/search";
     private String itemPath = "/item-master/api/item-master/item/save";
     private String itemQueryPath = "/item-master/api/item-master/item";
+    private String doGetPath = "/dcorder/api/dcorder/order/orderId/";
+    private String doSavePath = "/dcorder/api/dcorder/order";
+    private String doUpdatePath = "/dcorder/api/dcorder/order/";
+    private String doSearchPath = "/dcorder/api/dcorder/order/search";
+    private String doLineSearchPath = "/dcorder/api/dcorder/orderLine/search";
     private String defaultFacility;
     private String apiKey;
     private String verifiedStatus = "8000";
@@ -71,6 +76,21 @@ public class MawmProperties {
 
     public String getItemQueryPath() { return itemQueryPath; }
     public void setItemQueryPath(String itemQueryPath) { this.itemQueryPath = itemQueryPath; }
+
+    public String getDoGetPath() { return doGetPath; }
+    public void setDoGetPath(String doGetPath) { this.doGetPath = doGetPath; }
+
+    public String getDoSavePath() { return doSavePath; }
+    public void setDoSavePath(String doSavePath) { this.doSavePath = doSavePath; }
+
+    public String getDoUpdatePath() { return doUpdatePath; }
+    public void setDoUpdatePath(String doUpdatePath) { this.doUpdatePath = doUpdatePath; }
+
+    public String getDoSearchPath() { return doSearchPath; }
+    public void setDoSearchPath(String doSearchPath) { this.doSearchPath = doSearchPath; }
+
+    public String getDoLineSearchPath() { return doLineSearchPath; }
+    public void setDoLineSearchPath(String doLineSearchPath) { this.doLineSearchPath = doLineSearchPath; }
 
     public String getDefaultFacility() { return defaultFacility; }
     public void setDefaultFacility(String defaultFacility) { this.defaultFacility = defaultFacility; }

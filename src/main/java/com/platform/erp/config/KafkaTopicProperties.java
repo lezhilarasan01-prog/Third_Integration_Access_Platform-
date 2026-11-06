@@ -164,6 +164,10 @@ public class KafkaTopicProperties {
     // Dynamic backward-compatible accessors
     public String getAsnRaw() { return resolveRawTopic("asn-raw"); }
     public String getPoRaw() { return resolveRawTopic("po-raw"); }
+    public String getDoRaw() { return resolveRawTopic("do-raw"); }
+    public String getDistributionRaw() { return resolveRawTopic("distribution-raw"); }
     public String getAsnDlq() { return resolveDlqTopic("asn-raw"); }
     public String getPoDlq() { return resolveDlqTopic("po-raw"); }
+    public String getDoDlq() { return resolveDlqTopic("do-raw"); }
+    public String getDistributionDlq() { return resolveDlqTopic("distribution-raw"); }
 }

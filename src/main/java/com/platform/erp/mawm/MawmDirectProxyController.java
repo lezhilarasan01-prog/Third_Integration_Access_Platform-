@@ -160,6 +160,87 @@ public class MawmDirectProxyController {
         return forwardResponse(result);
     }
 
+    /**
+     * 5.5.1 Check if DO Exists (by OrderId)
+     * GET /dcorder/api/dcorder/order/orderId/{orderId}
+     */
+    @GetMapping(value = "/dcorder/api/dcorder/order/orderId/{orderId}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<String> checkDoExistsDirect(
+            @PathVariable("orderId") String orderId,
+            @RequestParam(value = "facilityId", required = false) String facilityId,
+            @RequestParam(value = "username", required = false) String username,
+            @RequestHeader(value = "X-Facility-Id", required = false) String headerFacility) {
+        String effectiveFacility = (facilityId != null && !facilityId.isBlank()) ? facilityId : headerFacility;
+        Map<String, Object> result = mawmDispatcherService.checkDoExists(orderId, effectiveFacility, username);
+        return forwardResponse(result);
+    }
+
+    /**
+     * 5.5.2 Create New Distribution Order (Add)
+     * POST /dcorder/api/dcorder/order
+     * Also mapped to POST /create-do-active
+     */
+    @PostMapping(value = {"/dcorder/api/dcorder/order", "/create-do-active"}, produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<String> saveDoDirect(
+            @RequestBody JsonNode body,
+            @RequestParam(value = "username", required = false) String username,
+            @RequestParam(value = "storeTracker", defaultValue = "false") boolean storeTracker,
+            @RequestHeader(value = "X-Store-Tracker", required = false) Boolean headerStoreTracker) {
+        boolean effectiveStore = (headerStoreTracker != null) ? headerStoreTracker : storeTracker;
+        Map<String, Object> result = mawmDispatcherService.saveDoDirectDynamic(body, username, effectiveStore);
+        return forwardResponse(result);
+    }
+
+    /**
+     * 5.5.3 Update Existing Distribution Order
+     * POST /dcorder/api/dcorder/order/{pk}
+     */
+    @PostMapping(value = "/dcorder/api/dcorder/order/{pk}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<String> updateDoDirect(
+            @PathVariable("pk") String pk,
+            @RequestBody JsonNode body,
+            @RequestParam(value = "username", required = false) String username) {
+        Map<String, Object> result = mawmDispatcherService.updateDoDirectDynamic(pk, body, username);
+        return forwardResponse(result);
+    }
+
+    /**
+     * 5.5.4 Search Distribution Order Status
+     * POST /dcorder/api/dcorder/order/search
+     * Also mapped to POST /check-do-status-active
+     */
+    @PostMapping(value = {"/dcorder/api/dcorder/order/search", "/check-do-status-active"}, produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<String> searchDoDirect(
+            @RequestBody JsonNode body,
+            @RequestParam(value = "facilityId", required = false) String facilityId,
+            @RequestParam(value = "username", required = false) String username,
+            @RequestParam(value = "storeTracker", defaultValue = "false") boolean storeTracker,
+            @RequestHeader(value = "X-Facility-Id", required = false) String headerFacility,
+            @RequestHeader(value = "X-Store-Tracker", required = false) Boolean headerStoreTracker) {
+        String effectiveFacility = (facilityId != null && !facilityId.isBlank()) ? facilityId : headerFacility;
+        boolean effectiveStore = (headerStoreTracker != null) ? headerStoreTracker : storeTracker;
+        Map<String, Object> result = mawmDispatcherService.searchDoDynamic(body, effectiveFacility, username, effectiveStore);
+        return forwardResponse(result);
+    }
+
+    /**
+     * 5.5.5 Search Distribution Order Line Progress
+     * POST /dcorder/api/dcorder/orderLine/search
+     */
+    @PostMapping(value = "/dcorder/api/dcorder/orderLine/search", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<String> searchDoLineDirect(
+            @RequestBody JsonNode body,
+            @RequestParam(value = "facilityId", required = false) String facilityId,
+            @RequestParam(value = "username", required = false) String username,
+            @RequestParam(value = "storeTracker", defaultValue = "false") boolean storeTracker,
+            @RequestHeader(value = "X-Facility-Id", required = false) String headerFacility,
+            @RequestHeader(value = "X-Store-Tracker", required = false) Boolean headerStoreTracker) {
+        String effectiveFacility = (facilityId != null && !facilityId.isBlank()) ? facilityId : headerFacility;
+        boolean effectiveStore = (headerStoreTracker != null) ? headerStoreTracker : storeTracker;
+        Map<String, Object> result = mawmDispatcherService.searchDoLineDynamic(body, effectiveFacility, username, effectiveStore);
+        return forwardResponse(result);
+    }
+
     private ResponseEntity<String> forwardResponse(Map<String, Object> result) {
         int status = 200;
         if (result.containsKey("statusCode")) {

@@ -288,27 +288,40 @@ public class ErpFileConsumerService {
 
     private String resolveDocumentType(String headerDocType, String topic, String filename) {
         if (headerDocType != null && !headerDocType.isBlank()) {
-            return headerDocType.trim().toUpperCase();
+            String upper = headerDocType.trim().toUpperCase();
+            if (upper.equals("DO") || upper.contains("DISTRIBUTION") || upper.contains("DCORDER") || upper.contains("DC_ORDER") || upper.startsWith("DO_") || upper.startsWith("DO-"))
+                return "DO";
+            if (upper.contains("ASN") || upper.contains("SHIP"))
+                return "ASN";
+            if (upper.contains("ITEM") || upper.contains("SKU") || upper.contains("PART"))
+                return "ITEM";
+            if (upper.contains("PO") || upper.contains("PURCHASE"))
+                return "PO";
+            return upper;
         }
         if (topic != null) {
             String lower = topic.toLowerCase();
+            if (lower.equals("do") || lower.contains("dcorder") || lower.contains("distribution") || lower.startsWith("do_") || lower.startsWith("do-") || lower.contains("_do_") || lower.contains("-do-"))
+                return "DO";
             if (lower.contains("asn") || lower.contains("ship"))
                 return "ASN";
-            if (lower.contains("po") || lower.contains("order"))
-                return "PO";
             if (lower.contains("item") || lower.contains("sku") || lower.contains("part"))
                 return "ITEM";
+            if (lower.contains("po") || lower.contains("purchase") || lower.contains("order"))
+                return "PO";
             if (lower.contains("invoice"))
                 return "INVOICE";
         }
         if (filename != null) {
             String upper = filename.toUpperCase();
+            if (upper.equals("DO") || upper.contains("DISTRIBUTION") || upper.contains("DCORDER") || upper.startsWith("DO_") || upper.startsWith("DO-") || upper.contains("_DO_") || upper.contains("-DO-"))
+                return "DO";
             if (upper.contains("ASN") || upper.contains("SHIP"))
                 return "ASN";
-            if (upper.contains("PO") || upper.contains("ORDER"))
-                return "PO";
             if (upper.contains("ITEM") || upper.contains("SKU") || upper.contains("PART"))
                 return "ITEM";
+            if (upper.contains("PO") || upper.contains("PURCHASE") || upper.contains("ORDER"))
+                return "PO";
             if (upper.contains("INVOICE"))
                 return "INVOICE";
         }

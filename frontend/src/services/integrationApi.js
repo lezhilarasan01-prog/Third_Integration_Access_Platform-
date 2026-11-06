@@ -772,6 +772,148 @@ export const integrationApi = {
     return res.json();
   },
 
+  async cleanDoRecords() {
+    const res = await fetch(`${BASE_URL}/api/v1/erp/transactions/do`, {
+      method: 'DELETE'
+    });
+    this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || 'Failed to clean distribution order records');
+    }
+    return res.json();
+  },
+
+  // --- 5.5 Distribution Order (DO) Integration ---
+  async checkDoExists(orderId, facilityId = 'Food_Cbe', username) {
+    const params = new URLSearchParams();
+    if (facilityId) params.append('facilityId', facilityId);
+    if (username) params.append('username', username);
+    const res = await fetch(`${BASE_URL}/dcorder/api/dcorder/order/orderId/${encodeURIComponent(orderId)}?${params.toString()}`);
+    if (!res.ok && res.status !== 404) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to check if DO exists in MAWM');
+    }
+    return res.json();
+  },
+
+  async saveDoDirect(payload, username, storeTracker = false) {
+    const params = new URLSearchParams();
+    if (username) params.append('username', username);
+    if (storeTracker) params.append('storeTracker', 'true');
+    const url = `${BASE_URL}/dcorder/api/dcorder/order${params.toString() ? `?${params.toString()}` : ''}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to create Distribution Order in MAWM');
+    }
+    return res.json();
+  },
+
+  async updateDoDirect(pk, payload, username) {
+    const params = new URLSearchParams();
+    if (username) params.append('username', username);
+    const url = `${BASE_URL}/dcorder/api/dcorder/order/${encodeURIComponent(pk)}${params.toString() ? `?${params.toString()}` : ''}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to update Distribution Order in MAWM');
+    }
+    return res.json();
+  },
+
+  async searchDoStatus(orderIdOrPayload, facilityId = 'Food_Cbe', username) {
+    const body = typeof orderIdOrPayload === 'string'
+      ? { orderId: orderIdOrPayload, facilityId, username }
+      : orderIdOrPayload;
+    const res = await fetch(`${BASE_URL}/dcorder/api/dcorder/order/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to search DO status in MAWM');
+    }
+    return res.json();
+  },
+
+  async searchDoLines(orderIdOrPayload, facilityId = 'Food_Cbe', username) {
+    const body = typeof orderIdOrPayload === 'string'
+      ? { orderId: orderIdOrPayload, facilityId, username }
+      : orderIdOrPayload;
+    const res = await fetch(`${BASE_URL}/dcorder/api/dcorder/orderLine/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to search DO line progress in MAWM');
+    }
+    return res.json();
+  },
+
+  async queryDoDynamic(payload, facilityId = 'Food_Cbe', username, storeTracker = false) {
+    const params = new URLSearchParams();
+    if (facilityId) params.append('facilityId', facilityId);
+    if (username) params.append('username', username);
+    if (storeTracker) params.append('storeTracker', 'true');
+
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/query/do?${params.toString()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (storeTracker) this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to query MAWM DO');
+    }
+    return res.json();
+  },
+
+  async queryDoLineDynamic(payload, facilityId = 'Food_Cbe', username, storeTracker = false) {
+    const params = new URLSearchParams();
+    if (facilityId) params.append('facilityId', facilityId);
+    if (username) params.append('username', username);
+    if (storeTracker) params.append('storeTracker', 'true');
+
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/query/do-line?${params.toString()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (storeTracker) this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to query MAWM DO Lines');
+    }
+    return res.json();
+  },
+
+  async verifyJobDo(jobId) {
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/verify-do/${encodeURIComponent(jobId)}`, {
+      method: 'POST'
+    });
+    this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to verify DO status in MAWM');
+    }
+    return res.json();
+  },
+
   async searchPoStatus(purchaseOrderId, facilityId = 'Food_Cbe', username) {
     const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/search-po`, {
       method: 'POST',

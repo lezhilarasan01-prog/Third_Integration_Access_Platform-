@@ -19,6 +19,7 @@ import java.util.regex.Pattern;
 public class MawmTelemetryController {
 
     private static final Pattern PO_QUERY_PATTERN = Pattern.compile("PurchaseOrderId\\s*=\\s*'([^']+)'", Pattern.CASE_INSENSITIVE);
+    private static final Pattern DO_QUERY_PATTERN = Pattern.compile("OrderId\\s*=\\s*'([^']+)'", Pattern.CASE_INSENSITIVE);
 
     private final MawmProperties mawmProperties;
     private final MawmAuthService mawmAuthService;
@@ -52,6 +53,12 @@ public class MawmTelemetryController {
         data.put("poLineSearchPath", mawmProperties.getPoLineSearchPath());
         data.put("asnLineSearchPath", mawmProperties.getAsnLineSearchPath());
         data.put("itemPath", mawmProperties.getItemPath());
+        data.put("itemQueryPath", mawmProperties.getItemQueryPath());
+        data.put("doGetPath", mawmProperties.getDoGetPath());
+        data.put("doSavePath", mawmProperties.getDoSavePath());
+        data.put("doUpdatePath", mawmProperties.getDoUpdatePath());
+        data.put("doSearchPath", mawmProperties.getDoSearchPath());
+        data.put("doLineSearchPath", mawmProperties.getDoLineSearchPath());
         data.put("defaultFacility", mawmProperties.getDefaultFacility());
         data.put("username", mawmProperties.getUsername());
         data.put("verifiedStatus", mawmProperties.getVerifiedStatus());
@@ -304,7 +311,130 @@ public class MawmTelemetryController {
     }
 
     /**
-     * Verify the ASN or PO status for a specific job in PostgreSQL against live MAWM Cloud search.
+     * Check DO verification status for a specific job in DB
+     * POST /api/v1/erp/mawm/verify-do/{jobId}
+     */
+    @PostMapping("/verify-do/{jobId}")
+    public ResponseEntity<Map<String, Object>> verifyJobDo(@PathVariable("jobId") String jobId) {
+        Map<String, Object> result = mawmDispatcherService.verifyJobDo(jobId);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 5.5.1 Check if DO Exists (by OrderId)
+     * GET /api/v1/erp/mawm/do/check/{orderId}
+     */
+    @GetMapping("/do/check/{orderId}")
+    public ResponseEntity<Map<String, Object>> checkDoExists(
+            @PathVariable("orderId") String orderId,
+            @RequestParam(value = "facilityId", required = false) String facilityId,
+            @RequestParam(value = "username", required = false) String username) {
+        Map<String, Object> result = mawmDispatcherService.checkDoExists(orderId, facilityId, username);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 5.5.2 Create New Distribution Order (Add)
+     * POST /api/v1/erp/mawm/save-do
+     * Also mapped to /create-do-active
+     */
+    @PostMapping({"/save-do", "/create-do-active"})
+    public ResponseEntity<Map<String, Object>> saveDo(
+            @RequestBody JsonNode payload,
+            @RequestParam(value = "username", required = false) String username,
+            @RequestParam(value = "storeTracker", defaultValue = "false") boolean storeTracker) {
+        Map<String, Object> result = mawmDispatcherService.saveDoDirectDynamic(payload, username, storeTracker);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 5.5.3 Update Existing Distribution Order
+     * POST /api/v1/erp/mawm/do/update/{pk}
+     */
+    @PostMapping("/do/update/{pk}")
+    public ResponseEntity<Map<String, Object>> updateDo(
+            @PathVariable("pk") String pk,
+            @RequestBody JsonNode payload,
+            @RequestParam(value = "username", required = false) String username) {
+        Map<String, Object> result = mawmDispatcherService.updateDoDirectDynamic(pk, payload, username);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 5.5.4 Search Distribution Order Status
+     * POST /api/v1/erp/mawm/search-do
+     * Also mapped to /check-do-status-active
+     */
+    @PostMapping({"/search-do", "/check-do-status-active"})
+    public ResponseEntity<Map<String, Object>> searchDoStatus(
+            @RequestBody(required = false) Map<String, Object> body,
+            @RequestParam(value = "orderId", required = false) String paramOrderId,
+            @RequestParam(value = "facilityId", required = false) String paramFacility,
+            @RequestParam(value = "username", required = false) String paramUsername) {
+        String orderId = resolveOrderId(body, paramOrderId);
+        String facility = resolveFacility(body, paramFacility);
+        String username = resolveUsername(body, paramUsername);
+
+        Map<String, Object> result = mawmDispatcherService.searchDoStatus(orderId, facility, username);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 5.5.5 Search Distribution Order Line Progress
+     * POST /api/v1/erp/mawm/search-do-lines
+     */
+    @PostMapping("/search-do-lines")
+    public ResponseEntity<Map<String, Object>> searchDoLines(
+            @RequestBody(required = false) Map<String, Object> body,
+            @RequestParam(value = "orderId", required = false) String paramOrderId,
+            @RequestParam(value = "facilityId", required = false) String paramFacility,
+            @RequestParam(value = "username", required = false) String paramUsername) {
+        String orderId = resolveOrderId(body, paramOrderId);
+        String facility = resolveFacility(body, paramFacility);
+        String username = resolveUsername(body, paramUsername);
+
+        Map<String, Object> result = mawmDispatcherService.searchDoLines(orderId, facility, username);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Dynamic Search for Distribution Orders in MAWM Cloud (5.5.4 /dcorder/api/dcorder/order/search)
+     * POST /api/v1/erp/mawm/query/do
+     */
+    @PostMapping("/query/do")
+    public ResponseEntity<Map<String, Object>> queryDoDynamic(
+            @RequestBody JsonNode body,
+            @RequestParam(value = "facilityId", required = false) String facilityId,
+            @RequestParam(value = "username", required = false) String username,
+            @RequestParam(value = "storeTracker", defaultValue = "false") boolean storeTracker,
+            @RequestHeader(value = "X-Facility-Id", required = false) String headerFacility,
+            @RequestHeader(value = "X-Store-Tracker", required = false) Boolean headerStoreTracker) {
+        String effectiveFacility = (facilityId != null && !facilityId.isBlank()) ? facilityId : headerFacility;
+        boolean effectiveStore = (headerStoreTracker != null) ? headerStoreTracker : storeTracker;
+        Map<String, Object> result = mawmDispatcherService.searchDoDynamic(body, effectiveFacility, username, effectiveStore);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Dynamic Search for Distribution Order Lines in MAWM Cloud (5.5.5 /dcorder/api/dcorder/orderLine/search)
+     * POST /api/v1/erp/mawm/query/do-line
+     */
+    @PostMapping("/query/do-line")
+    public ResponseEntity<Map<String, Object>> queryDoLineDynamic(
+            @RequestBody JsonNode body,
+            @RequestParam(value = "facilityId", required = false) String facilityId,
+            @RequestParam(value = "username", required = false) String username,
+            @RequestParam(value = "storeTracker", defaultValue = "false") boolean storeTracker,
+            @RequestHeader(value = "X-Facility-Id", required = false) String headerFacility,
+            @RequestHeader(value = "X-Store-Tracker", required = false) Boolean headerStoreTracker) {
+        String effectiveFacility = (facilityId != null && !facilityId.isBlank()) ? facilityId : headerFacility;
+        boolean effectiveStore = (headerStoreTracker != null) ? headerStoreTracker : storeTracker;
+        Map<String, Object> result = mawmDispatcherService.searchDoLineDynamic(body, effectiveFacility, username, effectiveStore);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Verify the ASN, PO, or DO status for a specific job in PostgreSQL against live MAWM Cloud search.
      * POST /api/v1/erp/mawm/verify/{jobId}
      */
     @PostMapping("/verify/{jobId}")
@@ -321,6 +451,25 @@ public class MawmTelemetryController {
     public ResponseEntity<Map<String, Object>> dispatchJob(@PathVariable("jobId") String jobId) {
         Map<String, Object> result = mawmDispatcherService.dispatchJob(jobId);
         return ResponseEntity.ok(result);
+    }
+
+    private String resolveOrderId(Map<String, Object> body, String paramOrderId) {
+        if (paramOrderId != null && !paramOrderId.isBlank()) {
+            return paramOrderId.trim();
+        }
+        if (body != null) {
+            if (body.get("orderId") != null) return String.valueOf(body.get("orderId")).trim();
+            if (body.get("OrderId") != null) return String.valueOf(body.get("OrderId")).trim();
+            if (body.get("doId") != null) return String.valueOf(body.get("doId")).trim();
+            if (body.get("Query") != null) {
+                String q = String.valueOf(body.get("Query"));
+                Matcher m = DO_QUERY_PATTERN.matcher(q);
+                if (m.find()) {
+                    return m.group(1).trim();
+                }
+            }
+        }
+        return null;
     }
 
     private String resolvePoId(Map<String, Object> body, String paramPoId) {
@@ -348,6 +497,8 @@ public class MawmTelemetryController {
         }
         if (body != null) {
             if (body.get("facilityId") != null) return String.valueOf(body.get("facilityId")).trim();
+            if (body.get("OriginFacilityId") != null) return String.valueOf(body.get("OriginFacilityId")).trim();
+            if (body.get("originFacilityId") != null) return String.valueOf(body.get("originFacilityId")).trim();
             if (body.get("DestinationFacilityId") != null) return String.valueOf(body.get("DestinationFacilityId")).trim();
             if (body.get("destinationFacilityId") != null) return String.valueOf(body.get("destinationFacilityId")).trim();
         }

@@ -359,6 +359,13 @@ public class TransactionStore {
     }
 
     @Transactional
+    public int deleteDoTrackers() {
+        int count = trackerRepository.deleteDoTrackers();
+        log.info("[DB Tracker] Successfully deleted {} Distribution Order tracker records", count);
+        return count;
+    }
+
+    @Transactional
     public int deleteTrackers(List<String> jobIds) {
         if (jobIds == null || jobIds.isEmpty()) return 0;
         int count = 0;
@@ -519,7 +526,7 @@ public class TransactionStore {
                     .toList();
         } catch (Exception e) {
             log.warn("Could not query distinct transaction types: {}", e.getMessage());
-            return List.of("ASN", "PO", "ITEM");
+            return List.of("ASN", "PO", "ITEM", "DO");
         }
     }
 
