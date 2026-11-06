@@ -1,5 +1,6 @@
 package com.platform.erp.mawm;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.platform.erp.store.TransactionStore;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -121,6 +122,106 @@ public class MawmTelemetryController {
                 : (body != null ? body.get("username") : null);
 
         Map<String, Object> result = mawmDispatcherService.searchAsnStatus(asnId, facility, username);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Dynamic Search for ASN in MAWM Cloud (5.4.2 /receiving/api/receiving/asn/search)
+     * POST /api/v1/erp/mawm/query/asn
+     * Accepts arbitrary dynamic JSON payloads from ERPs (Query + Template).
+     * Query param: storeTracker=true (optional, false by default)
+     */
+    @PostMapping("/query/asn")
+    public ResponseEntity<Map<String, Object>> queryAsnDynamic(
+            @RequestBody JsonNode body,
+            @RequestParam(value = "facilityId", required = false) String facilityId,
+            @RequestParam(value = "username", required = false) String username,
+            @RequestParam(value = "storeTracker", defaultValue = "false") boolean storeTracker,
+            @RequestHeader(value = "X-Facility-Id", required = false) String headerFacility,
+            @RequestHeader(value = "X-Store-Tracker", required = false) Boolean headerStoreTracker) {
+        String effectiveFacility = (facilityId != null && !facilityId.isBlank()) ? facilityId : headerFacility;
+        boolean effectiveStore = (headerStoreTracker != null) ? headerStoreTracker : storeTracker;
+        Map<String, Object> result = mawmDispatcherService.searchAsnDynamic(body, effectiveFacility, username, effectiveStore);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Dynamic Search for Purchase Orders in MAWM Cloud (5.3.2 /receiving/api/receiving/purchaseOrder/search)
+     * POST /api/v1/erp/mawm/query/po
+     * Accepts arbitrary dynamic JSON payloads from ERPs (Query + Template).
+     */
+    @PostMapping("/query/po")
+    public ResponseEntity<Map<String, Object>> queryPoDynamic(
+            @RequestBody JsonNode body,
+            @RequestParam(value = "facilityId", required = false) String facilityId,
+            @RequestParam(value = "username", required = false) String username,
+            @RequestParam(value = "storeTracker", defaultValue = "false") boolean storeTracker,
+            @RequestHeader(value = "X-Facility-Id", required = false) String headerFacility,
+            @RequestHeader(value = "X-Store-Tracker", required = false) Boolean headerStoreTracker) {
+        String effectiveFacility = (facilityId != null && !facilityId.isBlank()) ? facilityId : headerFacility;
+        boolean effectiveStore = (headerStoreTracker != null) ? headerStoreTracker : storeTracker;
+        Map<String, Object> result = mawmDispatcherService.searchPoDynamic(body, effectiveFacility, username, effectiveStore);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Dynamic Search for Purchase Order Lines in MAWM Cloud (5.3.3 /receiving/api/receiving/purchaseOrderLine/search)
+     * POST /api/v1/erp/mawm/query/po-line
+     * Accepts arbitrary dynamic JSON payloads from ERPs (Query + Template).
+     */
+    @PostMapping("/query/po-line")
+    public ResponseEntity<Map<String, Object>> queryPoLineDynamic(
+            @RequestBody JsonNode body,
+            @RequestParam(value = "facilityId", required = false) String facilityId,
+            @RequestParam(value = "username", required = false) String username,
+            @RequestParam(value = "storeTracker", defaultValue = "false") boolean storeTracker,
+            @RequestHeader(value = "X-Facility-Id", required = false) String headerFacility,
+            @RequestHeader(value = "X-Store-Tracker", required = false) Boolean headerStoreTracker) {
+        String effectiveFacility = (facilityId != null && !facilityId.isBlank()) ? facilityId : headerFacility;
+        boolean effectiveStore = (headerStoreTracker != null) ? headerStoreTracker : storeTracker;
+        Map<String, Object> result = mawmDispatcherService.searchPoLineDynamic(body, effectiveFacility, username, effectiveStore);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Dynamic Search for PO Associated ASN Lines in MAWM Cloud (5.3.4 /receiving/api/receiving/asnLine/search)
+     * POST /api/v1/erp/mawm/query/asn-line
+     * Accepts arbitrary dynamic JSON payloads from ERPs (Query + Template).
+     */
+    @PostMapping("/query/asn-line")
+    public ResponseEntity<Map<String, Object>> queryAsnLineDynamic(
+            @RequestBody JsonNode body,
+            @RequestParam(value = "facilityId", required = false) String facilityId,
+            @RequestParam(value = "username", required = false) String username,
+            @RequestParam(value = "storeTracker", defaultValue = "false") boolean storeTracker,
+            @RequestHeader(value = "X-Facility-Id", required = false) String headerFacility,
+            @RequestHeader(value = "X-Store-Tracker", required = false) Boolean headerStoreTracker) {
+        String effectiveFacility = (facilityId != null && !facilityId.isBlank()) ? facilityId : headerFacility;
+        boolean effectiveStore = (headerStoreTracker != null) ? headerStoreTracker : storeTracker;
+        Map<String, Object> result = mawmDispatcherService.searchPoAsnLineDynamic(body, effectiveFacility, username, effectiveStore);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Inbound Sync: Fetch Items dynamically from MAWM Cloud (/item-master/api/item-master/item)
+     * GET /api/v1/erp/mawm/sync/items
+     * Supports dynamic query parameters: query, page, size, needTotalCount.
+     */
+    @GetMapping("/sync/items")
+    public ResponseEntity<Map<String, Object>> syncItemsDynamic(
+            @RequestParam Map<String, String> allParams,
+            @RequestParam(value = "facilityId", required = false) String facilityId,
+            @RequestParam(value = "username", required = false) String username,
+            @RequestParam(value = "storeTracker", defaultValue = "false") boolean storeTracker,
+            @RequestHeader(value = "X-Facility-Id", required = false) String headerFacility,
+            @RequestHeader(value = "X-Store-Tracker", required = false) Boolean headerStoreTracker) {
+        String effectiveFacility = (facilityId != null && !facilityId.isBlank()) ? facilityId : headerFacility;
+        boolean effectiveStore = (headerStoreTracker != null) ? headerStoreTracker : storeTracker;
+        Map<String, String> queryParams = new LinkedHashMap<>(allParams);
+        queryParams.remove("facilityId");
+        queryParams.remove("username");
+        queryParams.remove("storeTracker");
+        Map<String, Object> result = mawmDispatcherService.fetchItemsDynamic(effectiveFacility, username, queryParams, effectiveStore);
         return ResponseEntity.ok(result);
     }
 

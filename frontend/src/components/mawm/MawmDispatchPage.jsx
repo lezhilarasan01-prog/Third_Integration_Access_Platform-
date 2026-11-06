@@ -21,10 +21,75 @@ import {
   Layers,
   Database,
   Package,
-  Trash2
+  Trash2,
+  Zap,
+  Copy,
+  Code
 } from 'lucide-react';
 import { integrationApi } from '../../services/integrationApi';
 import ConfirmDialogModal from '../common/ConfirmDialogModal';
+
+const PRESET_QUERIES = {
+  ASN_VERIFIED: {
+    api: 'ASN',
+    label: 'Check ASN 8000 Verified',
+    payload: {
+      "Query": "AsnId in ('ASN-2026-0001')",
+      "Template": {
+        "AsnId": "",
+        "AsnStatus": ""
+      }
+    }
+  },
+  PO_STATUS: {
+    api: 'PO',
+    label: 'Search PO Status',
+    payload: {
+      "Query": "PurchaseOrderId='PO-2026-0001'",
+      "Template": {
+        "PurchaseOrderId": "",
+        "PurchaseOrderStatus": "",
+        "PurchaseOrderStatusDescription": ""
+      }
+    }
+  },
+  PO_LINES: {
+    api: 'PO_LINE',
+    label: 'Search PO Line Shipped/Received',
+    payload: {
+      "Query": "PurchaseOrderId='PO-2026-0001'",
+      "Template": {
+        "PurchaseOrderLineId": "",
+        "ShippedQuantity": "",
+        "ReceivedQuantity": "",
+        "PoLineStatus": ""
+      }
+    }
+  },
+  PO_ASN_LINES: {
+    api: 'ASN_LINE',
+    label: 'Search Associated ASN Lines for PO',
+    payload: {
+      "Query": "PurchaseOrderId='PO-2026-0001'",
+      "Template": {
+        "AsnId": "",
+        "ItemId": "",
+        "ShippedQuantity": "",
+        "PurchaseOrderLineId": ""
+      }
+    }
+  },
+  ITEM_SYNC: {
+    api: 'ITEM_SYNC',
+    label: 'Fetch Items Updated Today (Inbound Sync)',
+    queryParams: {
+      page: '0',
+      size: '1000',
+      needTotalCount: 'true',
+      query: 'UpdatedTimestamp>2026-10-30T00:00:00'
+    }
+  }
+};
 
 const DEFAULT_PO_SAMPLE = {
   PurchaseOrderId: "PO-2026-0001",
@@ -148,6 +213,15 @@ export default function MawmDispatchPage({
   const [savingItemDirect, setSavingItemDirect] = useState(false);
   const [directItemResult, setDirectItemResult] = useState(null);
   const [cleaningItems, setCleaningItems] = useState(false);
+
+  // Dynamic Query & Sync Explorer State (Non-Standard ERP Gateway)
+  const [selectedQueryApi, setSelectedQueryApi] = useState('ASN'); // 'ASN' | 'PO' | 'PO_LINE' | 'ASN_LINE' | 'ITEM_SYNC'
+  const [dynamicQueryJson, setDynamicQueryJson] = useState(JSON.stringify(PRESET_QUERIES.ASN_VERIFIED.payload, null, 2));
+  const [dynamicItemParams, setDynamicItemParams] = useState({ ...PRESET_QUERIES.ITEM_SYNC.queryParams });
+  const [storeQueryAudit, setStoreQueryAudit] = useState(false);
+  const [executingDynamicQuery, setExecutingDynamicQuery] = useState(false);
+  const [dynamicQueryResult, setDynamicQueryResult] = useState(null);
+  const [copiedQueryResponse, setCopiedQueryResponse] = useState(false);
 
   const [showRawJsonMap, setShowRawJsonMap] = useState({});
 
@@ -643,6 +717,80 @@ export default function MawmDispatchPage({
     }
   };
 
+  // Dynamic Query Preset Applicator
+  const handleApplyPreset = (key) => {
+    const preset = PRESET_QUERIES[key];
+    if (!preset) return;
+    setSelectedQueryApi(preset.api);
+    if (preset.api === 'ITEM_SYNC') {
+      setDynamicItemParams({ ...preset.queryParams });
+    } else {
+      setDynamicQueryJson(JSON.stringify(preset.payload, null, 2));
+    }
+    setDynamicQueryResult(null);
+  };
+
+  // Dynamic Query Executor
+  const handleExecuteDynamicQuery = async () => {
+    setExecutingDynamicQuery(true);
+    setDynamicQueryResult(null);
+    try {
+      let res;
+      if (selectedQueryApi === 'ITEM_SYNC') {
+        res = await integrationApi.syncItemsDynamic(dynamicItemParams, searchFacility, searchUsername, storeQueryAudit);
+      } else {
+        let parsed;
+        try {
+          parsed = JSON.parse(dynamicQueryJson);
+        } catch (jsonErr) {
+          throw new Error('Invalid JSON format: ' + jsonErr.message);
+        }
+        if (selectedQueryApi === 'ASN') {
+          res = await integrationApi.queryAsnDynamic(parsed, searchFacility, searchUsername, storeQueryAudit);
+        } else if (selectedQueryApi === 'PO') {
+          res = await integrationApi.queryPoDynamic(parsed, searchFacility, searchUsername, storeQueryAudit);
+        } else if (selectedQueryApi === 'PO_LINE') {
+          res = await integrationApi.queryPoLineDynamic(parsed, searchFacility, searchUsername, storeQueryAudit);
+        } else if (selectedQueryApi === 'ASN_LINE') {
+          res = await integrationApi.queryAsnLineDynamic(parsed, searchFacility, searchUsername, storeQueryAudit);
+        }
+      }
+      setDynamicQueryResult(res);
+      if (storeQueryAudit) {
+        await loadData(true);
+      }
+    } catch (err) {
+      setDynamicQueryResult({
+        success: false,
+        statusCode: 500,
+        cleanError: err.message || 'Dynamic query execution failed'
+      });
+    } finally {
+      setExecutingDynamicQuery(false);
+    }
+  };
+
+  // Beautify / Format Dynamic Query JSON
+  const handleFormatQueryJson = () => {
+    try {
+      const parsed = JSON.parse(dynamicQueryJson);
+      setDynamicQueryJson(JSON.stringify(parsed, null, 2));
+    } catch (e) {
+      alert('Cannot format invalid JSON: ' + e.message);
+    }
+  };
+
+  // Copy Query Response to Clipboard
+  const handleCopyQueryResponse = () => {
+    if (!dynamicQueryResult) return;
+    const text = typeof dynamicQueryResult.rawResponse === 'string'
+      ? dynamicQueryResult.rawResponse
+      : JSON.stringify(dynamicQueryResult, null, 2);
+    navigator.clipboard?.writeText(text);
+    setCopiedQueryResponse(true);
+    setTimeout(() => setCopiedQueryResponse(false), 2000);
+  };
+
   // Click an ID from the table to open full Inspection Modal
   const handleSelectDocForQuery = (job) => {
     handleInspectJob(job);
@@ -1098,6 +1246,28 @@ export default function MawmDispatchPage({
               <Package size={15} />
               <span>Item Master (ITEM)</span>
             </button>
+
+            <button
+              onClick={() => {
+                setSelectedDocCategory('QUERY');
+              }}
+              className={`filter-pill ${selectedDocCategory === 'QUERY' ? 'active' : ''}`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                padding: '0.4rem 0.95rem',
+                borderRadius: '6px',
+                backgroundColor: selectedDocCategory === 'QUERY' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(245, 158, 11, 0.08)',
+                borderColor: selectedDocCategory === 'QUERY' ? '#f59e0b' : 'rgba(245, 158, 11, 0.3)',
+                color: selectedDocCategory === 'QUERY' ? '#fbbf24' : '#f59e0b'
+              }}
+            >
+              <Zap size={15} />
+              <span>⚡ Dynamic Query & Inbound Sync Gateway</span>
+            </button>
           </div>
         </div>
 
@@ -1249,6 +1419,263 @@ export default function MawmDispatchPage({
                     {formatPayload(directItemResult.rawResponse)}
                   </pre>
                 )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* --- Dynamic Query & Inbound Sync Gateway (Non-standard ERP Payloads) --- */}
+        {selectedDocCategory === 'QUERY' && (
+          <div>
+            {/* Quick-Load Preset Bar */}
+            <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+              <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Zap size={13} color="#f59e0b" />
+                <span>QUICK-LOAD COMMON QUERY PRESETS:</span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('ASN_VERIFIED')}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.72rem', padding: '0.25rem 0.65rem', borderColor: 'rgba(56, 189, 248, 0.3)', color: '#38bdf8' }}
+                >
+                  Check ASN 8000 Verified
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('PO_STATUS')}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.72rem', padding: '0.25rem 0.65rem', borderColor: 'rgba(16, 185, 129, 0.3)', color: '#10b981' }}
+                >
+                  Search PO Status
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('PO_LINES')}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.72rem', padding: '0.25rem 0.65rem', borderColor: 'rgba(168, 85, 247, 0.3)', color: '#c084fc' }}
+                >
+                  Search PO Line Shipped/Received
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('PO_ASN_LINES')}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.72rem', padding: '0.25rem 0.65rem', borderColor: 'rgba(245, 158, 11, 0.3)', color: '#f59e0b' }}
+                >
+                  Search Associated ASN Lines for PO
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('ITEM_SYNC')}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.72rem', padding: '0.25rem 0.65rem', borderColor: 'rgba(236, 72, 153, 0.3)', color: '#f472b6' }}
+                >
+                  Fetch Items Updated Today (Inbound Sync)
+                </button>
+              </div>
+            </div>
+
+            {/* Sub-API Selector and Controls */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Target API:</span>
+                <select
+                  value={selectedQueryApi}
+                  onChange={(e) => {
+                    setSelectedQueryApi(e.target.value);
+                    setDynamicQueryResult(null);
+                  }}
+                  className="input-field"
+                  style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem', borderRadius: '6px', fontWeight: 600, minWidth: '300px' }}
+                >
+                  <option value="ASN">POST /receiving/api/receiving/asn/search (ASN Search)</option>
+                  <option value="PO">POST /receiving/api/receiving/purchaseOrder/search (PO Search)</option>
+                  <option value="PO_LINE">POST /receiving/api/receiving/purchaseOrderLine/search (PO Lines)</option>
+                  <option value="ASN_LINE">POST /receiving/api/receiving/asnLine/search (PO ASN Lines)</option>
+                  <option value="ITEM_SYNC">GET /item-master/api/item-master/item (Inbound Item Sync)</option>
+                </select>
+              </div>
+
+              {/* Audit tracker toggle (optional, false by default as requested) */}
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.75rem', color: storeQueryAudit ? '#38bdf8' : 'var(--text-muted)', cursor: 'pointer', fontWeight: 600 }}>
+                <input
+                  type="checkbox"
+                  checked={storeQueryAudit}
+                  onChange={(e) => setStoreQueryAudit(e.target.checked)}
+                  style={{ cursor: 'pointer', width: 14, height: 14, accentColor: '#38bdf8' }}
+                />
+                <span>Log to Audit Tracker in DB (storeTracker)</span>
+              </label>
+            </div>
+
+            {/* Editor Area */}
+            {selectedQueryApi === 'ITEM_SYNC' ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.65rem', marginBottom: '0.75rem', backgroundColor: 'rgba(0,0,0,0.25)', padding: '0.75rem', borderRadius: '6px' }}>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, display: 'block', marginBottom: '0.2rem' }}>Query Filter (predicate):</label>
+                  <input
+                    type="text"
+                    value={dynamicItemParams.query || ''}
+                    onChange={(e) => setDynamicItemParams(prev => ({ ...prev, query: e.target.value }))}
+                    placeholder="e.g. UpdatedTimestamp>2026-10-30T00:00:00"
+                    className="input-field"
+                    style={{ width: '100%', fontSize: '0.76rem', padding: '0.35rem 0.55rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, display: 'block', marginBottom: '0.2rem' }}>Page Index:</label>
+                  <input
+                    type="number"
+                    value={dynamicItemParams.page || '0'}
+                    onChange={(e) => setDynamicItemParams(prev => ({ ...prev, page: e.target.value }))}
+                    className="input-field"
+                    style={{ width: '100%', fontSize: '0.76rem', padding: '0.35rem 0.55rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, display: 'block', marginBottom: '0.2rem' }}>Page Size:</label>
+                  <input
+                    type="number"
+                    value={dynamicItemParams.size || '1000'}
+                    onChange={(e) => setDynamicItemParams(prev => ({ ...prev, size: e.target.value }))}
+                    className="input-field"
+                    style={{ width: '100%', fontSize: '0.76rem', padding: '0.35rem 0.55rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, display: 'block', marginBottom: '0.2rem' }}>Need Total Count:</label>
+                  <select
+                    value={dynamicItemParams.needTotalCount || 'true'}
+                    onChange={(e) => setDynamicItemParams(prev => ({ ...prev, needTotalCount: e.target.value }))}
+                    className="input-field"
+                    style={{ width: '100%', fontSize: '0.76rem', padding: '0.35rem 0.55rem' }}
+                  >
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </select>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                    Dynamic Request JSON (Zero-loss passthrough of Query & Template):
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleFormatQueryJson}
+                    className="btn-secondary"
+                    style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                  >
+                    <Code size={12} />
+                    <span>Format / Beautify</span>
+                  </button>
+                </div>
+                <textarea
+                  rows={8}
+                  value={dynamicQueryJson}
+                  onChange={(e) => setDynamicQueryJson(e.target.value)}
+                  className="input-field"
+                  style={{ width: '100%', fontFamily: 'var(--font-mono, monospace)', fontSize: '0.78rem', boxSizing: 'border-box' }}
+                />
+              </div>
+            )}
+
+            {/* Execute Button */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.65rem' }}>
+              <button
+                type="button"
+                onClick={handleExecuteDynamicQuery}
+                disabled={executingDynamicQuery}
+                className="btn-primary"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  padding: '0.45rem 1.25rem',
+                  fontSize: '0.82rem',
+                  backgroundColor: '#0284c7',
+                  borderColor: '#0284c7'
+                }}
+              >
+                <Zap size={14} className={executingDynamicQuery ? 'spin-icon' : ''} />
+                <span>{executingDynamicQuery ? 'Sending to MAWM...' : 'Send Request to MAWM Cloud'}</span>
+              </button>
+            </div>
+
+            {/* Dynamic Result Viewer */}
+            {dynamicQueryResult && (
+              <div style={{
+                marginTop: '0.85rem',
+                padding: '0.85rem 1rem',
+                borderRadius: '8px',
+                backgroundColor: dynamicQueryResult.success ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+                border: `1px solid ${dynamicQueryResult.success ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}`
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      padding: '0.15rem 0.5rem',
+                      borderRadius: '4px',
+                      backgroundColor: dynamicQueryResult.success ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                      color: dynamicQueryResult.success ? '#10b981' : '#ef4444'
+                    }}>
+                      {dynamicQueryResult.success ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
+                      <span>{dynamicQueryResult.statusCode || (dynamicQueryResult.success ? '200 OK' : 'ERROR')}</span>
+                    </span>
+
+                    {dynamicQueryResult.latencyMs !== undefined && (
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        ⏱ {dynamicQueryResult.latencyMs}ms
+                      </span>
+                    )}
+
+                    {dynamicQueryResult.totalCount !== undefined && (
+                      <span style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 600 }}>
+                        Total Count: {dynamicQueryResult.totalCount}
+                      </span>
+                    )}
+
+                    {dynamicQueryResult.jobId && (
+                      <span style={{ fontSize: '0.7rem', color: '#a855f7', fontFamily: 'monospace' }}>
+                        Audit Logged: {dynamicQueryResult.jobId.slice(0, 8)}...
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyQueryResponse}
+                    className="btn-secondary"
+                    style={{ fontSize: '0.7rem', padding: '0.2rem 0.55rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                  >
+                    {copiedQueryResponse ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
+                    <span>{copiedQueryResponse ? 'Copied!' : 'Copy Response'}</span>
+                  </button>
+                </div>
+
+                <pre style={{
+                  margin: 0,
+                  padding: '0.65rem 0.85rem',
+                  backgroundColor: 'rgba(0,0,0,0.45)',
+                  borderRadius: '6px',
+                  maxHeight: '260px',
+                  overflow: 'auto',
+                  fontSize: '0.74rem',
+                  color: dynamicQueryResult.success ? '#34d399' : '#fca5a5',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  fontFamily: 'var(--font-mono, monospace)'
+                }}>
+                  {formatPayload(dynamicQueryResult.rawResponse || dynamicQueryResult.data || dynamicQueryResult.error)}
+                </pre>
               </div>
             )}
           </div>
@@ -1824,6 +2251,263 @@ export default function MawmDispatchPage({
                     <ChevronRight size={14} />
                   </button>
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* --- Dynamic Query & Inbound Sync Gateway (Non-standard ERP Payloads) --- */}
+        {selectedDocCategory === 'QUERY' && (
+          <div>
+            {/* Quick-Load Preset Bar */}
+            <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+              <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Zap size={13} color="#f59e0b" />
+                <span>QUICK-LOAD COMMON QUERY PRESETS:</span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('ASN_VERIFIED')}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.72rem', padding: '0.25rem 0.65rem', borderColor: 'rgba(56, 189, 248, 0.3)', color: '#38bdf8' }}
+                >
+                  Check ASN 8000 Verified
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('PO_STATUS')}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.72rem', padding: '0.25rem 0.65rem', borderColor: 'rgba(16, 185, 129, 0.3)', color: '#10b981' }}
+                >
+                  Search PO Status
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('PO_LINES')}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.72rem', padding: '0.25rem 0.65rem', borderColor: 'rgba(168, 85, 247, 0.3)', color: '#c084fc' }}
+                >
+                  Search PO Line Shipped/Received
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('PO_ASN_LINES')}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.72rem', padding: '0.25rem 0.65rem', borderColor: 'rgba(245, 158, 11, 0.3)', color: '#f59e0b' }}
+                >
+                  Search Associated ASN Lines for PO
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('ITEM_SYNC')}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.72rem', padding: '0.25rem 0.65rem', borderColor: 'rgba(236, 72, 153, 0.3)', color: '#f472b6' }}
+                >
+                  Fetch Items Updated Today (Inbound Sync)
+                </button>
+              </div>
+            </div>
+
+            {/* Sub-API Selector and Controls */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Target API:</span>
+                <select
+                  value={selectedQueryApi}
+                  onChange={(e) => {
+                    setSelectedQueryApi(e.target.value);
+                    setDynamicQueryResult(null);
+                  }}
+                  className="input-field"
+                  style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem', borderRadius: '6px', fontWeight: 600, minWidth: '300px' }}
+                >
+                  <option value="ASN">POST /receiving/api/receiving/asn/search (ASN Search)</option>
+                  <option value="PO">POST /receiving/api/receiving/purchaseOrder/search (PO Search)</option>
+                  <option value="PO_LINE">POST /receiving/api/receiving/purchaseOrderLine/search (PO Lines)</option>
+                  <option value="ASN_LINE">POST /receiving/api/receiving/asnLine/search (PO ASN Lines)</option>
+                  <option value="ITEM_SYNC">GET /item-master/api/item-master/item (Inbound Item Sync)</option>
+                </select>
+              </div>
+
+              {/* Audit tracker toggle (optional, false by default as requested) */}
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.75rem', color: storeQueryAudit ? '#38bdf8' : 'var(--text-muted)', cursor: 'pointer', fontWeight: 600 }}>
+                <input
+                  type="checkbox"
+                  checked={storeQueryAudit}
+                  onChange={(e) => setStoreQueryAudit(e.target.checked)}
+                  style={{ cursor: 'pointer', width: 14, height: 14, accentColor: '#38bdf8' }}
+                />
+                <span>Log to Audit Tracker in DB (storeTracker)</span>
+              </label>
+            </div>
+
+            {/* Editor Area */}
+            {selectedQueryApi === 'ITEM_SYNC' ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.65rem', marginBottom: '0.75rem', backgroundColor: 'rgba(0,0,0,0.25)', padding: '0.75rem', borderRadius: '6px' }}>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, display: 'block', marginBottom: '0.2rem' }}>Query Filter (predicate):</label>
+                  <input
+                    type="text"
+                    value={dynamicItemParams.query || ''}
+                    onChange={(e) => setDynamicItemParams(prev => ({ ...prev, query: e.target.value }))}
+                    placeholder="e.g. UpdatedTimestamp>2026-10-30T00:00:00"
+                    className="input-field"
+                    style={{ width: '100%', fontSize: '0.76rem', padding: '0.35rem 0.55rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, display: 'block', marginBottom: '0.2rem' }}>Page Index:</label>
+                  <input
+                    type="number"
+                    value={dynamicItemParams.page || '0'}
+                    onChange={(e) => setDynamicItemParams(prev => ({ ...prev, page: e.target.value }))}
+                    className="input-field"
+                    style={{ width: '100%', fontSize: '0.76rem', padding: '0.35rem 0.55rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, display: 'block', marginBottom: '0.2rem' }}>Page Size:</label>
+                  <input
+                    type="number"
+                    value={dynamicItemParams.size || '1000'}
+                    onChange={(e) => setDynamicItemParams(prev => ({ ...prev, size: e.target.value }))}
+                    className="input-field"
+                    style={{ width: '100%', fontSize: '0.76rem', padding: '0.35rem 0.55rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, display: 'block', marginBottom: '0.2rem' }}>Need Total Count:</label>
+                  <select
+                    value={dynamicItemParams.needTotalCount || 'true'}
+                    onChange={(e) => setDynamicItemParams(prev => ({ ...prev, needTotalCount: e.target.value }))}
+                    className="input-field"
+                    style={{ width: '100%', fontSize: '0.76rem', padding: '0.35rem 0.55rem' }}
+                  >
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </select>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                    Dynamic Request JSON (Zero-loss passthrough of Query & Template):
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleFormatQueryJson}
+                    className="btn-secondary"
+                    style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                  >
+                    <Code size={12} />
+                    <span>Format / Beautify</span>
+                  </button>
+                </div>
+                <textarea
+                  rows={8}
+                  value={dynamicQueryJson}
+                  onChange={(e) => setDynamicQueryJson(e.target.value)}
+                  className="input-field"
+                  style={{ width: '100%', fontFamily: 'var(--font-mono, monospace)', fontSize: '0.78rem', boxSizing: 'border-box' }}
+                />
+              </div>
+            )}
+
+            {/* Execute Button */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.65rem' }}>
+              <button
+                type="button"
+                onClick={handleExecuteDynamicQuery}
+                disabled={executingDynamicQuery}
+                className="btn-primary"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  padding: '0.45rem 1.25rem',
+                  fontSize: '0.82rem',
+                  backgroundColor: '#0284c7',
+                  borderColor: '#0284c7'
+                }}
+              >
+                <Zap size={14} className={executingDynamicQuery ? 'spin-icon' : ''} />
+                <span>{executingDynamicQuery ? 'Sending to MAWM...' : 'Send Request to MAWM Cloud'}</span>
+              </button>
+            </div>
+
+            {/* Dynamic Result Viewer */}
+            {dynamicQueryResult && (
+              <div style={{
+                marginTop: '0.85rem',
+                padding: '0.85rem 1rem',
+                borderRadius: '8px',
+                backgroundColor: dynamicQueryResult.success ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+                border: `1px solid ${dynamicQueryResult.success ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}`
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      padding: '0.15rem 0.5rem',
+                      borderRadius: '4px',
+                      backgroundColor: dynamicQueryResult.success ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                      color: dynamicQueryResult.success ? '#10b981' : '#ef4444'
+                    }}>
+                      {dynamicQueryResult.success ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
+                      <span>{dynamicQueryResult.statusCode || (dynamicQueryResult.success ? '200 OK' : 'ERROR')}</span>
+                    </span>
+
+                    {dynamicQueryResult.latencyMs !== undefined && (
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        ⏱ {dynamicQueryResult.latencyMs}ms
+                      </span>
+                    )}
+
+                    {dynamicQueryResult.totalCount !== undefined && (
+                      <span style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 600 }}>
+                        Total Count: {dynamicQueryResult.totalCount}
+                      </span>
+                    )}
+
+                    {dynamicQueryResult.jobId && (
+                      <span style={{ fontSize: '0.7rem', color: '#a855f7', fontFamily: 'monospace' }}>
+                        Audit Logged: {dynamicQueryResult.jobId.slice(0, 8)}...
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyQueryResponse}
+                    className="btn-secondary"
+                    style={{ fontSize: '0.7rem', padding: '0.2rem 0.55rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                  >
+                    {copiedQueryResponse ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
+                    <span>{copiedQueryResponse ? 'Copied!' : 'Copy Response'}</span>
+                  </button>
+                </div>
+
+                <pre style={{
+                  margin: 0,
+                  padding: '0.65rem 0.85rem',
+                  backgroundColor: 'rgba(0,0,0,0.45)',
+                  borderRadius: '6px',
+                  maxHeight: '260px',
+                  overflow: 'auto',
+                  fontSize: '0.74rem',
+                  color: dynamicQueryResult.success ? '#34d399' : '#fca5a5',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  fontFamily: 'var(--font-mono, monospace)'
+                }}>
+                  {formatPayload(dynamicQueryResult.rawResponse || dynamicQueryResult.data || dynamicQueryResult.error)}
+                </pre>
               </div>
             )}
           </div>

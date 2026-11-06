@@ -372,6 +372,40 @@ public class TransactionStore {
         return count;
     }
 
+    /**
+     * Optional audit logging for dynamic MAWM search and inbound sync queries.
+     * Only invoked when explicit audit tracking is requested (e.g. storeTracker=true).
+     */
+    @Transactional
+    public void recordQueryAudit(String trackingId, String docType, String facility, String user, String queryPayload, String responseBody, String status) {
+        try {
+            ErpFileIntakeTracker tracker = new ErpFileIntakeTracker();
+            tracker.setJobId(trackingId);
+            tracker.setSourceSystem("Opti");
+            tracker.setTransactionType(docType != null ? docType : "QUERY");
+            tracker.setOriginalFilename("query_" + (docType != null ? docType.toLowerCase() : "req") + "_" + System.currentTimeMillis() + ".json");
+            tracker.setStoragePath("api_query");
+            tracker.setFileSizeBytes((long) (queryPayload != null ? queryPayload.length() : 0));
+            tracker.setTotalRecords(1);
+            tracker.setConvertedRecords(1);
+            tracker.setDispatchedRecords(1);
+            tracker.setFacilityId(facility != null && !facility.isBlank() ? facility : "Food_Cbe");
+            tracker.setCreatedBy(user != null && !user.isBlank() ? user : "kabil");
+            tracker.setReceivedAt(Instant.now());
+            tracker.setProcessingCompletedAt(Instant.now());
+            tracker.setIntakeStatus("CONVERTED");
+            tracker.setOutputFiles(queryPayload);
+            tracker.setDispatchStatus(status != null ? status : "DELIVERED_TO_MAWM (200 OK)");
+            tracker.setMawmResponse(responseBody);
+            tracker.setDispatchCompletedAt(Instant.now());
+            tracker.setUpdatedAt(Instant.now());
+            trackerRepository.save(tracker);
+            log.info("[DB Tracker] Recorded optional query audit tracker for jobId: {}", trackingId);
+        } catch (Exception e) {
+            log.error("[DB Tracker] Failed to record query audit for jobId: {}", trackingId, e);
+        }
+    }
+
     public List<ErpFileIntakeTracker> getAllTrackers(int page, int size) {
         org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(
                 Math.max(0, page),

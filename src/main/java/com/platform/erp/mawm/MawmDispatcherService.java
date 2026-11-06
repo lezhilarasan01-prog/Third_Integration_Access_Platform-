@@ -11,6 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -193,6 +194,321 @@ public class MawmDispatcherService {
                 .body(jsonPayload)
                 .retrieve()
                 .body(String.class);
+    }
+
+    private String executeWithAuthRetryGet(String targetEndpoint, String destinationFacilityId, String username, Map<String, String> queryParams) {
+        String bearerToken = mawmAuthService.getAccessToken(username);
+        try {
+            return sendToMawmGet(targetEndpoint, destinationFacilityId, bearerToken, queryParams);
+        } catch (RestClientResponseException rcre) {
+            int statusCode = rcre.getStatusCode().value();
+            if (statusCode == 401 || statusCode == 403) {
+                log.warn("[MAWM Dispatcher] MAWM Cloud returned HTTP {} Unauthorized for GET user '{}'. Auto-regenerating token and retrying...", statusCode, username);
+                mawmAuthService.invalidateToken(username);
+                String freshToken = mawmAuthService.getAccessToken(username);
+                return sendToMawmGet(targetEndpoint, destinationFacilityId, freshToken, queryParams);
+            }
+            throw rcre;
+        }
+    }
+
+    private String sendToMawmGet(String targetEndpoint, String destinationFacilityId, String bearerToken, Map<String, String> queryParams) {
+        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(targetEndpoint);
+        if (queryParams != null) {
+            queryParams.forEach((k, v) -> {
+                if (k != null && v != null && !k.isBlank()) {
+                    builder.queryParam(k, v);
+                }
+            });
+        }
+        return restClient.get()
+                .uri(builder.build().toUri())
+                .header("Authorization", "Bearer " + bearerToken)
+                .header("selectedLocation", destinationFacilityId)
+                .header("selectedOrganization", destinationFacilityId)
+                .header("selectedBusinessUnit", destinationFacilityId)
+                .retrieve()
+                .body(String.class);
+    }
+
+    /**
+     * Dynamic Search for ASN (5.4.2 /receiving/api/receiving/asn/search)
+     * Handles arbitrary dynamic JSON payloads from ERPs (Query + Template).
+     */
+    public Map<String, Object> searchAsnDynamic(JsonNode body, String facility, String username, boolean storeTracker) {
+        String targetEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getAsnSearchPath();
+        return executeDynamicSearch(targetEndpoint, "ASN", facility, username, body, "AsnId", storeTracker);
+    }
+
+    /**
+     * Dynamic Search for Purchase Orders (5.3.2 /receiving/api/receiving/purchaseOrder/search)
+     * Handles arbitrary dynamic JSON payloads from ERPs (Query + Template).
+     */
+    public Map<String, Object> searchPoDynamic(JsonNode body, String facility, String username, boolean storeTracker) {
+        String targetEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getPoSearchPath();
+        return executeDynamicSearch(targetEndpoint, "PO", facility, username, body, "PurchaseOrderId", storeTracker);
+    }
+
+    /**
+     * Dynamic Search for Purchase Order Lines (5.3.3 /receiving/api/receiving/purchaseOrderLine/search)
+     * Handles arbitrary dynamic JSON payloads from ERPs (Query + Template).
+     */
+    public Map<String, Object> searchPoLineDynamic(JsonNode body, String facility, String username, boolean storeTracker) {
+        String targetEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getPoLineSearchPath();
+        return executeDynamicSearch(targetEndpoint, "PO_LINE", facility, username, body, "PurchaseOrderId", storeTracker);
+    }
+
+    /**
+     * Dynamic Search for PO Associated ASN Lines (5.3.4 /receiving/api/receiving/asnLine/search)
+     * Handles arbitrary dynamic JSON payloads from ERPs (Query + Template).
+     */
+    public Map<String, Object> searchPoAsnLineDynamic(JsonNode body, String facility, String username, boolean storeTracker) {
+        String targetEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getAsnLineSearchPath();
+        return executeDynamicSearch(targetEndpoint, "ASN_LINE", facility, username, body, "PurchaseOrderId", storeTracker);
+    }
+
+    /**
+     * Inbound Sync: Dynamic GET to Fetch Items from MAWM (/item-master/api/item-master/item)
+     * Accepts dynamic query parameters (query filters like UpdatedTimestamp>..., page, size, needTotalCount).
+     */
+    public Map<String, Object> fetchItemsDynamic(String facilityId, String username, Map<String, String> queryParams, boolean storeTracker) {
+        String targetEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getItemQueryPath();
+        String facility = (facilityId != null && !facilityId.isBlank())
+                ? facilityId.trim()
+                : (mawmProperties.getDefaultFacility() != null ? mawmProperties.getDefaultFacility().trim() : "Food_Cbe");
+        String effectiveUsername = (username != null && !username.isBlank())
+                ? username.trim()
+                : mawmProperties.getUsername();
+
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("page", "0");
+        params.put("size", "1000");
+        params.put("needTotalCount", "true");
+        if (queryParams != null) {
+            params.putAll(queryParams);
+        }
+
+        try {
+            log.info("[MAWM Inbound Sync] Fetching items from {} with params {} (Facility: {}, User: {})",
+                    targetEndpoint, params, facility, effectiveUsername);
+            long startTime = System.currentTimeMillis();
+            String responseBody = executeWithAuthRetryGet(targetEndpoint, facility, effectiveUsername, params);
+            long latencyMs = System.currentTimeMillis() - startTime;
+
+            JsonNode rootNode = objectMapper.readTree(responseBody);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("statusCode", 200);
+            result.put("endpoint", targetEndpoint);
+            result.put("facilityId", facility);
+            result.put("username", effectiveUsername);
+            result.put("latencyMs", latencyMs);
+            result.put("queryParams", params);
+            result.put("rawResponse", responseBody);
+
+            if (rootNode.has("data")) {
+                result.put("data", rootNode.get("data"));
+            } else {
+                result.put("data", rootNode);
+            }
+            if (rootNode.has("totalCount")) {
+                result.put("totalCount", rootNode.get("totalCount").asInt());
+            }
+
+            if (storeTracker) {
+                String trackingId = java.util.UUID.randomUUID().toString();
+                String querySummary = "GET " + targetEndpoint + "?" + params.toString();
+                transactionStore.recordQueryAudit(trackingId, "ITEM", facility, effectiveUsername, querySummary, responseBody, "DELIVERED_TO_MAWM (200 OK)");
+                result.put("jobId", trackingId);
+            }
+
+            return result;
+        } catch (Exception ex) {
+            log.error("[MAWM Inbound Sync] Failed fetching items from {}: {}", targetEndpoint, ex.getMessage(), ex);
+            int statusCode = 500;
+            String rawErrorBody = null;
+            if (ex instanceof RestClientResponseException rcre) {
+                statusCode = rcre.getStatusCode().value();
+                rawErrorBody = rcre.getResponseBodyAsString();
+            }
+            String cleanMessage = extractCleanErrorMessage(rawErrorBody, statusCode, facility, effectiveUsername);
+            Map<String, Object> errResult = new LinkedHashMap<>();
+            errResult.put("success", false);
+            errResult.put("statusCode", statusCode);
+            errResult.put("error", cleanMessage);
+            errResult.put("cleanError", cleanMessage);
+            errResult.put("endpoint", targetEndpoint);
+            errResult.put("facilityId", facility);
+            errResult.put("username", effectiveUsername);
+            if (rawErrorBody != null && !rawErrorBody.isBlank()) {
+                errResult.put("rawResponse", rawErrorBody);
+            }
+            if (storeTracker) {
+                String trackingId = java.util.UUID.randomUUID().toString();
+                transactionStore.recordQueryAudit(trackingId, "ITEM", facility, effectiveUsername, params.toString(), rawErrorBody != null ? rawErrorBody : cleanMessage, "DISPATCH_FAILED (" + statusCode + ")");
+                errResult.put("jobId", trackingId);
+            }
+            return errResult;
+        }
+    }
+
+    /**
+     * Executes arbitrary dynamic JSON search against MAWM Cloud.
+     * Zero-loss schema passthrough: accepts arbitrary Query and Template fields.
+     */
+    public Map<String, Object> executeDynamicSearch(String targetEndpoint, String docType, String destinationFacilityId, String username, JsonNode bodyNode, String defaultQueryField, boolean storeTracker) {
+        String facility = resolveDynamicFacility(destinationFacilityId, bodyNode);
+        String effectiveUsername = resolveDynamicUsername(username, bodyNode);
+
+        try {
+            String jsonPayload;
+            if (bodyNode == null || bodyNode.isNull() || bodyNode.isEmpty()) {
+                throw new IllegalArgumentException("Request payload cannot be empty for MAWM search");
+            }
+
+            // Check if Query already present
+            boolean hasQuery = bodyNode.has("Query") || bodyNode.has("query");
+            if (hasQuery) {
+                // Pass directly to MAWM verbatim
+                jsonPayload = objectMapper.writeValueAsString(bodyNode);
+            } else {
+                // Adaptive smart synthesis: construct Query & Template from shorthand fields
+                Map<String, Object> synthesized = synthesizeManhattanQuery(bodyNode, defaultQueryField);
+                jsonPayload = objectMapper.writeValueAsString(synthesized);
+            }
+
+            log.info("[MAWM Dynamic Search] Forwarding dynamic search to {} (Facility: {}, User: {}) - Payload: {}",
+                    targetEndpoint, facility, effectiveUsername, jsonPayload);
+
+            long startTime = System.currentTimeMillis();
+            String responseBody = executeWithAuthRetry(targetEndpoint, facility, effectiveUsername, jsonPayload);
+            long latencyMs = System.currentTimeMillis() - startTime;
+
+            JsonNode rootNode = objectMapper.readTree(responseBody);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("statusCode", 200);
+            result.put("endpoint", targetEndpoint);
+            result.put("facilityId", facility);
+            result.put("username", effectiveUsername);
+            result.put("latencyMs", latencyMs);
+            result.put("rawResponse", responseBody);
+
+            if (rootNode.has("data")) {
+                result.put("data", rootNode.get("data"));
+            } else {
+                result.put("data", rootNode);
+            }
+            if (rootNode.has("totalCount")) {
+                result.put("totalCount", rootNode.get("totalCount").asInt());
+            }
+
+            if (storeTracker) {
+                String trackingId = java.util.UUID.randomUUID().toString();
+                transactionStore.recordQueryAudit(trackingId, docType, facility, effectiveUsername, jsonPayload, responseBody, "DELIVERED_TO_MAWM (200 OK)");
+                result.put("jobId", trackingId);
+            }
+
+            return result;
+        } catch (Exception ex) {
+            log.error("[MAWM Dynamic Search] Failed query to {}: {}", targetEndpoint, ex.getMessage(), ex);
+            int statusCode = 500;
+            String rawErrorBody = null;
+            if (ex instanceof RestClientResponseException rcre) {
+                statusCode = rcre.getStatusCode().value();
+                rawErrorBody = rcre.getResponseBodyAsString();
+            }
+            String cleanMessage = extractCleanErrorMessage(rawErrorBody, statusCode, facility, effectiveUsername);
+            Map<String, Object> errResult = new LinkedHashMap<>();
+            errResult.put("success", false);
+            errResult.put("statusCode", statusCode);
+            errResult.put("error", cleanMessage);
+            errResult.put("cleanError", cleanMessage);
+            errResult.put("endpoint", targetEndpoint);
+            errResult.put("facilityId", facility);
+            errResult.put("username", effectiveUsername);
+            if (rawErrorBody != null && !rawErrorBody.isBlank()) {
+                errResult.put("rawResponse", rawErrorBody);
+            }
+            if (storeTracker) {
+                String trackingId = java.util.UUID.randomUUID().toString();
+                String payloadSummary = bodyNode != null ? bodyNode.toString() : "empty";
+                transactionStore.recordQueryAudit(trackingId, docType, facility, effectiveUsername, payloadSummary, rawErrorBody != null ? rawErrorBody : cleanMessage, "DISPATCH_FAILED (" + statusCode + ")");
+                errResult.put("jobId", trackingId);
+            }
+            return errResult;
+        }
+    }
+
+    private Map<String, Object> synthesizeManhattanQuery(JsonNode node, String defaultQueryField) {
+        Map<String, Object> result = new LinkedHashMap<>();
+
+        // 1. Determine Query string
+        String queryString = null;
+        if ("AsnId".equalsIgnoreCase(defaultQueryField)) {
+            String val = node.has("AsnId") ? node.get("AsnId").asText() : (node.has("asnId") ? node.get("asnId").asText() : "");
+            if (!val.isBlank()) {
+                queryString = "AsnId in ('" + val.trim() + "')";
+            }
+        } else if ("PurchaseOrderId".equalsIgnoreCase(defaultQueryField)) {
+            String val = node.has("PurchaseOrderId") ? node.get("PurchaseOrderId").asText() : (node.has("purchaseOrderId") ? node.get("purchaseOrderId").asText() : "");
+            if (!val.isBlank()) {
+                queryString = "PurchaseOrderId='" + val.trim() + "'";
+            }
+        }
+
+        if (queryString == null || queryString.isBlank()) {
+            queryString = "1=1";
+        }
+        result.put("Query", queryString);
+
+        // 2. Determine Template
+        if (node.has("Template") && node.get("Template").isObject()) {
+            result.put("Template", objectMapper.convertValue(node.get("Template"), Map.class));
+        } else if (node.has("fields") && node.get("fields").isArray()) {
+            Map<String, String> template = new LinkedHashMap<>();
+            node.get("fields").forEach(f -> template.put(f.asText(), ""));
+            result.put("Template", template);
+        } else if ("AsnId".equalsIgnoreCase(defaultQueryField)) {
+            result.put("Template", Map.of("AsnId", "", "AsnStatus", ""));
+        } else if ("PurchaseOrderId".equalsIgnoreCase(defaultQueryField)) {
+            result.put("Template", Map.of("PurchaseOrderId", "", "PurchaseOrderStatus", "", "PurchaseOrderStatusDescription", ""));
+        } else {
+            result.put("Template", Map.of());
+        }
+
+        return result;
+    }
+
+    private String resolveDynamicFacility(String destinationFacilityId, JsonNode bodyNode) {
+        if (destinationFacilityId != null && !destinationFacilityId.isBlank()) {
+            return destinationFacilityId.trim();
+        }
+        if (bodyNode != null && bodyNode.isObject()) {
+            if (bodyNode.has("DestinationFacilityId") && !bodyNode.get("DestinationFacilityId").asText().isBlank()) {
+                return bodyNode.get("DestinationFacilityId").asText().trim();
+            }
+            if (bodyNode.has("FacilityId") && !bodyNode.get("FacilityId").asText().isBlank()) {
+                return bodyNode.get("FacilityId").asText().trim();
+            }
+        }
+        return (mawmProperties.getDefaultFacility() != null && !mawmProperties.getDefaultFacility().isBlank())
+                ? mawmProperties.getDefaultFacility().trim() : "Food_Cbe";
+    }
+
+    private String resolveDynamicUsername(String username, JsonNode bodyNode) {
+        if (username != null && !username.isBlank()) {
+            return username.trim();
+        }
+        if (bodyNode != null && bodyNode.isObject()) {
+            if (bodyNode.has("CreatedBy") && !bodyNode.get("CreatedBy").asText().isBlank()) {
+                return bodyNode.get("CreatedBy").asText().trim();
+            }
+            if (bodyNode.has("username") && !bodyNode.get("username").asText().isBlank()) {
+                return bodyNode.get("username").asText().trim();
+            }
+        }
+        return mawmProperties.getUsername();
     }
 
     /**

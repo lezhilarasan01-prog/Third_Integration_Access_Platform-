@@ -833,5 +833,102 @@ export const integrationApi = {
       throw new Error(err.error || 'Failed to verify job status in MAWM');
     }
     return res.json();
+  },
+
+  // --- Dynamic MAWM Query & Inbound Sync Gateway ---
+  async queryAsnDynamic(payload, facilityId = 'Food_Cbe', username, storeTracker = false) {
+    const params = new URLSearchParams();
+    if (facilityId) params.append('facilityId', facilityId);
+    if (username) params.append('username', username);
+    if (storeTracker) params.append('storeTracker', 'true');
+
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/query/asn?${params.toString()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (storeTracker) this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to query MAWM ASN');
+    }
+    return res.json();
+  },
+
+  async queryPoDynamic(payload, facilityId = 'Food_Cbe', username, storeTracker = false) {
+    const params = new URLSearchParams();
+    if (facilityId) params.append('facilityId', facilityId);
+    if (username) params.append('username', username);
+    if (storeTracker) params.append('storeTracker', 'true');
+
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/query/po?${params.toString()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (storeTracker) this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to query MAWM PO');
+    }
+    return res.json();
+  },
+
+  async queryPoLineDynamic(payload, facilityId = 'Food_Cbe', username, storeTracker = false) {
+    const params = new URLSearchParams();
+    if (facilityId) params.append('facilityId', facilityId);
+    if (username) params.append('username', username);
+    if (storeTracker) params.append('storeTracker', 'true');
+
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/query/po-line?${params.toString()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (storeTracker) this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to query MAWM PO Lines');
+    }
+    return res.json();
+  },
+
+  async queryAsnLineDynamic(payload, facilityId = 'Food_Cbe', username, storeTracker = false) {
+    const params = new URLSearchParams();
+    if (facilityId) params.append('facilityId', facilityId);
+    if (username) params.append('username', username);
+    if (storeTracker) params.append('storeTracker', 'true');
+
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/query/asn-line?${params.toString()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (storeTracker) this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to query MAWM PO ASN Lines');
+    }
+    return res.json();
+  },
+
+  async syncItemsDynamic(queryParams = {}, facilityId = 'Food_Cbe', username, storeTracker = false) {
+    const params = new URLSearchParams();
+    if (facilityId) params.append('facilityId', facilityId);
+    if (username) params.append('username', username);
+    if (storeTracker) params.append('storeTracker', 'true');
+    Object.entries(queryParams).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') {
+        params.append(k, v);
+      }
+    });
+
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/sync/items?${params.toString()}`);
+    if (storeTracker) this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to fetch Items from MAWM');
+    }
+    return res.json();
   }
 };
