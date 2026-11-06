@@ -22,6 +22,7 @@ public class MawmProperties {
     private String poSearchPath = "/receiving/api/receiving/purchaseOrder/search";
     private String poLineSearchPath = "/receiving/api/receiving/purchaseOrderLine/search";
     private String asnLineSearchPath = "/receiving/api/receiving/asnLine/search";
+    private String itemPath = "/item-master/api/item-master/item/save";
     private String defaultFacility;
     private String apiKey;
     private String verifiedStatus = "8000";
@@ -63,6 +64,9 @@ public class MawmProperties {
 
     public String getAsnLineSearchPath() { return asnLineSearchPath; }
     public void setAsnLineSearchPath(String asnLineSearchPath) { this.asnLineSearchPath = asnLineSearchPath; }
+
+    public String getItemPath() { return itemPath; }
+    public void setItemPath(String itemPath) { this.itemPath = itemPath; }
 
     public String getDefaultFacility() { return defaultFacility; }
     public void setDefaultFacility(String defaultFacility) { this.defaultFacility = defaultFacility; }

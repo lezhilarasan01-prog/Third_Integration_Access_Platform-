@@ -464,7 +464,7 @@ public class TransactionStore {
                     .toList();
         } catch (Exception e) {
             log.warn("Could not query distinct transaction types: {}", e.getMessage());
-            return List.of("ASN", "PO");
+            return List.of("ASN", "PO", "ITEM");
         }
     }
 

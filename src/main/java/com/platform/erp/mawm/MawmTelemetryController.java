@@ -50,6 +50,7 @@ public class MawmTelemetryController {
         data.put("poSearchPath", mawmProperties.getPoSearchPath());
         data.put("poLineSearchPath", mawmProperties.getPoLineSearchPath());
         data.put("asnLineSearchPath", mawmProperties.getAsnLineSearchPath());
+        data.put("itemPath", mawmProperties.getItemPath());
         data.put("defaultFacility", mawmProperties.getDefaultFacility());
         data.put("username", mawmProperties.getUsername());
         data.put("verifiedStatus", mawmProperties.getVerifiedStatus());
@@ -73,6 +74,18 @@ public class MawmTelemetryController {
                     "error", e.getMessage()
             ));
         }
+    }
+
+    /**
+     * Directly create / save an Item Master in MAWM Cloud (/item-master/api/item-master/item/save)
+     * POST /api/v1/erp/mawm/save-item
+     */
+    @PostMapping({"/save-item", "/create-item-active"})
+    public ResponseEntity<Map<String, Object>> saveItem(
+            @RequestBody Map<String, Object> payload,
+            @RequestParam(value = "username", required = false) String username) {
+        Map<String, Object> result = mawmDispatcherService.saveItemDirect(payload, username);
+        return ResponseEntity.ok(result);
     }
 
     /**

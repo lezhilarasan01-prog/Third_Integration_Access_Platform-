@@ -296,6 +296,8 @@ public class ErpFileConsumerService {
                 return "ASN";
             if (lower.contains("po") || lower.contains("order"))
                 return "PO";
+            if (lower.contains("item") || lower.contains("sku") || lower.contains("part"))
+                return "ITEM";
             if (lower.contains("invoice"))
                 return "INVOICE";
         }
@@ -305,6 +307,8 @@ public class ErpFileConsumerService {
                 return "ASN";
             if (upper.contains("PO") || upper.contains("ORDER"))
                 return "PO";
+            if (upper.contains("ITEM") || upper.contains("SKU") || upper.contains("PART"))
+                return "ITEM";
             if (upper.contains("INVOICE"))
                 return "INVOICE";
         }

@@ -1021,8 +1021,10 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
                     <>
                       <option value="erp_file_po_raw">erp_file_po_raw</option>
                       <option value="erp_file_asn_raw">erp_file_asn_raw</option>
+                      <option value="erp_file_item_raw">erp_file_item_raw</option>
                       <option value="erp_file_po_dlq">erp_file_po_dlq</option>
                       <option value="erp_file_asn_dlq">erp_file_asn_dlq</option>
+                      <option value="erp_file_item_dlq">erp_file_item_dlq</option>
                     </>
                   )}
                 </select>
@@ -1588,8 +1590,10 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
               >
                 <option value="erp_file_po_raw">erp_file_po_raw (Purchase Orders)</option>
                 <option value="erp_file_asn_raw">erp_file_asn_raw (Shipment Notices / ASN)</option>
+                <option value="erp_file_item_raw">erp_file_item_raw (Item Master)</option>
                 <option value="erp_file_po_dlq">erp_file_po_dlq (PO Dead Letter Queue)</option>
                 <option value="erp_file_asn_dlq">erp_file_asn_dlq (ASN Dead Letter Queue)</option>
+                <option value="erp_file_item_dlq">erp_file_item_dlq (Item Dead Letter Queue)</option>
               </select>
             </div>
 

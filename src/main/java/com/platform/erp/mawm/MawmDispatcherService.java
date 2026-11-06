@@ -60,8 +60,11 @@ public class MawmDispatcherService {
             return;
         }
 
+        boolean isItem = "ITEM".equalsIgnoreCase(envelope.getDocumentType()) || "ITEM_MASTER".equalsIgnoreCase(envelope.getDocumentType());
+        boolean isAsn = "ASN".equalsIgnoreCase(envelope.getDocumentType());
+
         String targetEndpoint = mawmProperties.getBaseUrl() +
-                ("ASN".equalsIgnoreCase(envelope.getDocumentType()) ? mawmProperties.getAsnPath() : mawmProperties.getPoPath());
+                (isItem ? mawmProperties.getItemPath() : isAsn ? mawmProperties.getAsnPath() : mawmProperties.getPoPath());
 
         try {
             // Extract DestinationFacilityId directly from data records or envelope (mandatory for MAWM headers)
@@ -72,6 +75,8 @@ public class MawmDispatcherService {
                     destinationFacilityId = String.valueOf(first.get("DestinationFacilityId")).trim();
                 } else if (first.get("destinationFacilityId") != null && !String.valueOf(first.get("destinationFacilityId")).isBlank()) {
                     destinationFacilityId = String.valueOf(first.get("destinationFacilityId")).trim();
+                } else if (first.get("FacilityId") != null && !String.valueOf(first.get("FacilityId")).isBlank()) {
+                    destinationFacilityId = String.valueOf(first.get("FacilityId")).trim();
                 }
             }
             if (destinationFacilityId == null && envelope.getRecords() != null && !envelope.getRecords().isEmpty()) {
@@ -80,6 +85,8 @@ public class MawmDispatcherService {
                     destinationFacilityId = String.valueOf(first.get("DestinationFacilityId")).trim();
                 } else if (first.get("destinationFacilityId") != null && !String.valueOf(first.get("destinationFacilityId")).isBlank()) {
                     destinationFacilityId = String.valueOf(first.get("destinationFacilityId")).trim();
+                } else if (first.get("FacilityId") != null && !String.valueOf(first.get("FacilityId")).isBlank()) {
+                    destinationFacilityId = String.valueOf(first.get("FacilityId")).trim();
                 }
             }
             if (destinationFacilityId == null || destinationFacilityId.isBlank()) {
@@ -96,23 +103,41 @@ public class MawmDispatcherService {
                     : mawmProperties.getUsername();
 
             // Prepare payload for MAWM
+            // For ITEM: MAWM /item-master/api/item-master/item/save expects the individual Item object
             // For ASN: MAWM /receiving/api/receiving/asn/save expects the individual ASN object
+            // For PO: MAWM /receiving/api/receiving/purchaseOrder/save expects { "Data": [ ... ] } or individual object
             Object payloadToSend;
-            if (envelope.getData() != null && !envelope.getData().isEmpty()) {
-                Map<String, Object> asnMap = envelope.getData().get(0);
-                // Ensure DestinationFacilityId matches if not already populated
-                if (asnMap.get("DestinationFacilityId") == null || String.valueOf(asnMap.get("DestinationFacilityId")).isBlank()) {
-                    asnMap.put("DestinationFacilityId", destinationFacilityId);
+            if (isItem) {
+                if (envelope.getData() != null && !envelope.getData().isEmpty()) {
+                    payloadToSend = envelope.getData().get(0);
+                } else if (envelope.getRecords() != null && !envelope.getRecords().isEmpty()) {
+                    payloadToSend = envelope.getRecords().get(0);
+                } else {
+                    payloadToSend = envelope.toMawmPayload();
                 }
-                payloadToSend = asnMap;
+            } else if (isAsn) {
+                if (envelope.getData() != null && !envelope.getData().isEmpty()) {
+                    Map<String, Object> asnMap = envelope.getData().get(0);
+                    // Ensure DestinationFacilityId matches if not already populated
+                    if (asnMap.get("DestinationFacilityId") == null || String.valueOf(asnMap.get("DestinationFacilityId")).isBlank()) {
+                        asnMap.put("DestinationFacilityId", destinationFacilityId);
+                    }
+                    payloadToSend = asnMap;
+                } else {
+                    payloadToSend = envelope.toMawmPayload();
+                }
             } else {
-                payloadToSend = envelope.toMawmPayload();
+                if (envelope.getData() != null && !envelope.getData().isEmpty()) {
+                    payloadToSend = Map.of("Data", envelope.getData());
+                } else {
+                    payloadToSend = envelope.toMawmPayload();
+                }
             }
 
             String jsonPayload = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(payloadToSend);
 
-            log.info("[MAWM Dispatcher] Dispatching converted ASN to MAWM Cloud Endpoint: {} (TrackingId: {}, DestinationFacilityId: {}, User: {})",
-                    targetEndpoint, trackingId, destinationFacilityId, effectiveUsername);
+            log.info("[MAWM Dispatcher] Dispatching converted {} to MAWM Cloud Endpoint: {} (TrackingId: {}, Facility: {}, User: {})",
+                    (isItem ? "ITEM" : isAsn ? "ASN" : "PO"), targetEndpoint, trackingId, destinationFacilityId, effectiveUsername);
 
             // Execute HTTP POST with automatic token regeneration & retry on 401/403 (zero process interruption)
             String responseBody = executeWithAuthRetry(targetEndpoint, destinationFacilityId, effectiveUsername, jsonPayload);
@@ -599,6 +624,66 @@ public class MawmDispatcherService {
             return result;
         } catch (Exception ex) {
             log.error("[MAWM Direct Save] Failed saving ASN to {}: {}", targetEndpoint, ex.getMessage(), ex);
+            int statusCode = 500;
+            String rawErrorBody = null;
+            if (ex instanceof RestClientResponseException rcre) {
+                statusCode = rcre.getStatusCode().value();
+                rawErrorBody = rcre.getResponseBodyAsString();
+            }
+            String cleanMessage = extractCleanErrorMessage(rawErrorBody, statusCode, facility, effectiveUsername);
+            Map<String, Object> errResult = new LinkedHashMap<>();
+            errResult.put("success", false);
+            errResult.put("statusCode", statusCode);
+            errResult.put("error", cleanMessage);
+            errResult.put("cleanError", cleanMessage);
+            errResult.put("endpoint", targetEndpoint);
+            errResult.put("facilityId", facility);
+            errResult.put("username", effectiveUsername);
+            if (rawErrorBody != null && !rawErrorBody.isBlank()) {
+                errResult.put("rawResponse", rawErrorBody);
+            }
+            return errResult;
+        }
+    }
+
+    /**
+     * Directly creates / saves an Item Master in MAWM Cloud (/item-master/api/item-master/item/save)
+     */
+    public Map<String, Object> saveItemDirect(Map<String, Object> itemPayload, String username) {
+        String targetEndpoint = mawmProperties.getBaseUrl() + mawmProperties.getItemPath();
+        String facility = null;
+        if (itemPayload != null && itemPayload.get("DestinationFacilityId") != null) {
+            facility = String.valueOf(itemPayload.get("DestinationFacilityId")).trim();
+        } else if (itemPayload != null && itemPayload.get("FacilityId") != null) {
+            facility = String.valueOf(itemPayload.get("FacilityId")).trim();
+        }
+        if (facility == null || facility.isBlank()) {
+            facility = mawmProperties.getDefaultFacility() != null ? mawmProperties.getDefaultFacility().trim() : "Food_Cbe";
+        }
+        String effectiveUsername = (username != null && !username.isBlank())
+                ? username.trim()
+                : (itemPayload != null && itemPayload.get("CreatedBy") != null
+                    ? String.valueOf(itemPayload.get("CreatedBy")).trim()
+                    : mawmProperties.getUsername());
+
+        try {
+            String jsonPayload = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(itemPayload);
+            log.info("[MAWM Direct Item Save] Saving Item to {} (Facility: {}, User: {})", targetEndpoint, facility, effectiveUsername);
+            String responseBody = executeWithAuthRetry(targetEndpoint, facility, effectiveUsername, jsonPayload);
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("endpoint", targetEndpoint);
+            result.put("facilityId", facility);
+            result.put("username", effectiveUsername);
+            result.put("message", "200 OK - Item Master Saved Successfully in MAWM");
+            result.put("rawResponse", responseBody);
+            try {
+                result.put("data", objectMapper.readTree(responseBody));
+            } catch (Exception ignored) {}
+            return result;
+        } catch (Exception ex) {
+            log.error("[MAWM Direct Item Save] Failed saving Item to {}: {}", targetEndpoint, ex.getMessage(), ex);
             int statusCode = 500;
             String rawErrorBody = null;
             if (ex instanceof RestClientResponseException rcre) {

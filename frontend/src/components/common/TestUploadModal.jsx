@@ -36,7 +36,7 @@ const DEFAULT_ERP_SOURCES = [
   'ECOMMERCE'
 ];
 
-const DEFAULT_DOC_TYPES = ['ASN', 'PO'];
+const DEFAULT_DOC_TYPES = ['ASN', 'PO', 'ITEM'];
 
 const PRESET_SAMPLES = [
   {
@@ -326,6 +326,58 @@ ASN-B-9902|CUSTOMER_B_LOGISTICS|IN_5180|LPN-B-001094|SKU-B-9902|160|UNITS|AVAILA
         ]
       }
     ], null, 2)
+  },
+  {
+    id: '11-opti-item-json',
+    format: 'JSON',
+    label: '11. Opti Item Master (JSON)',
+    desc: 'Item Master save with ItemId, PrimaryBarCode, Uom, CreatedBy',
+    erp: 'Opti',
+    docType: 'ITEM',
+    filename: 'item_master.json',
+    mime: 'application/json',
+    content: JSON.stringify({
+      standardQtyUom: "",
+      standard: "",
+      quantity: null,
+      mawmSynced: false,
+      ItemId: "7995868536",
+      Description: "Basmati Rice 25000g",
+      PrimaryBarCode: "12345678",
+      AttributeGroupId: "",
+      ProductClass: "",
+      Length: null,
+      Width: null,
+      Height: null,
+      Weight: null,
+      Volume: null,
+      DimensionUomId: "",
+      WeightUomId: "",
+      VolumeUomId: "",
+      HazardousMaterialId: "",
+      Hazmat: "0",
+      SizeCode: "",
+      Color: "",
+      ShelfDays: null,
+      ProductLifeInDays: null,
+      Conveyable: false,
+      TrackBatchNumber: false,
+      TrackProductStatus: false,
+      TrackInventoryType: false,
+      TrackPackQuantity: false,
+      TrackExpiryDate: false,
+      TrackItemAttribute1: false,
+      TrackItemAttribute2: false,
+      TrackItemAttribute3: false,
+      TrackManufacturingDate: false,
+      Uom: "UNIT",
+      CreatedBy: "lezhilarasan",
+      CreatedTimestamp: "2026-10-30T13:50:55.257234",
+      UpdatedBy: "lezhilarasan",
+      UpdatedTimestamp: "2026-10-30T13:50:55.257239",
+      DisplayUomId: null,
+      ItemPackage: []
+    }, null, 2)
   }
 ];
 

@@ -92,6 +92,8 @@ public class FileToJsonTransformer {
 
         if (payloadDestinationFacility != null && !payloadDestinationFacility.isBlank()) {
             facilityId = payloadDestinationFacility;
+        } else if ("DEFAULT".equalsIgnoreCase(facilityId) || "UNKNOWN".equalsIgnoreCase(facilityId)) {
+            facilityId = "Food_Cbe";
         }
 
         log.info("[Intake: {}] Camel detected format '{}' for file '{}' (ERP: {}, DocType: {}, Facility: {}, CreatedBy: {})", 

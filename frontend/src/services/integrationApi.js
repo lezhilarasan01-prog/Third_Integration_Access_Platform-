@@ -729,6 +729,23 @@ export const integrationApi = {
     return res.json();
   },
 
+  async saveItemDirect(payload, username) {
+    const url = username
+      ? `${BASE_URL}/api/v1/erp/mawm/save-item?username=${encodeURIComponent(username)}`
+      : `${BASE_URL}/api/v1/erp/mawm/save-item`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to save Item Master directly to MAWM');
+    }
+    return res.json();
+  },
+
   async searchPoStatus(purchaseOrderId, facilityId = 'Food_Cbe', username) {
     const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/search-po`, {
       method: 'POST',

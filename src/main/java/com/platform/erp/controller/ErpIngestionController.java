@@ -202,7 +202,7 @@ public class ErpIngestionController {
             if (docType == null) {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
                         "error", "INVALID_DOCUMENT_TYPE",
-                        "message", "Document type is invalid or missing. Must be either 'PO' or 'ASN'."
+                        "message", "Document type is invalid or missing. Must be either 'PO', 'ASN', or 'ITEM'."
                 ));
             }
 
@@ -304,6 +304,9 @@ public class ErpIngestionController {
             }
             if (upper.contains("PO") || upper.contains("ORDER") || upper.contains("PURCHASE")) {
                 return "PO";
+            }
+            if (upper.contains("ITEM") || upper.contains("PART") || upper.contains("SKU") || upper.contains("PRODUCT")) {
+                return "ITEM";
             }
         }
         return null;

@@ -19,7 +19,8 @@ import {
   Truck,
   ListOrdered,
   Layers,
-  Database
+  Database,
+  Package
 } from 'lucide-react';
 import { integrationApi } from '../../services/integrationApi';
 
@@ -67,6 +68,49 @@ const DEFAULT_ASN_SAMPLE = {
   ]
 };
 
+const DEFAULT_ITEM_SAMPLE = {
+  standardQtyUom: "",
+  standard: "",
+  quantity: null,
+  mawmSynced: false,
+  ItemId: "7995868536",
+  Description: "Basmati Rice 25000g",
+  PrimaryBarCode: "12345678",
+  AttributeGroupId: "",
+  ProductClass: "",
+  Length: null,
+  Width: null,
+  Height: null,
+  Weight: null,
+  Volume: null,
+  DimensionUomId: "",
+  WeightUomId: "",
+  VolumeUomId: "",
+  HazardousMaterialId: "",
+  Hazmat: "0",
+  SizeCode: "",
+  Color: "",
+  ShelfDays: null,
+  ProductLifeInDays: null,
+  Conveyable: false,
+  TrackBatchNumber: false,
+  TrackProductStatus: false,
+  TrackInventoryType: false,
+  TrackPackQuantity: false,
+  TrackExpiryDate: false,
+  TrackItemAttribute1: false,
+  TrackItemAttribute2: false,
+  TrackItemAttribute3: false,
+  TrackManufacturingDate: false,
+  Uom: "UNIT",
+  CreatedBy: "lezhilarasan",
+  CreatedTimestamp: "2026-10-30T13:50:55.257234",
+  UpdatedBy: "lezhilarasan",
+  UpdatedTimestamp: "2026-10-30T13:50:55.257239",
+  DisplayUomId: null,
+  ItemPackage: []
+};
+
 export default function MawmDispatchPage({
   onReturnOverview,
   onNavigateToJobs,
@@ -96,6 +140,11 @@ export default function MawmDispatchPage({
   const [directAsnJson, setDirectAsnJson] = useState(JSON.stringify(DEFAULT_ASN_SAMPLE, null, 2));
   const [savingAsnDirect, setSavingAsnDirect] = useState(false);
   const [directAsnResult, setDirectAsnResult] = useState(null);
+
+  // Direct Item Save State
+  const [directItemJson, setDirectItemJson] = useState(JSON.stringify(DEFAULT_ITEM_SAMPLE, null, 2));
+  const [savingItemDirect, setSavingItemDirect] = useState(false);
+  const [directItemResult, setDirectItemResult] = useState(null);
 
   const [showRawJsonMap, setShowRawJsonMap] = useState({});
 
@@ -133,8 +182,25 @@ export default function MawmDispatchPage({
     }
   };
 
+  const isItemRecord = useCallback((job) => {
+    if (!job) return false;
+    const type = (job.transactionType || '').toUpperCase();
+    if (type === 'ITEM' || type.includes('ITEM') || type.includes('PRODUCT') || type.includes('SKU') || type.includes('PART')) return true;
+    const storage = (job.storagePath || '').toLowerCase();
+    if (storage.includes('item')) return true;
+    const profile = (job.mappingProfile || '').toLowerCase();
+    if (profile.includes('item')) return true;
+    const fn = (job.originalFilename || '').toUpperCase();
+    if (fn.includes('ITEM')) return true;
+    if (job.outputFiles && (job.outputFiles.includes('ItemId') || job.outputFiles.includes('itemId') || job.outputFiles.includes('PrimaryBarCode'))) return true;
+    if (job.rawContent && (job.rawContent.includes('ItemId') || job.rawContent.includes('itemId') || job.rawContent.includes('PrimaryBarCode'))) return true;
+    if (job.mawmResponse && (job.mawmResponse.includes('ProfileId') || job.mawmResponse.includes('ItemId') || job.mawmResponse.includes('itemId'))) return true;
+    return false;
+  }, []);
+
   const isAsnRecord = useCallback((job) => {
     if (!job) return false;
+    if (isItemRecord(job)) return false;
     const type = (job.transactionType || '').toUpperCase();
     if (type === 'ASN' || type.includes('ASN') || type.includes('SHIPMENT')) return true;
     const storage = (job.storagePath || '').toLowerCase();
@@ -147,10 +213,11 @@ export default function MawmDispatchPage({
     if (job.rawContent && (job.rawContent.includes('AsnId') || job.rawContent.includes('asnId') || job.rawContent.includes('AsnLine'))) return true;
     if (job.mawmResponse && (job.mawmResponse.includes('AsnId') || job.mawmResponse.includes('asnId') || job.mawmResponse.includes('AsnLine'))) return true;
     return false;
-  }, []);
+  }, [isItemRecord]);
 
   const isPoRecord = useCallback((job) => {
     if (!job) return false;
+    if (isItemRecord(job)) return false;
     if (isAsnRecord(job)) return false;
     const type = (job.transactionType || '').toUpperCase();
     if (type === 'PO' || type.includes('PURCHASE') || type.includes('ORDER')) return true;
@@ -164,7 +231,40 @@ export default function MawmDispatchPage({
     if (job.rawContent && (job.rawContent.includes('PurchaseOrderId') || job.rawContent.includes('purchaseOrder'))) return true;
     if (job.mawmResponse && (job.mawmResponse.includes('PurchaseOrderId') || job.mawmResponse.includes('purchaseOrder'))) return true;
     return false;
-  }, [isAsnRecord]);
+  }, [isItemRecord, isAsnRecord]);
+
+  // Robust Item ID extraction
+  const extractItemId = useCallback((job) => {
+    if (!job) return '';
+    if (job.outputFiles && typeof job.outputFiles === 'string') {
+      try {
+        const parsed = JSON.parse(job.outputFiles);
+        const dataArr = parsed.Data || parsed.data || (Array.isArray(parsed) ? parsed : null);
+        if (Array.isArray(dataArr) && dataArr[0]?.ItemId) return String(dataArr[0].ItemId);
+        if (parsed.ItemId) return String(parsed.ItemId);
+        if (parsed.itemId) return String(parsed.itemId);
+      } catch (e) {}
+      const m = job.outputFiles.match(/"ItemId"\s*:\s*"([^"]+)"/i) || job.outputFiles.match(/"itemId"\s*:\s*"([^"]+)"/i);
+      if (m && m[1]) return m[1];
+    }
+    if (job.rawContent && typeof job.rawContent === 'string') {
+      try {
+        const parsed = JSON.parse(job.rawContent);
+        if (parsed.ItemId) return String(parsed.ItemId);
+        if (parsed.itemId) return String(parsed.itemId);
+      } catch (e) {}
+      const m = job.rawContent.match(/"ItemId"\s*:\s*"([^"]+)"/i) || job.rawContent.match(/"itemId"\s*:\s*"([^"]+)"/i);
+      if (m && m[1]) return m[1];
+    }
+    if (job.originalFilename) {
+      const m = job.originalFilename.match(/(ITEM[-_A-Za-z0-9]+)/i);
+      if (m && m[1]) return m[1];
+    }
+    if (job.jobId) {
+      return `ITEM-${job.jobId.slice(0, 8).toUpperCase()}`;
+    }
+    return 'ITEM-MASTER';
+  }, []);
 
   // Robust PO ID extraction
   const extractPoId = useCallback((job) => {
@@ -256,7 +356,10 @@ export default function MawmDispatchPage({
 
   // Unified Document ID extraction
   const extractDocId = useCallback((job) => {
-    if (!job) return { id: '', type: 'ASN' };
+    if (!job) return { id: '', type: 'PO' };
+    if (isItemRecord(job)) {
+      return { id: extractItemId(job), type: 'ITEM' };
+    }
     if (isAsnRecord(job)) {
       return { id: extractAsnId(job), type: 'ASN' };
     }
@@ -264,11 +367,14 @@ export default function MawmDispatchPage({
       return { id: extractPoId(job), type: 'PO' };
     }
     const fn = (job.originalFilename || '').toUpperCase();
+    if (fn.includes('ITEM')) {
+      return { id: extractItemId(job), type: 'ITEM' };
+    }
     if (fn.includes('ASN')) {
       return { id: extractAsnId(job), type: 'ASN' };
     }
     return { id: extractPoId(job), type: 'PO' };
-  }, [isAsnRecord, isPoRecord, extractAsnId, extractPoId]);
+  }, [isItemRecord, isAsnRecord, isPoRecord, extractItemId, extractAsnId, extractPoId]);
 
   // Robust Destination Facility extraction
   const extractFacility = useCallback((job) => {
@@ -298,6 +404,14 @@ export default function MawmDispatchPage({
   const extractLiveStatus = useCallback((job) => {
     if (!job) return null;
     if (rowStatusMap[job.jobId]) return rowStatusMap[job.jobId];
+    if (isItemRecord(job)) {
+      if (job.dispatchStatus && (job.dispatchStatus.includes('DELIVERED') || job.dispatchStatus.includes('200'))) {
+        return 'SAVED / ACTIVE';
+      }
+      if (job.mawmResponse && (job.mawmResponse.includes('success') || job.mawmResponse.includes('ProfileId'))) {
+        return 'SAVED / ACTIVE';
+      }
+    }
     if (job.mawmAsnStatus) return job.mawmAsnStatus;
     if (job.mawmResponse && typeof job.mawmResponse === 'string') {
       try {
@@ -478,6 +592,31 @@ export default function MawmDispatchPage({
     }
   };
 
+  // Direct Save Item Master Action
+  const handleDirectItemSave = async () => {
+    setSavingItemDirect(true);
+    setDirectItemResult(null);
+    try {
+      let parsed;
+      try {
+        parsed = JSON.parse(directItemJson);
+      } catch (jsonErr) {
+        throw new Error('Invalid JSON format: ' + jsonErr.message);
+      }
+      const res = await integrationApi.saveItemDirect(parsed, searchUsername);
+      setDirectItemResult(res);
+      await loadData(true);
+    } catch (err) {
+      setDirectItemResult({
+        success: false,
+        statusCode: 500,
+        cleanError: err.message || 'Direct Item Master save failed'
+      });
+    } finally {
+      setSavingItemDirect(false);
+    }
+  };
+
   // Click an ID from the table to open full Inspection Modal
   const handleSelectDocForQuery = (job) => {
     handleInspectJob(job);
@@ -491,7 +630,11 @@ export default function MawmDispatchPage({
     const fac = extractFacility(job) || 'Food_Cbe';
     setVerifyingJobId(jobId);
     try {
-      if (type === 'PO') {
+      if (type === 'ITEM') {
+        const res = await integrationApi.verifyJob(jobId);
+        const actualStatus = res.statusDescription || res.mawmStatus || (res.success ? 'SAVED / ACTIVE' : 'PENDING');
+        setRowStatusMap(prev => ({ ...prev, [jobId]: actualStatus }));
+      } else if (type === 'PO') {
         const res = await integrationApi.searchPoStatus(id, fac, searchUsername);
         const actualStatus = res.statusDescription || res.purchaseOrderStatus || (res.success ? 'RECEIVED' : 'ERROR');
         setRowStatusMap(prev => ({ ...prev, [jobId]: actualStatus }));
@@ -563,14 +706,17 @@ export default function MawmDispatchPage({
     return trackers.filter((r) => {
       const isAsn = isAsnRecord(r);
       const isPo = isPoRecord(r);
+      const isItem = isItemRecord(r);
 
-      // 1. DocType filter (Strictly Purchase Orders or ASN Deliveries)
+      // 1. DocType filter (Strictly Purchase Orders, ASN Deliveries, or Item Master)
       if (selectedDocTypeFilter === 'PO') {
         if (!isPo) return false;
       } else if (selectedDocTypeFilter === 'ASN') {
         if (!isAsn) return false;
+      } else if (selectedDocTypeFilter === 'ITEM') {
+        if (!isItem) return false;
       } else {
-        if (!isPo && !isAsn) return false;
+        if (!isPo && !isAsn && !isItem) return false;
       }
 
       // 2. ERP Source Filter (Dropdown selection: OPTI, SAP, HM, OTHER)
@@ -600,7 +746,7 @@ export default function MawmDispatchPage({
 
       return true;
     });
-  }, [trackers, selectedErp, selectedDocTypeFilter, searchQuery, isAsnRecord, isPoRecord, extractDocId, extractFacility]);
+  }, [trackers, selectedErp, selectedDocTypeFilter, searchQuery, isAsnRecord, isPoRecord, isItemRecord, extractDocId, extractFacility]);
 
   // Available real PO and ASN IDs extracted dynamically from actual trackers
   const availablePoIds = useMemo(() => {
@@ -844,6 +990,27 @@ export default function MawmDispatchPage({
               <Truck size={15} />
               <span>Advanced Shipping Notice (ASN)</span>
             </button>
+
+            <button
+              onClick={() => {
+                setSelectedDocCategory('ITEM');
+                setSelectedDocTypeFilter('ITEM');
+                setCurrentPage(1);
+              }}
+              className={`filter-pill ${selectedDocCategory === 'ITEM' ? 'active' : ''}`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                padding: '0.4rem 0.95rem',
+                borderRadius: '6px'
+              }}
+            >
+              <Package size={15} />
+              <span>Item Master (ITEM)</span>
+            </button>
           </div>
         </div>
 
@@ -948,6 +1115,57 @@ export default function MawmDispatchPage({
             )}
           </div>
         )}
+
+        {/* --- Item Master (ITEM) Payload & Direct Dispatch --- */}
+        {selectedDocCategory === 'ITEM' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                Item Master Payload (Dispatches directly to /item-master/api/item-master/item/save):
+              </span>
+              <button
+                type="button"
+                onClick={() => setDirectItemJson(JSON.stringify(DEFAULT_ITEM_SAMPLE, null, 2))}
+                style={{ background: 'none', border: 'none', color: '#a855f7', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Reset Specification Default
+              </button>
+            </div>
+
+            <textarea
+              rows={8}
+              value={directItemJson}
+              onChange={(e) => setDirectItemJson(e.target.value)}
+              className="input-field"
+              style={{ width: '100%', fontFamily: 'var(--font-mono, monospace)', fontSize: '0.78rem', boxSizing: 'border-box' }}
+            />
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.6rem' }}>
+              <button
+                onClick={handleDirectItemSave}
+                disabled={savingItemDirect}
+                className="btn-primary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1.1rem', fontSize: '0.82rem', backgroundColor: '#9333ea', borderColor: '#9333ea' }}
+              >
+                <Send size={14} className={savingItemDirect ? 'spin-icon' : ''} />
+                <span>{savingItemDirect ? 'Saving Item to MAWM...' : 'Dispatch / Save Item Master to MAWM (200 OK)'}</span>
+              </button>
+            </div>
+
+            {directItemResult && (
+              <div style={{ marginTop: '0.85rem', padding: '0.75rem 1rem', borderRadius: '6px', backgroundColor: directItemResult.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', border: `1px solid ${directItemResult.success ? '#10b981' : '#ef4444'}` }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: directItemResult.success ? '#10b981' : '#ef4444' }}>
+                  {directItemResult.success ? (directItemResult.message || '200 OK - Item Master Saved Successfully') : (directItemResult.cleanError || directItemResult.error)}
+                </div>
+                {directItemResult.rawResponse && (
+                  <pre style={{ marginTop: '0.4rem', padding: '0.5rem', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '4px', maxHeight: '140px', overflow: 'auto', fontSize: '0.72rem', color: '#34d399', whiteSpace: 'pre-wrap' }}>
+                    {formatPayload(directItemResult.rawResponse)}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* =========================================================================
@@ -989,6 +1207,14 @@ export default function MawmDispatchPage({
                 style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
               >
                 ASN Deliveries
+              </button>
+              <button
+                type="button"
+                onClick={() => { setSelectedDocTypeFilter('ITEM'); setSelectedDocCategory('ITEM'); setCurrentPage(1); }}
+                className={`filter-pill ${selectedDocTypeFilter === 'ITEM' ? 'active' : ''}`}
+                style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
+              >
+                Item Master (ITEM)
               </button>
             </div>
           </div>
@@ -1117,7 +1343,7 @@ export default function MawmDispatchPage({
                             padding: 0,
                             fontFamily: 'var(--font-mono, monospace)',
                             fontWeight: 600,
-                            color: docType === 'PO' ? '#38bdf8' : '#34d399',
+                            color: docType === 'PO' ? '#38bdf8' : docType === 'ITEM' ? '#c084fc' : '#34d399',
                             cursor: 'pointer',
                             textDecoration: 'underline',
                             fontSize: '0.78rem'
@@ -1135,9 +1361,9 @@ export default function MawmDispatchPage({
                           fontWeight: 700,
                           padding: '0.12rem 0.45rem',
                           borderRadius: '4px',
-                          backgroundColor: docType === 'PO' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                          color: docType === 'PO' ? '#38bdf8' : '#10b981',
-                          border: `1px solid ${docType === 'PO' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
+                          backgroundColor: docType === 'PO' ? 'rgba(56, 189, 248, 0.15)' : docType === 'ITEM' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                          color: docType === 'PO' ? '#38bdf8' : docType === 'ITEM' ? '#c084fc' : '#10b981',
+                          border: `1px solid ${docType === 'PO' ? 'rgba(56, 189, 248, 0.3)' : docType === 'ITEM' ? 'rgba(168, 85, 247, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
                         }}>
                           {docType}
                         </span>
