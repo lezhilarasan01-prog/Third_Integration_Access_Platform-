@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Radio,
   CheckCircle2,
@@ -24,6 +24,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { integrationApi } from '../../services/integrationApi';
+import ConfirmDialogModal from '../common/ConfirmDialogModal';
 
 const DEFAULT_PO_SAMPLE = {
   PurchaseOrderId: "PO-2026-0001",
@@ -156,6 +157,13 @@ export default function MawmDispatchPage({
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
+
+  // Selection & Batch Delete State (PO, ASN, Item)
+  const [selectedJobIds, setSelectedJobIds] = useState([]);
+  const [singleDeleteTarget, setSingleDeleteTarget] = useState(null);
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const selectAllRef = useRef(null);
 
   // Row-level actions state
   const [dispatchingJobId, setDispatchingJobId] = useState(null);
@@ -809,6 +817,67 @@ export default function MawmDispatchPage({
     return filteredTrackers.slice(start, start + pageSize);
   }, [filteredTrackers, currentPage, pageSize]);
 
+  // Page-level selection indicators
+  const pageJobIds = useMemo(() => paginatedTrackers.map(j => j.jobId), [paginatedTrackers]);
+  const isAllOnPageSelected = pageJobIds.length > 0 && pageJobIds.every(id => selectedJobIds.includes(id));
+  const isSomeOnPageSelected = pageJobIds.some(id => selectedJobIds.includes(id)) && !isAllOnPageSelected;
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = isSomeOnPageSelected;
+    }
+  }, [isSomeOnPageSelected]);
+
+  const handleToggleSelectJob = (jobId, e) => {
+    if (e) e.stopPropagation();
+    setSelectedJobIds(prev =>
+      prev.includes(jobId) ? prev.filter(id => id !== jobId) : [...prev, jobId]
+    );
+  };
+
+  const handleToggleSelectAll = (e) => {
+    if (e) e.stopPropagation();
+    if (isAllOnPageSelected) {
+      setSelectedJobIds(prev => prev.filter(id => !pageJobIds.includes(id)));
+    } else {
+      setSelectedJobIds(prev => Array.from(new Set([...prev, ...pageJobIds])));
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedJobIds([]);
+  };
+
+  const handleConfirmSingleDelete = async () => {
+    if (!singleDeleteTarget) return;
+    setIsDeleting(true);
+    try {
+      await integrationApi.deleteTrackersBatch([singleDeleteTarget.jobId]);
+      setSelectedJobIds(prev => prev.filter(id => id !== singleDeleteTarget.jobId));
+      setSingleDeleteTarget(null);
+      await loadData(true);
+    } catch (err) {
+      alert('Failed to delete record: ' + (err.message || 'Server error'));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleConfirmBatchDelete = async () => {
+    if (selectedJobIds.length === 0) return;
+    setIsDeleting(true);
+    try {
+      await integrationApi.deleteTrackersBatch(selectedJobIds);
+      setSelectedJobIds([]);
+      setBatchDeleteOpen(false);
+      await loadData(true);
+    } catch (err) {
+      alert('Failed to delete records: ' + (err.message || 'Server error'));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handlePageChange = (page) => {
     if (page >= 1 && page <= totalPages) {
       setCurrentPage(page);
@@ -1212,7 +1281,7 @@ export default function MawmDispatchPage({
             <div style={{ display: 'flex', gap: '0.3rem', marginLeft: '0.5rem' }}>
               <button
                 type="button"
-                onClick={() => { setSelectedDocTypeFilter('PO'); setSelectedDocCategory('PO'); setCurrentPage(1); }}
+                onClick={() => { setSelectedDocTypeFilter('PO'); setSelectedDocCategory('PO'); setSelectedJobIds([]); setCurrentPage(1); }}
                 className={`filter-pill ${selectedDocTypeFilter === 'PO' ? 'active' : ''}`}
                 style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
               >
@@ -1220,7 +1289,7 @@ export default function MawmDispatchPage({
               </button>
               <button
                 type="button"
-                onClick={() => { setSelectedDocTypeFilter('ASN'); setSelectedDocCategory('ASN'); setCurrentPage(1); }}
+                onClick={() => { setSelectedDocTypeFilter('ASN'); setSelectedDocCategory('ASN'); setSelectedJobIds([]); setCurrentPage(1); }}
                 className={`filter-pill ${selectedDocTypeFilter === 'ASN' ? 'active' : ''}`}
                 style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
               >
@@ -1228,7 +1297,7 @@ export default function MawmDispatchPage({
               </button>
               <button
                 type="button"
-                onClick={() => { setSelectedDocTypeFilter('ITEM'); setSelectedDocCategory('ITEM'); setCurrentPage(1); }}
+                onClick={() => { setSelectedDocTypeFilter('ITEM'); setSelectedDocCategory('ITEM'); setSelectedJobIds([]); setCurrentPage(1); }}
                 className={`filter-pill ${selectedDocTypeFilter === 'ITEM' ? 'active' : ''}`}
                 style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
               >
@@ -1271,6 +1340,7 @@ export default function MawmDispatchPage({
                 value={selectedErp}
                 onChange={(e) => {
                   setSelectedErp(e.target.value);
+                  setSelectedJobIds([]);
                   setCurrentPage(1);
                 }}
                 className="input-field"
@@ -1316,6 +1386,81 @@ export default function MawmDispatchPage({
           </div>
         </div>
 
+        {/* Selected Records Action Toolbar */}
+        {selectedJobIds.length > 0 && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0.6rem 0.9rem',
+            marginBottom: '0.85rem',
+            borderRadius: '8px',
+            backgroundColor: 'rgba(239, 68, 68, 0.08)',
+            border: '1px solid rgba(239, 68, 68, 0.28)',
+            flexWrap: 'wrap',
+            gap: '0.6rem',
+            animation: 'fadeInBackdrop 0.15s ease-out'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', fontSize: '0.78rem', color: '#fca5a5' }}>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: 22,
+                height: 22,
+                padding: '0 0.35rem',
+                borderRadius: '9999px',
+                backgroundColor: 'rgba(239, 68, 68, 0.25)',
+                color: '#ef4444',
+                fontWeight: 700,
+                fontSize: '0.72rem'
+              }}>
+                {selectedJobIds.length}
+              </span>
+              <span>
+                <strong>{selectedJobIds.length}</strong> {selectedDocTypeFilter} record{selectedJobIds.length > 1 ? 's' : ''} selected
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={handleClearSelection}
+                className="btn-secondary"
+                style={{
+                  fontSize: '0.73rem',
+                  padding: '0.28rem 0.65rem',
+                  color: 'var(--text-muted)'
+                }}
+              >
+                Clear Selection
+              </button>
+              <button
+                type="button"
+                onClick={() => setBatchDeleteOpen(true)}
+                style={{
+                  fontSize: '0.73rem',
+                  padding: '0.28rem 0.85rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  backgroundColor: '#dc2626',
+                  borderColor: '#b91c1c',
+                  color: '#ffffff',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  border: '1px solid #b91c1c',
+                  boxShadow: '0 2px 4px rgba(220, 38, 38, 0.25)'
+                }}
+              >
+                <Trash2 size={13} />
+                <span>Delete Selected ({selectedJobIds.length})</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Table Content */}
         {loading ? (
           <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
@@ -1325,7 +1470,7 @@ export default function MawmDispatchPage({
         ) : filteredTrackers.length === 0 ? (
           <div style={{ padding: '3rem 1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
             <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
-              No dispatch records found for {selectedErp} ERP ({selectedDocTypeFilter === 'PO' ? 'Purchase Orders' : 'ASN Deliveries'})
+              No dispatch records found for {selectedErp} ERP ({selectedDocTypeFilter === 'PO' ? 'Purchase Orders' : selectedDocTypeFilter === 'ASN' ? 'ASN Deliveries' : 'Item Master'})
             </div>
             <div style={{ fontSize: '0.78rem' }}>
               Select "Opti ERP" to view active dispatch logs, or send a new PO/ASN payload via Files API.
@@ -1345,6 +1490,16 @@ export default function MawmDispatchPage({
             <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border-default)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                  <th style={{ width: 44, padding: '0.65rem 0.65rem', textAlign: 'center' }}>
+                    <input
+                      ref={selectAllRef}
+                      type="checkbox"
+                      checked={isAllOnPageSelected}
+                      onChange={handleToggleSelectAll}
+                      style={{ cursor: 'pointer', width: 15, height: 15, accentColor: '#38bdf8' }}
+                      title={isAllOnPageSelected ? 'Deselect all on this page' : 'Select all on this page'}
+                    />
+                  </th>
                   <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Document ID</th>
                   <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Type</th>
                   <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Source ERP</th>
@@ -1362,16 +1517,34 @@ export default function MawmDispatchPage({
                   const liveStatus = extractLiveStatus(job);
                   const isDelivered = (job.dispatchStatus || '').toUpperCase().includes('DELIVERED') || (job.dispatchStatus || '').includes('200');
                   const isFailed = (job.dispatchStatus || '').toUpperCase().includes('FAILED');
+                  const isSelected = selectedJobIds.includes(job.jobId);
 
                   return (
                     <tr
                       key={job.jobId}
                       style={{
                         borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-                        transition: 'background-color 0.15s ease'
+                        transition: 'background-color 0.15s ease',
+                        backgroundColor: isSelected ? 'rgba(56, 189, 248, 0.06)' : 'transparent'
                       }}
                       className="table-row-hover"
                     >
+                      {/* Row Checkbox */}
+                      <td style={{ width: 44, padding: '0.65rem 0.65rem', textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => handleToggleSelectJob(job.jobId, e)}
+                          style={{
+                            cursor: 'pointer',
+                            width: 15,
+                            height: 15,
+                            accentColor: '#38bdf8'
+                          }}
+                          title={`Select ${docType} ${docId}`}
+                        />
+                      </td>
+
                       {/* Document ID */}
                       <td style={{ padding: '0.65rem 0.75rem' }}>
                         <button
@@ -1582,6 +1755,26 @@ export default function MawmDispatchPage({
                             <Send size={12} className={dispatchingJobId === job.jobId ? 'spin-icon' : ''} />
                             <span>{dispatchingJobId === job.jobId ? 'Sending...' : (isDelivered ? 'Redeliver' : 'Dispatch')}</span>
                           </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSingleDeleteTarget(job);
+                            }}
+                            className="btn-secondary"
+                            style={{
+                              padding: '0.22rem 0.45rem',
+                              fontSize: '0.72rem',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              color: '#f87171',
+                              borderColor: 'rgba(239, 68, 68, 0.3)'
+                            }}
+                            title={`Delete this ${docType} record`}
+                          >
+                            <Trash2 size={12} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1791,6 +1984,50 @@ export default function MawmDispatchPage({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Single Record Delete Confirmation Modal */}
+      {singleDeleteTarget && (
+        <ConfirmDialogModal
+          isOpen={!!singleDeleteTarget}
+          title={`Delete ${extractDocId(singleDeleteTarget).type} Record`}
+          message={`Are you sure you want to delete this record from the database? This action cannot be undone.`}
+          recordName={`${extractDocId(singleDeleteTarget).type}: ${extractDocId(singleDeleteTarget).id}`}
+          recordId={singleDeleteTarget.jobId}
+          details={[
+            { label: 'Document ID', value: extractDocId(singleDeleteTarget).id, mono: true },
+            { label: 'Record Type', value: extractDocId(singleDeleteTarget).type, badge: true, badgeColor: extractDocId(singleDeleteTarget).type === 'PO' ? '#38bdf8' : extractDocId(singleDeleteTarget).type === 'ITEM' ? '#c084fc' : '#10b981' },
+            { label: 'Facility', value: extractFacility(singleDeleteTarget) },
+            { label: 'Source ERP', value: singleDeleteTarget.sourceSystem || 'OPTI' },
+            { label: 'Save Status', value: singleDeleteTarget.dispatchStatus || 'PENDING' }
+          ]}
+          warningText="This will permanently delete this record from PostgreSQL erp_file_intake_tracker. It will no longer appear in dispatch history or live monitoring."
+          confirmText="Delete Record"
+          isLoading={isDeleting}
+          onClose={() => setSingleDeleteTarget(null)}
+          onConfirm={handleConfirmSingleDelete}
+        />
+      )}
+
+      {/* Batch Delete Confirmation Modal */}
+      {batchDeleteOpen && (
+        <ConfirmDialogModal
+          isOpen={batchDeleteOpen}
+          title={`Delete ${selectedJobIds.length} Selected Records`}
+          message={`Are you sure you want to permanently delete all ${selectedJobIds.length} selected dispatch records from the database?`}
+          recordName={`${selectedJobIds.length} ${selectedDocTypeFilter} Records Selected`}
+          recordId={`${selectedJobIds.length} items`}
+          details={[
+            { label: 'Document Category', value: selectedDocTypeFilter === 'PO' ? 'Purchase Orders' : selectedDocTypeFilter === 'ASN' ? 'ASN Deliveries' : 'Item Master' },
+            { label: 'Selected Count', value: `${selectedJobIds.length} record(s)` },
+            { label: 'Active ERP', value: selectedErp }
+          ]}
+          warningText={`All ${selectedJobIds.length} selected records will be permanently removed from PostgreSQL erp_file_intake_tracker. This action cannot be undone.`}
+          confirmText={`Delete ${selectedJobIds.length} Records`}
+          isLoading={isDeleting}
+          onClose={() => setBatchDeleteOpen(false)}
+          onConfirm={handleConfirmBatchDelete}
+        />
       )}
     </div>
   );

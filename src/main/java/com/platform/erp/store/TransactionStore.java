@@ -358,6 +358,20 @@ public class TransactionStore {
         return count;
     }
 
+    @Transactional
+    public int deleteTrackers(List<String> jobIds) {
+        if (jobIds == null || jobIds.isEmpty()) return 0;
+        int count = 0;
+        for (String id : jobIds) {
+            if (id != null && !id.isBlank() && trackerRepository.existsById(id.trim())) {
+                trackerRepository.deleteById(id.trim());
+                count++;
+            }
+        }
+        log.info("[DB Tracker] Successfully deleted {} tracker records via batch delete", count);
+        return count;
+    }
+
     public List<ErpFileIntakeTracker> getAllTrackers(int page, int size) {
         org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(
                 Math.max(0, page),

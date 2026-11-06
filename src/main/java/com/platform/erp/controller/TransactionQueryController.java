@@ -144,6 +144,17 @@ public class TransactionQueryController {
     }
 
     /**
+     * Batch delete multiple erp_file_intake_tracker database rows by jobIds.
+     * Example: POST /api/v1/erp/transactions/tracker/batch-delete
+     * Body: ["id1", "id2", "id3"]
+     */
+    @PostMapping("/tracker/batch-delete")
+    public ResponseEntity<Map<String, Object>> deleteBatchTrackers(@RequestBody List<String> jobIds) {
+        int deleted = transactionStore.deleteTrackers(jobIds);
+        return ResponseEntity.ok(Map.of("deleted", deleted, "message", "Successfully deleted " + deleted + " records."));
+    }
+
+    /**
      * Clean all Item Master tracker rows from the database.
      * Example: DELETE /api/v1/erp/transactions/items
      */

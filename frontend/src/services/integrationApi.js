@@ -317,6 +317,20 @@ export const integrationApi = {
     return res.ok;
   },
 
+  async deleteTrackersBatch(jobIds) {
+    const res = await fetch(`${BASE_URL}/api/v1/erp/transactions/tracker/batch-delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(jobIds)
+    });
+    this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || 'Failed to delete selected records');
+    }
+    return res.json();
+  },
+
   // --- 3.1 Kafka Exception & DLQ Tracker (Cached & Deduplicated) ---
   async getDlqRecords(force = false) {
     const now = Date.now();
