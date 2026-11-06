@@ -30,9 +30,24 @@ import { integrationApi } from '../../services/integrationApi';
 import ConfirmDialogModal from '../common/ConfirmDialogModal';
 
 const PRESET_QUERIES = {
+  PO_ASN_LINES: {
+    api: 'ASN_LINE',
+    label: '5.3.4 Query ASN Details Associated with PO',
+    endpoint: '/receiving/api/receiving/asnLine/search',
+    payload: {
+      "Query": "PurchaseOrderId ='PO-2026-0001'",
+      "Template": {
+        "AsnId": "",
+        "ItemId": "",
+        "ShippedQuantity": "",
+        "PurchaseOrderLineId": ""
+      }
+    }
+  },
   ASN_VERIFIED: {
     api: 'ASN',
-    label: 'Check ASN 8000 Verified',
+    label: 'Check ASN 8000 Verified (5.4.2)',
+    endpoint: '/receiving/api/receiving/asn/search',
     payload: {
       "Query": "AsnId in ('ASN-2026-0001')",
       "Template": {
@@ -43,7 +58,8 @@ const PRESET_QUERIES = {
   },
   PO_STATUS: {
     api: 'PO',
-    label: 'Search PO Status',
+    label: 'Search PO Status (5.3.2)',
+    endpoint: '/receiving/api/receiving/purchaseOrder/search',
     payload: {
       "Query": "PurchaseOrderId='PO-2026-0001'",
       "Template": {
@@ -55,7 +71,8 @@ const PRESET_QUERIES = {
   },
   PO_LINES: {
     api: 'PO_LINE',
-    label: 'Search PO Line Shipped/Received',
+    label: 'Search PO Line Shipped/Received (5.3.3)',
+    endpoint: '/receiving/api/receiving/purchaseOrderLine/search',
     payload: {
       "Query": "PurchaseOrderId='PO-2026-0001'",
       "Template": {
@@ -66,22 +83,10 @@ const PRESET_QUERIES = {
       }
     }
   },
-  PO_ASN_LINES: {
-    api: 'ASN_LINE',
-    label: 'Search Associated ASN Lines for PO',
-    payload: {
-      "Query": "PurchaseOrderId='PO-2026-0001'",
-      "Template": {
-        "AsnId": "",
-        "ItemId": "",
-        "ShippedQuantity": "",
-        "PurchaseOrderLineId": ""
-      }
-    }
-  },
   ITEM_SYNC: {
     api: 'ITEM_SYNC',
-    label: 'Fetch Items Updated Today (Inbound Sync)',
+    label: 'Fetch Items Updated Today (5.2.2 Inbound Sync)',
+    endpoint: '/item-master/api/item-master/item',
     queryParams: {
       page: '0',
       size: '1000',
@@ -1295,7 +1300,36 @@ export default function MawmDispatchPage({
               style={{ width: '100%', fontFamily: 'var(--font-mono, monospace)', fontSize: '0.78rem', boxSizing: 'border-box' }}
             />
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.6rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.6rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  let poId = 'PO-2026-0001';
+                  try {
+                    const p = JSON.parse(directPoJson);
+                    if (p.PurchaseOrderId) poId = p.PurchaseOrderId;
+                  } catch (_) {}
+                  setSelectedDocCategory('QUERY');
+                  setSelectedQueryApi('ASN_LINE');
+                  setDynamicQueryJson(JSON.stringify({
+                    "Query": `PurchaseOrderId ='${poId}'`,
+                    "Template": {
+                      "AsnId": "",
+                      "ItemId": "",
+                      "ShippedQuantity": "",
+                      "PurchaseOrderLineId": ""
+                    }
+                  }, null, 2));
+                  setDynamicQueryResult(null);
+                }}
+                className="btn-secondary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.42rem 0.85rem', fontSize: '0.78rem', color: '#f59e0b', borderColor: 'rgba(245, 158, 11, 0.4)' }}
+                title="Jump directly to 5.3.4 Query ASN Details Associated with PO for this PurchaseOrderId"
+              >
+                <Search size={13} />
+                <span>5.3.4 Query ASN Details Associated with PO</span>
+              </button>
+
               <button
                 onClick={handleDirectPoSave}
                 disabled={savingPoDirect}
@@ -1436,43 +1470,78 @@ export default function MawmDispatchPage({
               <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
                 <button
                   type="button"
+                  onClick={() => handleApplyPreset('PO_ASN_LINES')}
+                  className="btn-secondary"
+                  style={{
+                    fontSize: '0.72rem',
+                    padding: '0.25rem 0.65rem',
+                    borderColor: 'rgba(245, 158, 11, 0.45)',
+                    color: '#f59e0b',
+                    fontWeight: selectedQueryApi === 'ASN_LINE' ? 700 : 500,
+                    backgroundColor: selectedQueryApi === 'ASN_LINE' ? 'rgba(245, 158, 11, 0.15)' : 'transparent'
+                  }}
+                >
+                  ⚡ 5.3.4 Query ASN Details Associated with PO
+                </button>
+                <button
+                  type="button"
                   onClick={() => handleApplyPreset('ASN_VERIFIED')}
                   className="btn-secondary"
-                  style={{ fontSize: '0.72rem', padding: '0.25rem 0.65rem', borderColor: 'rgba(56, 189, 248, 0.3)', color: '#38bdf8' }}
+                  style={{
+                    fontSize: '0.72rem',
+                    padding: '0.25rem 0.65rem',
+                    borderColor: 'rgba(56, 189, 248, 0.35)',
+                    color: '#38bdf8',
+                    fontWeight: selectedQueryApi === 'ASN' ? 700 : 500,
+                    backgroundColor: selectedQueryApi === 'ASN' ? 'rgba(56, 189, 248, 0.15)' : 'transparent'
+                  }}
                 >
-                  Check ASN 8000 Verified
+                  5.4.2 Check ASN 8000 Verified
                 </button>
                 <button
                   type="button"
                   onClick={() => handleApplyPreset('PO_STATUS')}
                   className="btn-secondary"
-                  style={{ fontSize: '0.72rem', padding: '0.25rem 0.65rem', borderColor: 'rgba(16, 185, 129, 0.3)', color: '#10b981' }}
+                  style={{
+                    fontSize: '0.72rem',
+                    padding: '0.25rem 0.65rem',
+                    borderColor: 'rgba(16, 185, 129, 0.35)',
+                    color: '#10b981',
+                    fontWeight: selectedQueryApi === 'PO' ? 700 : 500,
+                    backgroundColor: selectedQueryApi === 'PO' ? 'rgba(16, 185, 129, 0.15)' : 'transparent'
+                  }}
                 >
-                  Search PO Status
+                  5.3.2 Search PO Status
                 </button>
                 <button
                   type="button"
                   onClick={() => handleApplyPreset('PO_LINES')}
                   className="btn-secondary"
-                  style={{ fontSize: '0.72rem', padding: '0.25rem 0.65rem', borderColor: 'rgba(168, 85, 247, 0.3)', color: '#c084fc' }}
+                  style={{
+                    fontSize: '0.72rem',
+                    padding: '0.25rem 0.65rem',
+                    borderColor: 'rgba(168, 85, 247, 0.35)',
+                    color: '#c084fc',
+                    fontWeight: selectedQueryApi === 'PO_LINE' ? 700 : 500,
+                    backgroundColor: selectedQueryApi === 'PO_LINE' ? 'rgba(168, 85, 247, 0.15)' : 'transparent'
+                  }}
                 >
-                  Search PO Line Shipped/Received
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleApplyPreset('PO_ASN_LINES')}
-                  className="btn-secondary"
-                  style={{ fontSize: '0.72rem', padding: '0.25rem 0.65rem', borderColor: 'rgba(245, 158, 11, 0.3)', color: '#f59e0b' }}
-                >
-                  Search Associated ASN Lines for PO
+                  5.3.3 Search PO Lines
                 </button>
                 <button
                   type="button"
                   onClick={() => handleApplyPreset('ITEM_SYNC')}
                   className="btn-secondary"
-                  style={{ fontSize: '0.72rem', padding: '0.25rem 0.65rem', borderColor: 'rgba(236, 72, 153, 0.3)', color: '#f472b6' }}
+                  style={{
+                    fontSize: '0.72rem',
+                    padding: '0.25rem 0.65rem',
+                    borderColor: 'rgba(236, 72, 153, 0.35)',
+                    color: '#f472b6',
+                    fontWeight: selectedQueryApi === 'ITEM_SYNC' ? 700 : 500,
+                    backgroundColor: selectedQueryApi === 'ITEM_SYNC' ? 'rgba(236, 72, 153, 0.15)' : 'transparent'
+                  }}
                 >
-                  Fetch Items Updated Today (Inbound Sync)
+                  5.2.2 Fetch Items (Inbound Sync)
                 </button>
               </div>
             </div>
@@ -1484,17 +1553,29 @@ export default function MawmDispatchPage({
                 <select
                   value={selectedQueryApi}
                   onChange={(e) => {
-                    setSelectedQueryApi(e.target.value);
+                    const newApi = e.target.value;
+                    setSelectedQueryApi(newApi);
                     setDynamicQueryResult(null);
+                    if (newApi === 'ASN_LINE') {
+                      setDynamicQueryJson(JSON.stringify(PRESET_QUERIES.PO_ASN_LINES.payload, null, 2));
+                    } else if (newApi === 'ASN') {
+                      setDynamicQueryJson(JSON.stringify(PRESET_QUERIES.ASN_VERIFIED.payload, null, 2));
+                    } else if (newApi === 'PO') {
+                      setDynamicQueryJson(JSON.stringify(PRESET_QUERIES.PO_STATUS.payload, null, 2));
+                    } else if (newApi === 'PO_LINE') {
+                      setDynamicQueryJson(JSON.stringify(PRESET_QUERIES.PO_LINES.payload, null, 2));
+                    } else if (newApi === 'ITEM_SYNC') {
+                      setDynamicItemParams({ ...PRESET_QUERIES.ITEM_SYNC.queryParams });
+                    }
                   }}
                   className="input-field"
-                  style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem', borderRadius: '6px', fontWeight: 600, minWidth: '300px' }}
+                  style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem', borderRadius: '6px', fontWeight: 600, minWidth: '360px' }}
                 >
-                  <option value="ASN">POST /receiving/api/receiving/asn/search (ASN Search)</option>
-                  <option value="PO">POST /receiving/api/receiving/purchaseOrder/search (PO Search)</option>
-                  <option value="PO_LINE">POST /receiving/api/receiving/purchaseOrderLine/search (PO Lines)</option>
-                  <option value="ASN_LINE">POST /receiving/api/receiving/asnLine/search (PO ASN Lines)</option>
-                  <option value="ITEM_SYNC">GET /item-master/api/item-master/item (Inbound Item Sync)</option>
+                  <option value="ASN_LINE">POST /receiving/api/receiving/asnLine/search (5.3.4 Query ASN Details Associated with PO)</option>
+                  <option value="ASN">POST /receiving/api/receiving/asn/search (5.4.2 Check ASN Verification Status)</option>
+                  <option value="PO">POST /receiving/api/receiving/purchaseOrder/search (5.3.2 Query PO Status)</option>
+                  <option value="PO_LINE">POST /receiving/api/receiving/purchaseOrderLine/search (5.3.3 Query PO Lines)</option>
+                  <option value="ITEM_SYNC">GET /item-master/api/item-master/item (5.2.2 Fetch Items from MAWM / Inbound Sync)</option>
                 </select>
               </div>
 
@@ -2332,14 +2413,14 @@ export default function MawmDispatchPage({
                       className={`filter-pill ${inspectPayloadTab === 'lines' ? 'active' : ''}`}
                       style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
                     >
-                      PO Lines
+                      5.3.3 PO Lines
                     </button>
                     <button
                       onClick={() => setInspectPayloadTab('asns')}
                       className={`filter-pill ${inspectPayloadTab === 'asns' ? 'active' : ''}`}
                       style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
                     >
-                      Associated ASNs
+                      5.3.4 Associated ASNs
                     </button>
                   </>
                 )}
@@ -2376,9 +2457,9 @@ export default function MawmDispatchPage({
                         liveStatus: extractLiveStatus(inspectingJob) || 'Not queried yet'
                       })
                     : inspectPayloadTab === 'lines'
-                      ? formatPayload(inspectingDetails.lines || 'Loading or no lines returned')
+                      ? formatPayload(inspectingDetails.lines?.rawResponse || inspectingDetails.lines?.data || inspectingDetails.lines || 'Loading or no lines returned')
                       : inspectPayloadTab === 'asns'
-                        ? formatPayload(inspectingDetails.asns || 'Loading or no associated ASNs')
+                        ? formatPayload(inspectingDetails.asns?.rawResponse || inspectingDetails.asns?.data || inspectingDetails.asns || 'Loading or no associated ASNs')
                         : formatPayload(inspectingJob.rawContent || inspectingJob.outputFiles || 'No raw payload available')}
               </pre>
             </div>
