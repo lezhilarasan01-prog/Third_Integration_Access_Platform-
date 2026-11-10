@@ -289,6 +289,8 @@ public class ErpFileConsumerService {
     private String resolveDocumentType(String headerDocType, String topic, String filename) {
         if (headerDocType != null && !headerDocType.isBlank()) {
             String upper = headerDocType.trim().toUpperCase();
+            if (upper.contains("BATCH"))
+                return "BATCH";
             if (upper.equals("DO") || upper.contains("DISTRIBUTION") || upper.contains("DCORDER") || upper.contains("DC_ORDER") || upper.startsWith("DO_") || upper.startsWith("DO-"))
                 return "DO";
             if (upper.contains("ASN") || upper.contains("SHIP"))
@@ -301,6 +303,8 @@ public class ErpFileConsumerService {
         }
         if (topic != null) {
             String lower = topic.toLowerCase();
+            if (lower.contains("batch"))
+                return "BATCH";
             if (lower.equals("do") || lower.contains("dcorder") || lower.contains("distribution") || lower.startsWith("do_") || lower.startsWith("do-") || lower.contains("_do_") || lower.contains("-do-"))
                 return "DO";
             if (lower.contains("asn") || lower.contains("ship"))
@@ -314,6 +318,8 @@ public class ErpFileConsumerService {
         }
         if (filename != null) {
             String upper = filename.toUpperCase();
+            if (upper.contains("BATCH"))
+                return "BATCH";
             if (upper.equals("DO") || upper.contains("DISTRIBUTION") || upper.contains("DCORDER") || upper.startsWith("DO_") || upper.startsWith("DO-") || upper.contains("_DO_") || upper.contains("-DO-"))
                 return "DO";
             if (upper.contains("ASN") || upper.contains("SHIP"))

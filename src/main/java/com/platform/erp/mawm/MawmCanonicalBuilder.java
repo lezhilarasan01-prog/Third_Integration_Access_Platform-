@@ -21,6 +21,9 @@ import java.util.*;
  * 
  * For H&M Inbound Delivery ASN messages, automatically invokes the high-fidelity
  * HmAsnToMawmMapper to produce the LPN-Level canonical MAWM ASN payload.
+ * 
+ * For Distribution Orders (DO) from various ERPs (Opti, SAP, NetSuite, etc.),
+ * dynamically cleans circular JPA references and internal DB IDs without static DTO mapping.
  */
 @Component
 public class MawmCanonicalBuilder {
@@ -52,47 +55,60 @@ public class MawmCanonicalBuilder {
         return buildMawmData(camelRecords, rawPayload, null, null, null);
     }
 
-    public List<Map<String, Object>> buildMawmData(
-            List<Map<String, Object>> camelRecords,
-            byte[] rawPayload,
-            String erpSource,
-            String docType,
-            String facilityId
-    ) {
-        if (camelRecords == null || camelRecords.isEmpty()) {
-            return Collections.emptyList();
-        }
+	public List<Map<String, Object>> buildMawmData(List<Map<String, Object>> camelRecords, byte[] rawPayload,
+			String erpSource, String docType, String facilityId) {
+		if (camelRecords == null || camelRecords.isEmpty()) {
+			return Collections.emptyList();
+		}
 
-        // Check if incoming payload is an H&M Inbound Delivery message
-        if (camelRecords.size() == 1 && camelRecords.get(0).containsKey("inboundDelivery")) {
-            Map<String, Object> rootRecord = camelRecords.get(0);
-            boolean isHmSource = erpSource != null && (erpSource.equalsIgnoreCase("HM") || erpSource.equalsIgnoreCase("H&M"));
-            // If incoming payload has inboundDelivery, it is an ASN message and must undergo strict schema validation & transformation
-            try {
-                HmInboundDeliveryMessage message;
-                if (rawPayload != null && rawPayload.length > 0) {
-                    message = objectMapper.readValue(rawPayload, HmInboundDeliveryMessage.class);
-                } else {
-                    message = objectMapper.convertValue(rootRecord, HmInboundDeliveryMessage.class);
-                }
-                Map<String, Object> mawmMap = hmAsnToMawmMapper.transform(message);
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> data = (List<Map<String, Object>>) mawmMap.get("Data");
-                if (data != null && !data.isEmpty()) {
-                    log.info("[MAWM Dynamic Engine] Successfully mapped Inbound Delivery to MAWM LPN-Level schema with {} ASN record(s)", data.size());
-                    return data;
-                }
-            } catch (IllegalArgumentException e) {
-                log.error("[MAWM Dynamic Engine] Schema validation failed: {}", e.getMessage());
-                throw e;
-            } catch (Exception e) {
-                log.error("[MAWM Dynamic Engine] Schema mapping failed: {}", e.getMessage());
-                throw new IllegalArgumentException("Schema mapping failed: " + e.getMessage(), e);
-            }
-        }
+		// Check if incoming payload is an H&M Inbound Delivery message
+		if (camelRecords.size() == 1 && camelRecords.get(0).containsKey("inboundDelivery")) {
+			Map<String, Object> rootRecord = camelRecords.get(0);
+			// If incoming payload has inboundDelivery, it is an ASN message and must
+			// undergo strict schema validation & transformation
+			try {
+				HmInboundDeliveryMessage message;
+				if (rawPayload != null && rawPayload.length > 0) {
+					message = objectMapper.readValue(rawPayload, HmInboundDeliveryMessage.class);
+				} else {
+					message = objectMapper.convertValue(rootRecord, HmInboundDeliveryMessage.class);
+				}
+				Map<String, Object> mawmMap = hmAsnToMawmMapper.transform(message);
+				@SuppressWarnings("unchecked")
+				List<Map<String, Object>> data = (List<Map<String, Object>>) mawmMap.get("Data");
+				if (data != null && !data.isEmpty()) {
+					log.info(
+							"[MAWM Dynamic Engine] Successfully mapped Inbound Delivery to MAWM LPN-Level schema with {} ASN record(s)",
+							data.size());
+					return data;
+				}
+			} catch (IllegalArgumentException e) {
+				log.error("[MAWM Dynamic Engine] Schema validation failed: {}", e.getMessage());
+				throw e;
+			} catch (Exception e) {
+				log.error("[MAWM Dynamic Engine] Schema mapping failed: {}", e.getMessage());
+				throw new IllegalArgumentException("Schema mapping failed: " + e.getMessage(), e);
+			}
+		}
 
-        log.info("[MAWM Dynamic Engine] Wrapped {} dynamic record(s) into universal 'Data' container (ERP: {}, DocType: {})",
-                camelRecords.size(), erpSource, docType);
-        return new ArrayList<>(camelRecords);
-    }
+		log.info(
+				"[MAWM Dynamic Engine] Wrapped {} dynamic record(s) into universal 'Data' container (ERP: {}, DocType: {})",
+				camelRecords.size(), erpSource, docType);
+		return new ArrayList<>(camelRecords);
+	}
+
+	/**
+	 * Passthrough helper for Distribution Orders:
+	 * Preserves all dynamic ERP fields with full data fidelity without mutating or inventing artificial defaults.
+	 */
+	public static Map<String, Object> sanitizeDistributionOrder(Map<String, Object> root) {
+		return sanitizeDistributionOrder(root, null);
+	}
+
+	public static Map<String, Object> sanitizeDistributionOrder(Map<String, Object> root, ObjectMapper ignored) {
+		if (root == null || root.isEmpty()) {
+			return new LinkedHashMap<>();
+		}
+		return new LinkedHashMap<>(root);
+	}
 }

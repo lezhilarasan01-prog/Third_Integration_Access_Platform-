@@ -322,12 +322,6 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [actionMessage, setActionMessage] = useState(null);
 
-  // Test Event Publisher State
-  const [publishPayload, setPublishPayload] = useState('{\n  "poNumber": "PO-TEST-STUDIO-001",\n  "supplier": "ACME-GLOBAL",\n  "warehouse": "WH-MUMBAI-01",\n  "sku": "SKU-TEST-99",\n  "quantity": 100,\n  "uom": "EA"\n}');
-  const [publishKey, setPublishKey] = useState('');
-  const [isPublishing, setIsPublishing] = useState(false);
-  const [publishResult, setPublishResult] = useState(null);
-
   // Message Tracker & Partition Explorer State
   const [partitions, setPartitions] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -819,27 +813,6 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
     }
   };
 
-  const handlePublishTestEvent = async () => {
-    setIsPublishing(true);
-    setPublishResult(null);
-    try {
-      const res = await integrationApi.publishTestEvent(selectedTopic, publishKey, publishPayload);
-      setPublishResult({
-        success: true,
-        topic: res.topic,
-        partition: res.partition,
-        offset: res.offset,
-        payloadSize: res.payloadSize
-      });
-      // Refresh messages immediately to show the new message
-      fetchMessagesAndPartitions(selectedTopic, selectedPartition);
-    } catch (err) {
-      setPublishResult({ success: false, error: err.message });
-    } finally {
-      setIsPublishing(false);
-    }
-  };
-
   const handleCopyText = (text, type = 'trackingId') => {
     if (!text) return;
     navigator.clipboard.writeText(text);
@@ -1022,9 +995,13 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
                       <option value="erp_file_po_raw">erp_file_po_raw</option>
                       <option value="erp_file_asn_raw">erp_file_asn_raw</option>
                       <option value="erp_file_item_raw">erp_file_item_raw</option>
+                      <option value="erp_file_do_raw">erp_file_do_raw</option>
+                      <option value="erp_file_batch_raw">erp_file_batch_raw</option>
                       <option value="erp_file_po_dlq">erp_file_po_dlq</option>
                       <option value="erp_file_asn_dlq">erp_file_asn_dlq</option>
                       <option value="erp_file_item_dlq">erp_file_item_dlq</option>
+                      <option value="erp_file_do_dlq">erp_file_do_dlq</option>
+                      <option value="erp_file_batch_dlq">erp_file_batch_dlq</option>
                     </>
                   )}
                 </select>
@@ -1459,74 +1436,6 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
               </button>
             </div>
           </div>
-
-          {/* 2. Interactive Topic Event Publisher */}
-          <div className="control-card event-publisher">
-            <div className="card-top-header">
-              <div className="title-with-icon">
-                <Send size={20} className="icon-purple" />
-                <div>
-                  <h4>Interactive Event Producer</h4>
-                  <p>Publish a live test message directly into <code>{selectedTopic}</code></p>
-                </div>
-              </div>
-            </div>
-
-            <div className="publisher-inputs">
-              <div className="form-item">
-                <label>Message Partition Key (ERP Source)</label>
-                <input
-                  type="text"
-                  value={publishKey}
-                  onChange={(e) => setPublishKey(e.target.value)}
-                  className="studio-input"
-                  placeholder="Enter partition key / source system (optional)"
-                />
-              </div>
-
-              <div className="form-item">
-                <label>Payload (JSON or Raw Text)</label>
-                <textarea
-                  rows={4}
-                  value={publishPayload}
-                  onChange={(e) => setPublishPayload(e.target.value)}
-                  className="studio-textarea"
-                />
-              </div>
-            </div>
-
-            <div className="publisher-footer">
-              {publishResult && (
-                <div className={`publish-feedback ${publishResult.success ? 'success' : 'error'}`}>
-                  {publishResult.success ? (
-                    <span>
-                      ✓ Published to Partition <strong>#{publishResult.partition}</strong> at Offset <strong>{publishResult.offset}</strong> ({publishResult.payloadSize} bytes)
-                    </span>
-                  ) : (
-                    <span>✕ Error: {publishResult.error}</span>
-                  )}
-                </div>
-              )}
-
-              <button
-                className="publish-submit-btn"
-                onClick={handlePublishTestEvent}
-                disabled={isPublishing}
-              >
-                {isPublishing ? (
-                  <>
-                    <div className="btn-spinner" />
-                    <span>Publishing to Kafka...</span>
-                  </>
-                ) : (
-                  <>
-                    <Send size={16} />
-                    <span>Publish Event to Topic</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -1588,12 +1497,28 @@ export default function KafkaStudioPage({ initialTab = 'visual' }) {
                 className="studio-filter-select"
                 style={{ fontWeight: 700, color: '#34d399', borderColor: 'rgba(16, 185, 129, 0.4)' }}
               >
-                <option value="erp_file_po_raw">erp_file_po_raw (Purchase Orders)</option>
-                <option value="erp_file_asn_raw">erp_file_asn_raw (Shipment Notices / ASN)</option>
-                <option value="erp_file_item_raw">erp_file_item_raw (Item Master)</option>
-                <option value="erp_file_po_dlq">erp_file_po_dlq (PO Dead Letter Queue)</option>
-                <option value="erp_file_asn_dlq">erp_file_asn_dlq (ASN Dead Letter Queue)</option>
-                <option value="erp_file_item_dlq">erp_file_item_dlq (Item Dead Letter Queue)</option>
+                {studioData?.topics && studioData.topics.length > 0 ? (
+                  studioData.topics.map((t) => (
+                    <option key={t.topic} value={t.topic}>
+                      {t.topic} ({t.partitionCount || 6}p)
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="erp_file_po_raw">erp_file_po_raw (Purchase Orders)</option>
+                    <option value="erp_file_asn_raw">erp_file_asn_raw (Shipment Notices / ASN)</option>
+                    <option value="erp_file_do_raw">erp_file_do_raw (Distribution Orders)</option>
+                    <option value="erp_file_item_raw">erp_file_item_raw (Item Master)</option>
+                    <option value="erp_file_batch_raw">erp_file_batch_raw (Batch Master)</option>
+                    <option value="erp_file_distribution_raw">erp_file_distribution_raw (Distribution Orders)</option>
+                    <option value="erp_file_po_dlq">erp_file_po_dlq (PO Dead Letter Queue)</option>
+                    <option value="erp_file_asn_dlq">erp_file_asn_dlq (ASN Dead Letter Queue)</option>
+                    <option value="erp_file_do_dlq">erp_file_do_dlq (DO Dead Letter Queue)</option>
+                    <option value="erp_file_item_dlq">erp_file_item_dlq (Item Dead Letter Queue)</option>
+                    <option value="erp_file_batch_dlq">erp_file_batch_dlq (Batch Dead Letter Queue)</option>
+                    <option value="erp_file_distribution_dlq">erp_file_distribution_dlq (Distribution DLQ)</option>
+                  </>
+                )}
               </select>
             </div>
 

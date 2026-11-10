@@ -9,8 +9,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 100% Format-Agnostic Kafka Topic Resolution.
- * Topic names can be ANYTHING in the future (e.g. "orders.v2", "sap-feed", "eu_billing", "custom_topic").
- * Resolves directly from application.properties (platform.kafka.topics.*) or uses explicit topic names as-is.
+ * Topic names can be ANYTHING in the future (e.g. "orders.v2", "sap-feed",
+ * "eu_billing", "custom_topic").
+ * Resolves directly from application.properties (platform.kafka.topics.*) or
+ * uses explicit topic names as-is.
  * Zero hardcoded naming conventions, prefixes, or suffixes.
  */
 @Configuration
@@ -18,8 +20,10 @@ import java.util.concurrent.ConcurrentHashMap;
 public class KafkaTopicProperties {
 
     /**
-     * Dynamic Map of all topics configured in application.properties under platform.kafka.topics.*
-     * Maps any logical key (e.g. "po", "asn", "invoice", "custom-stream") to ANY arbitrary topic name.
+     * Dynamic Map of all topics configured in application.properties under
+     * platform.kafka.topics.*
+     * Maps any logical key (e.g. "po", "asn", "invoice", "custom-stream") to ANY
+     * arbitrary topic name.
      */
     private Map<String, String> topics = new ConcurrentHashMap<>();
 
@@ -32,7 +36,8 @@ public class KafkaTopicProperties {
     @Value("${platform.kafka.consumer.topic-pattern:${platform.kafka.topic-pattern:.*}}")
     private String topicPattern = ".*";
 
-    public KafkaTopicProperties() {}
+    public KafkaTopicProperties() {
+    }
 
     public Map<String, String> getTopics() {
         return topics;
@@ -42,11 +47,21 @@ public class KafkaTopicProperties {
         this.topics = topics != null ? new ConcurrentHashMap<>(topics) : new ConcurrentHashMap<>();
     }
 
-    public String getDefaultTopic() { return defaultTopic; }
-    public void setDefaultTopic(String defaultTopic) { this.defaultTopic = defaultTopic; }
+    public String getDefaultTopic() {
+        return defaultTopic;
+    }
 
-    public String getDefaultDlq() { return defaultDlq; }
-    public void setDefaultDlq(String defaultDlq) { this.defaultDlq = defaultDlq; }
+    public void setDefaultTopic(String defaultTopic) {
+        this.defaultTopic = defaultTopic;
+    }
+
+    public String getDefaultDlq() {
+        return defaultDlq;
+    }
+
+    public void setDefaultDlq(String defaultDlq) {
+        this.defaultDlq = defaultDlq;
+    }
 
     public String getTopicPattern() {
         return topicPattern;
@@ -87,12 +102,14 @@ public class KafkaTopicProperties {
     }
 
     /**
-     * Resolves the matching dedicated DLQ topic 100% dynamically from application.properties.
+     * Resolves the matching dedicated DLQ topic 100% dynamically from
+     * application.properties.
      * Zero hardcoded names or business strings.
      * Looks up matching *-dlq property configured in application.properties:
-     * - Key "po-raw"  -> reads configured property "platform.kafka.topics.po-dlq"
+     * - Key "po-raw" -> reads configured property "platform.kafka.topics.po-dlq"
      * - Key "asn-raw" -> reads configured property "platform.kafka.topics.asn-dlq"
-     * - Value "erp_file_po_raw" -> finds its configured property key -> reads matching *-dlq value
+     * - Value "erp_file_po_raw" -> finds its configured property key -> reads
+     * matching *-dlq value
      * - Any future topic configured in application.properties maps automatically!
      */
     public String resolveDlqTopic(String topicOrKey) {
@@ -115,9 +132,10 @@ public class KafkaTopicProperties {
             return topics.get(normalizedKey);
         }
 
-        // 2. Logical raw key match in application.properties (e.g. "po-raw", "po", "asn-raw", "asn")
-        String candidateKey = normalizedKey.endsWith("-raw") 
-                ? normalizedKey.substring(0, normalizedKey.length() - 4) 
+        // 2. Logical raw key match in application.properties (e.g. "po-raw", "po",
+        // "asn-raw", "asn")
+        String candidateKey = normalizedKey.endsWith("-raw")
+                ? normalizedKey.substring(0, normalizedKey.length() - 4)
                 : normalizedKey;
         if (topics.containsKey(candidateKey + "-dlq")) {
             return topics.get(candidateKey + "-dlq");
@@ -126,7 +144,8 @@ public class KafkaTopicProperties {
             return topics.get(candidateKey + "_dlq");
         }
 
-        // 3. Topic name match (value lookup): Find which property key holds this topic name,
+        // 3. Topic name match (value lookup): Find which property key holds this topic
+        // name,
         // and retrieve its matching dedicated -dlq property from application.properties
         for (Map.Entry<String, String> entry : topics.entrySet()) {
             if (entry.getValue().equalsIgnoreCase(raw)) {
@@ -134,8 +153,8 @@ public class KafkaTopicProperties {
                 String dlqKey = key.endsWith("-raw")
                         ? key.substring(0, key.length() - 4) + "-dlq"
                         : key.endsWith("_raw")
-                        ? key.substring(0, key.length() - 4) + "_dlq"
-                        : key + "-dlq";
+                                ? key.substring(0, key.length() - 4) + "_dlq"
+                                : key + "-dlq";
 
                 if (topics.containsKey(dlqKey)) {
                     return topics.get(dlqKey);
@@ -162,12 +181,35 @@ public class KafkaTopicProperties {
     }
 
     // Dynamic backward-compatible accessors
-    public String getAsnRaw() { return resolveRawTopic("asn-raw"); }
-    public String getPoRaw() { return resolveRawTopic("po-raw"); }
-    public String getDoRaw() { return resolveRawTopic("do-raw"); }
-    public String getDistributionRaw() { return resolveRawTopic("distribution-raw"); }
-    public String getAsnDlq() { return resolveDlqTopic("asn-raw"); }
-    public String getPoDlq() { return resolveDlqTopic("po-raw"); }
-    public String getDoDlq() { return resolveDlqTopic("do-raw"); }
-    public String getDistributionDlq() { return resolveDlqTopic("distribution-raw"); }
+    public String getAsnRaw() {
+        return resolveRawTopic("asn-raw");
+    }
+
+    public String getPoRaw() {
+        return resolveRawTopic("po-raw");
+    }
+
+    public String getDoRaw() {
+        return resolveRawTopic("do-raw");
+    }
+
+    public String getBatchRaw() {
+        return resolveRawTopic("batch-raw");
+    }
+
+    public String getAsnDlq() {
+        return resolveDlqTopic("asn-raw");
+    }
+
+    public String getPoDlq() {
+        return resolveDlqTopic("po-raw");
+    }
+
+    public String getDoDlq() {
+        return resolveDlqTopic("do-raw");
+    }
+
+    public String getBatchDlq() {
+        return resolveDlqTopic("batch-raw");
+    }
 }

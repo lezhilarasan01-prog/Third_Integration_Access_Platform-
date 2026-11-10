@@ -65,9 +65,13 @@ public class MawmAuthService {
      * All credentials (password, basicAuth, authUrl) are read strictly from application properties.
      */
     public String getAccessToken(String username) {
-        String effectiveUsername = (username != null && !username.isBlank())
+        String configuredUser = (mawmProperties.getUsername() != null && !mawmProperties.getUsername().isBlank())
+                ? mawmProperties.getUsername().trim()
+                : "lezhilarasan";
+
+        String effectiveUsername = (username != null && !username.isBlank() && !isNonMawmUser(username))
                 ? username.trim()
-                : (mawmProperties.getUsername() != null ? mawmProperties.getUsername() : "lezhilarasan");
+                : configuredUser;
 
         TokenEntry entry = tokenCache.get(effectiveUsername);
         if (entry != null && entry.isValid(90)) {
@@ -84,6 +88,14 @@ public class MawmAuthService {
         } finally {
             lock.unlock();
         }
+    }
+
+    private boolean isNonMawmUser(String username) {
+        if (username == null || username.isBlank()) return true;
+        String upper = username.trim().toUpperCase();
+        return upper.equals("OPTI") || upper.equals("SAP") || upper.equals("ORACLE")
+                || upper.equals("NETSUITE") || upper.equals("SYSTEM") || upper.startsWith("CUSTOMER_")
+                || upper.equals("DEFAULT") || upper.contains("@") || upper.contains(" ");
     }
 
     /**
@@ -173,6 +185,13 @@ public class MawmAuthService {
                 throw new IllegalStateException("OAuth response missing access_token: " + responseBody);
             }
         } catch (Exception e) {
+            String configuredUser = (mawmProperties.getUsername() != null && !mawmProperties.getUsername().isBlank())
+                    ? mawmProperties.getUsername().trim() : "lezhilarasan";
+            if (!username.equalsIgnoreCase(configuredUser)) {
+                log.warn("[MAWM Auth] Authentication for custom user '{}' failed ({}), falling back to configured MAWM user '{}'",
+                        username, e.getMessage(), configuredUser);
+                return fetchNewTokenForUser(configuredUser);
+            }
             log.error("[MAWM Auth] Failed to authenticate user '{}' with MAWM OAuth server: {}", username, e.getMessage(), e);
             throw new RuntimeException("MAWM Authentication failed for user '" + username + "': " + e.getMessage(), e);
         }

@@ -29,6 +29,8 @@ public class MawmProperties {
     private String doUpdatePath = "/dcorder/api/dcorder/order/";
     private String doSearchPath = "/dcorder/api/dcorder/order/search";
     private String doLineSearchPath = "/dcorder/api/dcorder/orderLine/search";
+    private String batchPath = "/dcinventory/api/dcinventory/batchMaster/save";
+    private String batchSearchPath = "/dcinventory/api/dcinventory/batchMaster/search";
     private String defaultFacility;
     private String apiKey;
     private String verifiedStatus = "8000";
@@ -91,6 +93,12 @@ public class MawmProperties {
 
     public String getDoLineSearchPath() { return doLineSearchPath; }
     public void setDoLineSearchPath(String doLineSearchPath) { this.doLineSearchPath = doLineSearchPath; }
+
+    public String getBatchPath() { return batchPath; }
+    public void setBatchPath(String batchPath) { this.batchPath = batchPath; }
+
+    public String getBatchSearchPath() { return batchSearchPath; }
+    public void setBatchSearchPath(String batchSearchPath) { this.batchSearchPath = batchSearchPath; }
 
     public String getDefaultFacility() { return defaultFacility; }
     public void setDefaultFacility(String defaultFacility) { this.defaultFacility = defaultFacility; }

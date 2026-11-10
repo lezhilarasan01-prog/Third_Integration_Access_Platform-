@@ -1707,7 +1707,7 @@ export default function JobDetailsPage({ jobId, onBack }) {
                             onClick={() => isOpti && handleVerifyMawmNow()}
                             disabled={isVerifyingMawm || !isOpti}
                             className="btn-secondary"
-                            title={isOpti ? "Check ASN Verification Status (5.4.2 /asn/search)" : "Rejection: Only Opti ERP is authorized for MAWM Cloud verification"}
+                            title={isOpti ? "Check ASN Verification Status (/asn/search)" : "Rejection: Only Opti ERP is authorized for MAWM Cloud verification"}
                             style={{
                               padding: '0.35rem 0.75rem',
                               fontSize: '0.74rem',
@@ -1719,14 +1719,14 @@ export default function JobDetailsPage({ jobId, onBack }) {
                             }}
                           >
                             <Search size={12} className={isVerifyingMawm ? 'spin-icon' : ''} />
-                            <span>{!isOpti ? 'Opti Only' : isVerifyingMawm ? 'Checking...' : 'Check Verification (5.4.2)'}</span>
+                            <span>{!isOpti ? 'Opti Only' : isVerifyingMawm ? 'Checking...' : 'Check Verification'}</span>
                           </button>
 
                           <button
                             onClick={() => isOpti && handleDispatchMawmNow()}
                             disabled={isDispatchingMawm || !isOpti}
                             className="btn-primary"
-                            title={isOpti ? "Redeliver to MAWM Cloud (5.4.1 /asn/save)" : "Rejection: Only Opti ERP is authorized for MAWM Cloud dispatch"}
+                            title={isOpti ? "Redeliver to MAWM Cloud (/asn/save)" : "Rejection: Only Opti ERP is authorized for MAWM Cloud dispatch"}
                             style={{
                               padding: '0.35rem 0.75rem',
                               fontSize: '0.74rem',
@@ -1757,13 +1757,13 @@ export default function JobDetailsPage({ jobId, onBack }) {
                   <div><strong>Created By (User):</strong> <code style={{ color: '#a78bfa' }}>{job.createdBy || 'Default (Property)'}</code></div>
                   <div><strong>Authorization:</strong> <code>Bearer &lt;OAuth2 Cached Token&gt;</code></div>
                   <div>
-                    <strong>Dispatch Status (5.4.1):</strong>{' '}
+                    <strong>Dispatch Status:</strong>{' '}
                     <strong style={{ color: job.dispatchStatus?.includes('200') || job.dispatchStatus?.includes('DELIVERED') ? '#10b981' : (job.dispatchStatus?.includes('FAIL') ? '#ef4444' : '#f59e0b') }}>
                       {job.dispatchStatus || 'PENDING'}
                     </strong>
                   </div>
                   <div>
-                    <strong>MAWM Verification (5.4.2):</strong>{' '}
+                    <strong>MAWM Verification:</strong>{' '}
                     <strong style={{ color: job.mawmAsnStatus ? '#38bdf8' : 'var(--text-muted)' }}>
                       {job.mawmAsnStatus || 'NOT VERIFIED'}
                     </strong>

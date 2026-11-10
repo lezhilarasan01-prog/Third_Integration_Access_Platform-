@@ -1,5 +1,7 @@
 package com.platform.erp.transformer;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.platform.erp.mawm.MawmCanonicalBuilder;
 import com.platform.erp.model.CanonicalEnvelope;
 import com.platform.erp.transformer.CamelTransformationEngine.TransformationResult;
@@ -10,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +65,12 @@ public class FileToJsonTransformer {
                         payloadDestinationFacility = String.valueOf(r.get("DestinationFacilityId")).trim();
                     } else if (r.get("destinationFacilityId") != null && !String.valueOf(r.get("destinationFacilityId")).isBlank()) {
                         payloadDestinationFacility = String.valueOf(r.get("destinationFacilityId")).trim();
+                    } else if (r.get("FacilityId") != null && !String.valueOf(r.get("FacilityId")).isBlank()) {
+                        payloadDestinationFacility = String.valueOf(r.get("FacilityId")).trim();
+                    } else if (r.get("facilityId") != null && !String.valueOf(r.get("facilityId")).isBlank()) {
+                        payloadDestinationFacility = String.valueOf(r.get("facilityId")).trim();
+                    } else if (r.get("OrgId") != null && !String.valueOf(r.get("OrgId")).isBlank()) {
+                        payloadDestinationFacility = String.valueOf(r.get("OrgId")).trim();
                     }
                 }
                 if (payloadCreatedBy == null) {
@@ -77,13 +86,16 @@ public class FileToJsonTransformer {
 
         if ((payloadDestinationFacility == null || payloadCreatedBy == null) && rawPayload != null && rawPayload.length > 0) {
             try {
-                String str = new String(rawPayload, java.nio.charset.StandardCharsets.UTF_8);
+                String str = new String(rawPayload, StandardCharsets.UTF_8);
                 if (str.trim().startsWith("{") || str.trim().startsWith("[")) {
-                    com.fasterxml.jackson.databind.JsonNode rootNode = new com.fasterxml.jackson.databind.ObjectMapper().readTree(rawPayload);
+                    JsonNode rootNode = new ObjectMapper().readTree(rawPayload);
                     if (payloadDestinationFacility == null) {
                         if (rootNode.has("OriginFacilityId")) payloadDestinationFacility = rootNode.get("OriginFacilityId").asText();
                         else if (rootNode.has("DestinationFacilityId")) payloadDestinationFacility = rootNode.get("DestinationFacilityId").asText();
                         else if (rootNode.has("destinationFacilityId")) payloadDestinationFacility = rootNode.get("destinationFacilityId").asText();
+                        else if (rootNode.has("FacilityId")) payloadDestinationFacility = rootNode.get("FacilityId").asText();
+                        else if (rootNode.has("facilityId")) payloadDestinationFacility = rootNode.get("facilityId").asText();
+                        else if (rootNode.has("OrgId")) payloadDestinationFacility = rootNode.get("OrgId").asText();
                     }
                     if (payloadCreatedBy == null) {
                         if (rootNode.has("CreatedBy")) payloadCreatedBy = rootNode.get("CreatedBy").asText();

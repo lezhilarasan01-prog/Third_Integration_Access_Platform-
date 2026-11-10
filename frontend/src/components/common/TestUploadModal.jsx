@@ -36,7 +36,7 @@ const DEFAULT_ERP_SOURCES = [
   'ECOMMERCE'
 ];
 
-const DEFAULT_DOC_TYPES = ['ASN', 'PO', 'ITEM'];
+const DEFAULT_DOC_TYPES = ['ASN', 'PO', 'ITEM', 'DO', 'BATCH'];
 
 const PRESET_SAMPLES = [
   {
@@ -377,6 +377,35 @@ ASN-B-9902|CUSTOMER_B_LOGISTICS|IN_5180|LPN-B-001094|SKU-B-9902|160|UNITS|AVAILA
       UpdatedTimestamp: "2026-10-30T13:50:55.257239",
       DisplayUomId: null,
       ItemPackage: []
+    }, null, 2)
+  },
+  {
+    id: '09-opti-batch-json',
+    format: 'JSON',
+    label: '9. Opti Batch Master (JSON)',
+    desc: 'Opti Batch Master with BatchNumberId, ItemId, StatusCode, ExpirationDate, FacilityId',
+    erp: 'Opti',
+    docType: 'BATCH',
+    filename: 'Food_Cbe_BATCH_001.json',
+    mime: 'application/json',
+    content: JSON.stringify({
+      id: 20,
+      mawmSynced: true,
+      BatchNumberId: "OPTIBATCH000015",
+      StatusCode: "2000",
+      Status: "Held",
+      VendorId: null,
+      ItemId: "109_cake_1kg",
+      ManufactureDate: "",
+      ExpirationDate: "2026-10-05",
+      CreatedBy: "sathyag",
+      UpdatedBy: "system-msg-user@Food_Cbe",
+      CreatedTimestamp: "2026-10-01T08:25:02.986",
+      UpdatedTimestamp: "2026-10-06T00:00:03.762",
+      FacilityId: "Food_Cbe",
+      OrgId: "Food_Cbe",
+      BatchId: "OPTIBATCH000015",
+      BatchStatus: "Held"
     }, null, 2)
   }
 ];

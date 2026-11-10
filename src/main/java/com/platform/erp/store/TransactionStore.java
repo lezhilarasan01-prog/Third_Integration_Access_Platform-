@@ -4,7 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.platform.erp.model.CanonicalEnvelope;
 import com.platform.erp.model.ErpFileIntakeTracker;
 import com.platform.erp.model.ProcessedTransaction;
+import com.platform.erp.model.TrackerSummaryProjection;
 import com.platform.erp.repository.ErpFileIntakeTrackerRepository;
+import com.platform.erp.storage.BlobStorageService;
+
+import jakarta.annotation.PostConstruct;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -30,15 +35,13 @@ public class TransactionStore {
     private final ObjectMapper objectMapper;
     private final com.platform.erp.storage.BlobStorageService blobStorageService;
 
-    public TransactionStore(ErpFileIntakeTrackerRepository trackerRepository,
-                            ObjectMapper objectMapper,
-                            com.platform.erp.storage.BlobStorageService blobStorageService) {
+    public TransactionStore(ErpFileIntakeTrackerRepository trackerRepository,ObjectMapper objectMapper,BlobStorageService blobStorageService) {
         this.trackerRepository = trackerRepository;
         this.objectMapper = objectMapper;
         this.blobStorageService = blobStorageService;
     }
 
-    @jakarta.annotation.PostConstruct
+    @PostConstruct
     public void init() {
         try {
             int deleted = trackerRepository.cleanupInvalidSourceTrackers();
@@ -56,8 +59,7 @@ public class TransactionStore {
      * Uses Claim-Check if payload exceeds inline threshold.
      */
     @Transactional
-    public void recordReceived(String trackingId, String erpSource, String docType,
-                               String filename, long sizeBytes, String checksum, String targetTopic, String rawContent) {
+    public void recordReceived(String trackingId, String erpSource, String docType,String filename, long sizeBytes, String checksum, String targetTopic, String rawContent) {
         try {
             ErpFileIntakeTracker tracker = new ErpFileIntakeTracker();
             tracker.setJobId(trackingId);
@@ -426,7 +428,7 @@ public class TransactionStore {
         return getAllTrackers(0, 500);
     }
 
-    public List<com.platform.erp.model.TrackerSummaryProjection> getAllTrackerSummaries(int page, int size) {
+    public List<TrackerSummaryProjection> getAllTrackerSummaries(int page, int size) {
         org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(
                 Math.max(0, page),
                 Math.max(1, size),
@@ -435,7 +437,7 @@ public class TransactionStore {
         return trackerRepository.findProjectedByOrderByReceivedAtDesc(pageable);
     }
 
-    public List<com.platform.erp.model.TrackerSummaryProjection> getAllTrackerSummaries() {
+    public List<TrackerSummaryProjection> getAllTrackerSummaries() {
         return getAllTrackerSummaries(0, 500);
     }
 

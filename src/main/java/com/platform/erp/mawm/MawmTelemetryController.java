@@ -59,6 +59,8 @@ public class MawmTelemetryController {
         data.put("doUpdatePath", mawmProperties.getDoUpdatePath());
         data.put("doSearchPath", mawmProperties.getDoSearchPath());
         data.put("doLineSearchPath", mawmProperties.getDoLineSearchPath());
+        data.put("batchPath", mawmProperties.getBatchPath());
+        data.put("batchSearchPath", mawmProperties.getBatchSearchPath());
         data.put("defaultFacility", mawmProperties.getDefaultFacility());
         data.put("username", mawmProperties.getUsername());
         data.put("verifiedStatus", mawmProperties.getVerifiedStatus());
@@ -93,6 +95,18 @@ public class MawmTelemetryController {
             @RequestBody Map<String, Object> payload,
             @RequestParam(value = "username", required = false) String username) {
         Map<String, Object> result = mawmDispatcherService.saveItemDirect(payload, username);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Directly create / save a Batch Master in MAWM Cloud (/dcinventory/api/dcinventory/batchMaster/save)
+     * POST /api/v1/erp/mawm/save-batch
+     */
+    @PostMapping({"/save-batch", "/create-batch-active"})
+    public ResponseEntity<Map<String, Object>> saveBatch(
+            @RequestBody Map<String, Object> payload,
+            @RequestParam(value = "username", required = false) String username) {
+        Map<String, Object> result = mawmDispatcherService.saveBatchDirect(payload, username);
         return ResponseEntity.ok(result);
     }
 
@@ -321,6 +335,16 @@ public class MawmTelemetryController {
     }
 
     /**
+     * Check Batch verification status for a specific job in DB
+     * POST /api/v1/erp/mawm/verify-batch/{jobId}
+     */
+    @PostMapping("/verify-batch/{jobId}")
+    public ResponseEntity<Map<String, Object>> verifyJobBatch(@PathVariable("jobId") String jobId) {
+        Map<String, Object> result = mawmDispatcherService.verifyJobBatch(jobId);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
      * 5.5.1 Check if DO Exists (by OrderId)
      * GET /api/v1/erp/mawm/do/check/{orderId}
      */
@@ -430,6 +454,48 @@ public class MawmTelemetryController {
         String effectiveFacility = (facilityId != null && !facilityId.isBlank()) ? facilityId : headerFacility;
         boolean effectiveStore = (headerStoreTracker != null) ? headerStoreTracker : storeTracker;
         Map<String, Object> result = mawmDispatcherService.searchDoLineDynamic(body, effectiveFacility, username, effectiveStore);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Search and check live Batch status in MAWM Cloud (/dcinventory/api/dcinventory/batchMaster/search)
+     * POST /api/v1/erp/mawm/search-batch
+     */
+    @PostMapping("/search-batch")
+    public ResponseEntity<Map<String, Object>> searchBatchStatus(
+            @RequestBody(required = false) Map<String, String> body,
+            @RequestParam(value = "batchNumberId", required = false) String paramBatchId,
+            @RequestParam(value = "facilityId", required = false) String paramFacility,
+            @RequestParam(value = "username", required = false) String paramUsername) {
+        String batchNumberId = paramBatchId != null && !paramBatchId.isBlank()
+                ? paramBatchId
+                : (body != null ? (body.get("batchNumberId") != null ? body.get("batchNumberId") : body.get("batchId")) : null);
+        String facility = paramFacility != null && !paramFacility.isBlank()
+                ? paramFacility
+                : (body != null ? body.get("facilityId") : null);
+        String username = paramUsername != null && !paramUsername.isBlank()
+                ? paramUsername
+                : (body != null ? body.get("username") : null);
+
+        Map<String, Object> result = mawmDispatcherService.searchBatchStatus(batchNumberId, facility, username);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Dynamic Search for Batch in MAWM Cloud (/dcinventory/api/dcinventory/batchMaster/search)
+     * POST /api/v1/erp/mawm/query/batch
+     */
+    @PostMapping("/query/batch")
+    public ResponseEntity<Map<String, Object>> queryBatchDynamic(
+            @RequestBody JsonNode body,
+            @RequestParam(value = "facilityId", required = false) String facilityId,
+            @RequestParam(value = "username", required = false) String username,
+            @RequestParam(value = "storeTracker", defaultValue = "false") boolean storeTracker,
+            @RequestHeader(value = "X-Facility-Id", required = false) String headerFacility,
+            @RequestHeader(value = "X-Store-Tracker", required = false) Boolean headerStoreTracker) {
+        String effectiveFacility = (facilityId != null && !facilityId.isBlank()) ? facilityId : headerFacility;
+        boolean effectiveStore = (headerStoreTracker != null) ? headerStoreTracker : storeTracker;
+        Map<String, Object> result = mawmDispatcherService.searchBatchDynamic(body, effectiveFacility, username, effectiveStore);
         return ResponseEntity.ok(result);
     }
 

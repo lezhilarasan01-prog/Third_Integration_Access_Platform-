@@ -16,8 +16,13 @@ class FacilityExtractorTest {
         assertEquals("WH-99", FacilityExtractor.extractFacility("WH-99_INVENTORY.csv"));
         assertEquals("FRANKFURT", FacilityExtractor.extractFacility("FRANKFURT_ITEMS.xml"));
 
-        // Fallbacks
+        // Fallbacks and non-facility prefixes
         assertEquals("DEFAULT", FacilityExtractor.extractFacility(null));
         assertEquals("DEFAULT", FacilityExtractor.extractFacility(""));
+        assertEquals("DEFAULT", FacilityExtractor.extractFacility("ITEM_PAYLOAD_1794286960324.json"));
+        assertEquals("DEFAULT", FacilityExtractor.extractFacility("PO_PAYLOAD_101.json"));
+        assertEquals("DEFAULT", FacilityExtractor.extractFacility("ASN_PAYLOAD_202.json"));
+        assertEquals("DEFAULT", FacilityExtractor.extractFacility("DO_PAYLOAD_303.json"));
+        assertEquals("DEFAULT", FacilityExtractor.extractFacility("BATCH_PAYLOAD_404.json"));
     }
 }

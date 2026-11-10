@@ -123,23 +123,20 @@ public class CamelTransformationEngine {
     }
 
     @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> unwrapRoot(Map<?, ?> rootMap) {
-        Map<?, ?> current = rootMap;
-        while (current.size() == 1) {
-            Object val = current.values().iterator().next();
-            if (val instanceof List<?> innerList) {
-                return innerList.stream()
-                        .filter(Map.class::isInstance)
-                        .map(m -> (Map<String, Object>) m)
-                        .toList();
-            } else if (val instanceof Map<?, ?> innerMap) {
-                current = innerMap;
-            } else {
-                break;
-            }
-        }
-        return List.of((Map<String, Object>) current);
-    }
+	private List<Map<String, Object>> unwrapRoot(Map<?, ?> rootMap) {
+		Map<?, ?> current = rootMap;
+		while (current.size() == 1) {
+			Object val = current.values().iterator().next();
+			if (val instanceof List<?> innerList) {
+				return innerList.stream().filter(Map.class::isInstance).map(m -> (Map<String, Object>) m).toList();
+			} else if (val instanceof Map<?, ?> innerMap) {
+				current = innerMap;
+			} else {
+				break;
+			}
+		}
+		return List.of((Map<String, Object>) current);
+	}
 
     private List<Map<String, Object>> mapTabularRows(List<?> headerRow, List<?> list) {
         List<String> headers = headerRow.stream().map(Object::toString).toList();

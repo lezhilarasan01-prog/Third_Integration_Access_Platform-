@@ -32,7 +32,7 @@ import ConfirmDialogModal from '../common/ConfirmDialogModal';
 const PRESET_QUERIES = {
   PO_ASN_LINES: {
     api: 'ASN_LINE',
-    label: '5.3.4 Query ASN Details Associated with PO',
+    label: 'Query ASN Details Associated with PO',
     endpoint: '/receiving/api/receiving/asnLine/search',
     payload: {
       "Query": "PurchaseOrderId ='PO-2026-0001'",
@@ -46,7 +46,7 @@ const PRESET_QUERIES = {
   },
   ASN_VERIFIED: {
     api: 'ASN',
-    label: 'Check ASN 8000 Verified (5.4.2)',
+    label: 'Check ASN 8000 Verified',
     endpoint: '/receiving/api/receiving/asn/search',
     payload: {
       "Query": "AsnId in ('ASN-2026-0001')",
@@ -58,7 +58,7 @@ const PRESET_QUERIES = {
   },
   PO_STATUS: {
     api: 'PO',
-    label: 'Search PO Status (5.3.2)',
+    label: 'Search PO Status',
     endpoint: '/receiving/api/receiving/purchaseOrder/search',
     payload: {
       "Query": "PurchaseOrderId='PO-2026-0001'",
@@ -71,7 +71,7 @@ const PRESET_QUERIES = {
   },
   PO_LINES: {
     api: 'PO_LINE',
-    label: 'Search PO Line Shipped/Received (5.3.3)',
+    label: 'Search PO Line Shipped/Received',
     endpoint: '/receiving/api/receiving/purchaseOrderLine/search',
     payload: {
       "Query": "PurchaseOrderId='PO-2026-0001'",
@@ -85,7 +85,7 @@ const PRESET_QUERIES = {
   },
   ITEM_SYNC: {
     api: 'ITEM_SYNC',
-    label: 'Fetch Items Updated Today (5.2.2 Inbound Sync)',
+    label: 'Fetch Items Updated Today',
     endpoint: '/item-master/api/item-master/item',
     queryParams: {
       page: '0',
@@ -96,7 +96,7 @@ const PRESET_QUERIES = {
   },
   DO_STATUS: {
     api: 'DO',
-    label: 'Search DO Status (5.5.4)',
+    label: 'Search DO Status',
     endpoint: '/dcorder/api/dcorder/order/search',
     payload: {
       "Query": "OrderId = 'DO-2026-0001'",
@@ -109,7 +109,7 @@ const PRESET_QUERIES = {
   },
   DO_LINES: {
     api: 'DO_LINE',
-    label: 'Search DO Line Progress (5.5.5)',
+    label: 'Search DO Line Progress',
     endpoint: '/dcorder/api/dcorder/orderLine/search',
     payload: {
       "Query": "OrderId = 'DO-2026-0001'",
@@ -121,6 +121,22 @@ const PRESET_QUERIES = {
         "PackedQuantity": "",
         "ShippedQuantity": "",
         "ParentOrderLineId": ""
+      }
+    }
+  },
+  BATCH_STATUS: {
+    api: 'BATCH',
+    label: 'Search Batch Status (Batch Master)',
+    endpoint: '/dcinventory/api/dcinventory/batchMaster/search',
+    payload: {
+      "Query": "BatchNumberId = 'OPTIBATCH000015'",
+      "Template": {
+        "BatchNumberId": "",
+        "ItemId": "",
+        "Status": "",
+        "StatusCode": "",
+        "ExpirationDate": "",
+        "FacilityId": ""
       }
     }
   }
@@ -174,7 +190,6 @@ const DEFAULT_PO_SAMPLE = {
   VendorId: "VEND-DAIRY-01",
   OriginFacilityId: "SUPPLIER_PLANT",
   DestinationFacilityId: "Food_Cbe",
-  PurchaseOrderStatus: "Open",
   CreatedBy: "kabil",
   PurchaseOrderLine: [
     {
@@ -253,6 +268,26 @@ const DEFAULT_ITEM_SAMPLE = {
   ItemPackage: []
 };
 
+const DEFAULT_BATCH_SAMPLE = {
+  id: 20,
+  mawmSynced: true,
+  BatchNumberId: "OPTIBATCH000015",
+  StatusCode: "2000",
+  Status: "Held",
+  VendorId: null,
+  ItemId: "109_cake_1kg",
+  ManufactureDate: "",
+  ExpirationDate: "2026-10-05",
+  CreatedBy: "sathyag",
+  UpdatedBy: "system-msg-user@Food_Cbe",
+  CreatedTimestamp: "2026-10-01T08:25:02.986",
+  UpdatedTimestamp: "2026-10-06T00:00:03.762",
+  FacilityId: "Food_Cbe",
+  OrgId: "Food_Cbe",
+  BatchId: "OPTIBATCH000015",
+  BatchStatus: "Held"
+};
+
 export default function MawmDispatchPage({
   onReturnOverview,
   onNavigateToJobs,
@@ -295,8 +330,13 @@ export default function MawmDispatchPage({
   const [directDoResult, setDirectDoResult] = useState(null);
   const [cleaningDo, setCleaningDo] = useState(false);
 
+  // Direct Batch Master Save State
+  const [directBatchJson, setDirectBatchJson] = useState(JSON.stringify(DEFAULT_BATCH_SAMPLE, null, 2));
+  const [savingBatchDirect, setSavingBatchDirect] = useState(false);
+  const [directBatchResult, setDirectBatchResult] = useState(null);
+
   // Dynamic Query & Sync Explorer State (Non-Standard ERP Gateway)
-  const [selectedQueryApi, setSelectedQueryApi] = useState('ASN'); // 'ASN' | 'PO' | 'PO_LINE' | 'ASN_LINE' | 'ITEM_SYNC' | 'DO' | 'DO_LINE'
+  const [selectedQueryApi, setSelectedQueryApi] = useState('ASN'); // 'ASN' | 'PO' | 'PO_LINE' | 'ASN_LINE' | 'ITEM_SYNC' | 'DO' | 'DO_LINE' | 'BATCH'
   const [dynamicQueryJson, setDynamicQueryJson] = useState(JSON.stringify(PRESET_QUERIES.ASN_VERIFIED.payload, null, 2));
   const [dynamicItemParams, setDynamicItemParams] = useState({ ...PRESET_QUERIES.ITEM_SYNC.queryParams });
   const [storeQueryAudit, setStoreQueryAudit] = useState(false);
@@ -347,8 +387,25 @@ export default function MawmDispatchPage({
     }
   };
 
+  const isBatchRecord = useCallback((job) => {
+    if (!job) return false;
+    const type = (job.transactionType || '').toUpperCase();
+    if (type === 'BATCH' || type === 'BATCH_MASTER' || type.includes('BATCH')) return true;
+    const topic = (job.kafkaTopic || '').toLowerCase();
+    if (topic.includes('batch')) return true;
+    const fn = (job.originalFilename || '').toUpperCase();
+    if (fn.includes('BATCH')) return true;
+    if (job.outputFiles && (job.outputFiles.includes('BatchNumberId') || job.outputFiles.includes('BatchId'))) return true;
+    if (job.rawContent && (job.rawContent.includes('BatchNumberId') || job.rawContent.includes('BatchId'))) return true;
+    if (job.mawmResponse && (job.mawmResponse.includes('BatchNumberId') || job.mawmResponse.includes('BatchId') || job.mawmResponse.includes('/batchMaster/save'))) return true;
+    const storage = (job.storagePath || '').toLowerCase();
+    if (storage.includes('batch')) return true;
+    return false;
+  }, []);
+
   const isDoRecord = useCallback((job) => {
     if (!job) return false;
+    if (isBatchRecord(job)) return false;
     const type = (job.transactionType || '').toUpperCase();
     if (type === 'DO' || type === 'DCORDER' || type === 'DISTRIBUTION_ORDER' || type.includes('DISTRIBUTION') || type.includes('DCORDER')) return true;
     if (job.outputFiles && (job.outputFiles.includes('OriginFacilityId') || (job.outputFiles.includes('OrderId') && !job.outputFiles.includes('PurchaseOrderId')))) return true;
@@ -358,10 +415,11 @@ export default function MawmDispatchPage({
     const storage = (job.storagePath || '').toLowerCase();
     if (storage.includes('dcorder') || storage.includes('do')) return true;
     return false;
-  }, []);
+  }, [isBatchRecord]);
 
   const isPoRecord = useCallback((job) => {
     if (!job) return false;
+    if (isBatchRecord(job)) return false;
     if (isDoRecord(job)) return false;
     const type = (job.transactionType || '').toUpperCase();
     if (type === 'PO' || type.includes('PURCHASE')) return true;
@@ -374,10 +432,11 @@ export default function MawmDispatchPage({
     const storage = (job.storagePath || '').toLowerCase();
     if (storage.includes('po')) return true;
     return false;
-  }, [isDoRecord]);
+  }, [isBatchRecord, isDoRecord]);
 
   const isAsnRecord = useCallback((job) => {
     if (!job) return false;
+    if (isBatchRecord(job)) return false;
     if (isDoRecord(job)) return false;
     if (isPoRecord(job)) return false;
     const type = (job.transactionType || '').toUpperCase();
@@ -390,10 +449,11 @@ export default function MawmDispatchPage({
     const storage = (job.storagePath || '').toLowerCase();
     if (storage.includes('asn')) return true;
     return false;
-  }, [isDoRecord, isPoRecord]);
+  }, [isBatchRecord, isDoRecord, isPoRecord]);
 
   const isItemRecord = useCallback((job) => {
     if (!job) return false;
+    if (isBatchRecord(job)) return false;
     if (isDoRecord(job)) return false;
     if (isPoRecord(job)) return false;
     if (isAsnRecord(job)) return false;
@@ -407,7 +467,7 @@ export default function MawmDispatchPage({
     if (job.outputFiles && (job.outputFiles.includes('standardQtyUom') || job.outputFiles.includes('PrimaryBarCode'))) return true;
     if (job.mawmResponse && (job.mawmResponse.includes('ProfileId') || job.mawmResponse.includes('/item/save'))) return true;
     return false;
-  }, [isDoRecord, isPoRecord, isAsnRecord]);
+  }, [isBatchRecord, isDoRecord, isPoRecord, isAsnRecord]);
 
   // Robust Distribution Order (DO) ID extraction
   const extractDoId = useCallback((job) => {
@@ -419,7 +479,7 @@ export default function MawmDispatchPage({
         if (Array.isArray(dataArr) && dataArr[0]?.OrderId) return String(dataArr[0].OrderId);
         if (parsed.OrderId) return String(parsed.OrderId);
         if (parsed.orderId) return String(parsed.orderId);
-      } catch (e) {}
+      } catch (e) { }
       const m = job.outputFiles.match(/"OrderId"\s*:\s*"([^"]+)"/i) || job.outputFiles.match(/"orderId"\s*:\s*"([^"]+)"/i);
       if (m && m[1]) return m[1];
     }
@@ -428,7 +488,7 @@ export default function MawmDispatchPage({
         const parsed = JSON.parse(job.rawContent);
         if (parsed.OrderId) return String(parsed.OrderId);
         if (parsed.orderId) return String(parsed.orderId);
-      } catch (e) {}
+      } catch (e) { }
       const m = job.rawContent.match(/"OrderId"\s*:\s*"([^"]+)"/i) || job.rawContent.match(/"orderId"\s*:\s*"([^"]+)"/i);
       if (m && m[1]) return m[1];
     }
@@ -452,7 +512,7 @@ export default function MawmDispatchPage({
         if (Array.isArray(dataArr) && dataArr[0]?.ItemId) return String(dataArr[0].ItemId);
         if (parsed.ItemId) return String(parsed.ItemId);
         if (parsed.itemId) return String(parsed.itemId);
-      } catch (e) {}
+      } catch (e) { }
       const m = job.outputFiles.match(/"ItemId"\s*:\s*"([^"]+)"/i) || job.outputFiles.match(/"itemId"\s*:\s*"([^"]+)"/i);
       if (m && m[1]) return m[1];
     }
@@ -461,7 +521,7 @@ export default function MawmDispatchPage({
         const parsed = JSON.parse(job.rawContent);
         if (parsed.ItemId) return String(parsed.ItemId);
         if (parsed.itemId) return String(parsed.itemId);
-      } catch (e) {}
+      } catch (e) { }
       const m = job.rawContent.match(/"ItemId"\s*:\s*"([^"]+)"/i) || job.rawContent.match(/"itemId"\s*:\s*"([^"]+)"/i);
       if (m && m[1]) return m[1];
     }
@@ -485,7 +545,7 @@ export default function MawmDispatchPage({
         if (Array.isArray(dataArr) && dataArr[0]?.PurchaseOrderId) return String(dataArr[0].PurchaseOrderId);
         if (parsed.PurchaseOrderId) return String(parsed.PurchaseOrderId);
         if (parsed.purchaseOrderId) return String(parsed.purchaseOrderId);
-      } catch (e) {}
+      } catch (e) { }
       const m = job.outputFiles.match(/"PurchaseOrderId"\s*:\s*"([^"]+)"/i) || job.outputFiles.match(/"purchaseOrderId"\s*:\s*"([^"]+)"/i);
       if (m && m[1]) return m[1];
     }
@@ -495,7 +555,7 @@ export default function MawmDispatchPage({
         const data = parsed.data || parsed.Data || parsed;
         if (data?.PurchaseOrderId) return String(data.PurchaseOrderId);
         if (Array.isArray(data) && data[0]?.PurchaseOrderId) return String(data[0].PurchaseOrderId);
-      } catch (e) {}
+      } catch (e) { }
       const m = job.mawmResponse.match(/"PurchaseOrderId"\s*:\s*"([^"]+)"/i) || job.mawmResponse.match(/"purchaseOrderId"\s*:\s*"([^"]+)"/i);
       if (m && m[1]) return m[1];
     }
@@ -504,7 +564,7 @@ export default function MawmDispatchPage({
         const parsed = JSON.parse(job.rawContent);
         if (parsed.PurchaseOrderId) return String(parsed.PurchaseOrderId);
         if (parsed.purchaseOrderId) return String(parsed.purchaseOrderId);
-      } catch (e) {}
+      } catch (e) { }
       const m = job.rawContent.match(/"PurchaseOrderId"\s*:\s*"([^"]+)"/i) || job.rawContent.match(/"purchaseOrderId"\s*:\s*"([^"]+)"/i);
       if (m && m[1]) return m[1];
     }
@@ -528,7 +588,7 @@ export default function MawmDispatchPage({
         if (Array.isArray(dataArr) && dataArr[0]?.AsnId) return String(dataArr[0].AsnId);
         if (parsed.AsnId) return String(parsed.AsnId);
         if (parsed.asnId) return String(parsed.asnId);
-      } catch (e) {}
+      } catch (e) { }
       const m = job.outputFiles.match(/"AsnId"\s*:\s*"([^"]+)"/i) || job.outputFiles.match(/"asnId"\s*:\s*"([^"]+)"/i);
       if (m && m[1]) return m[1];
     }
@@ -540,7 +600,7 @@ export default function MawmDispatchPage({
         if (data?.Asn?.AsnId) return String(data.Asn.AsnId);
         if (Array.isArray(data?.AsnLine) && data.AsnLine[0]?.AsnId) return String(data.AsnLine[0].AsnId);
         if (Array.isArray(data) && data[0]?.AsnId) return String(data[0].AsnId);
-      } catch (e) {}
+      } catch (e) { }
       const m = job.mawmResponse.match(/"AsnId"\s*:\s*"([^"]+)"/i) || job.mawmResponse.match(/"asnId"\s*:\s*"([^"]+)"/i);
       if (m && m[1]) return m[1];
     }
@@ -549,7 +609,7 @@ export default function MawmDispatchPage({
         const parsed = JSON.parse(job.rawContent);
         if (parsed.AsnId) return String(parsed.AsnId);
         if (parsed.asnId) return String(parsed.asnId);
-      } catch (e) {}
+      } catch (e) { }
       const m = job.rawContent.match(/"AsnId"\s*:\s*"([^"]+)"/i) || job.rawContent.match(/"asnId"\s*:\s*"([^"]+)"/i);
       if (m && m[1]) return m[1];
     }
@@ -563,9 +623,47 @@ export default function MawmDispatchPage({
     return 'ASN-RECORD';
   }, []);
 
+  // Robust Batch Master ID extraction
+  const extractBatchId = useCallback((job) => {
+    if (!job) return '';
+    if (job.outputFiles && typeof job.outputFiles === 'string') {
+      try {
+        const parsed = JSON.parse(job.outputFiles);
+        const dataArr = parsed.Data || parsed.data || (Array.isArray(parsed) ? parsed : null);
+        if (Array.isArray(dataArr) && (dataArr[0]?.BatchNumberId || dataArr[0]?.BatchId)) return String(dataArr[0].BatchNumberId || dataArr[0].BatchId);
+        if (parsed.BatchNumberId) return String(parsed.BatchNumberId);
+        if (parsed.BatchId) return String(parsed.BatchId);
+        if (parsed.batchNumberId) return String(parsed.batchNumberId);
+      } catch (e) {}
+      const m = job.outputFiles.match(/"BatchNumberId"\s*:\s*"([^"]+)"/i) || job.outputFiles.match(/"BatchId"\s*:\s*"([^"]+)"/i);
+      if (m && m[1]) return m[1];
+    }
+    if (job.rawContent && typeof job.rawContent === 'string') {
+      try {
+        const parsed = JSON.parse(job.rawContent);
+        if (parsed.BatchNumberId) return String(parsed.BatchNumberId);
+        if (parsed.BatchId) return String(parsed.BatchId);
+        if (parsed.batchNumberId) return String(parsed.batchNumberId);
+      } catch (e) {}
+      const m = job.rawContent.match(/"BatchNumberId"\s*:\s*"([^"]+)"/i) || job.rawContent.match(/"BatchId"\s*:\s*"([^"]+)"/i);
+      if (m && m[1]) return m[1];
+    }
+    if (job.originalFilename) {
+      const m = job.originalFilename.match(/(BATCH[-_A-Za-z0-9]+)/i);
+      if (m && m[1]) return m[1];
+    }
+    if (job.jobId) {
+      return `BATCH-${job.jobId.slice(0, 8).toUpperCase()}`;
+    }
+    return 'OPTIBATCH000015';
+  }, []);
+
   // Unified Document ID extraction
   const extractDocId = useCallback((job) => {
     if (!job) return { id: '', type: 'PO' };
+    if (isBatchRecord(job)) {
+      return { id: extractBatchId(job), type: 'BATCH' };
+    }
     if (isDoRecord(job)) {
       return { id: extractDoId(job), type: 'DO' };
     }
@@ -579,6 +677,9 @@ export default function MawmDispatchPage({
       return { id: extractPoId(job), type: 'PO' };
     }
     const fn = (job.originalFilename || '').toUpperCase();
+    if (fn.includes('BATCH')) {
+      return { id: extractBatchId(job), type: 'BATCH' };
+    }
     if (fn.includes('DCORDER') || fn.includes('DISTRIBUTION') || fn.startsWith('DO_') || fn.startsWith('DO-')) {
       return { id: extractDoId(job), type: 'DO' };
     }
@@ -589,7 +690,7 @@ export default function MawmDispatchPage({
       return { id: extractAsnId(job), type: 'ASN' };
     }
     return { id: extractPoId(job), type: 'PO' };
-  }, [isDoRecord, isItemRecord, isAsnRecord, isPoRecord, extractDoId, extractItemId, extractAsnId, extractPoId]);
+  }, [isBatchRecord, isDoRecord, isItemRecord, isAsnRecord, isPoRecord, extractBatchId, extractDoId, extractItemId, extractAsnId, extractPoId]);
 
   // Robust Destination Facility extraction
   const extractFacility = useCallback((job) => {
@@ -601,7 +702,7 @@ export default function MawmDispatchPage({
         if (data?.OriginFacilityId) return data.OriginFacilityId;
         if (data?.DestinationFacilityId) return data.DestinationFacilityId;
         if (data?.FacilityId && data.FacilityId !== 'OPTI' && data.FacilityId !== 'SAMPLE') return data.FacilityId;
-      } catch (e) {}
+      } catch (e) { }
     }
     if (job.outputFiles && typeof job.outputFiles === 'string') {
       try {
@@ -610,7 +711,7 @@ export default function MawmDispatchPage({
         if (parsed.DestinationFacilityId) return parsed.DestinationFacilityId;
         if (Array.isArray(parsed) && parsed[0]?.OriginFacilityId) return parsed[0].OriginFacilityId;
         if (Array.isArray(parsed) && parsed[0]?.DestinationFacilityId) return parsed[0].DestinationFacilityId;
-      } catch (e) {}
+      } catch (e) { }
     }
     if (job.facilityId && job.facilityId !== 'OPTI' && job.facilityId !== 'SAMPLE') {
       return job.facilityId;
@@ -633,7 +734,7 @@ export default function MawmDispatchPage({
           if (Array.isArray(data) && data[0]?.Status) return data[0].Status;
           if (data?.MinimumStatusDescription) return data.MinimumStatusDescription;
           if (data?.Status) return data.Status;
-        } catch (e) {}
+        } catch (e) { }
       }
       if (job.dispatchStatus && (job.dispatchStatus.includes('DELIVERED') || job.dispatchStatus.includes('200'))) {
         return 'CREATED / ACTIVE';
@@ -673,7 +774,7 @@ export default function MawmDispatchPage({
         if (data?.purchaseOrderStatusDescription) return String(data.purchaseOrderStatusDescription);
         if (data?.AsnStatus) return String(data.AsnStatus);
         if (data?.StatusDescription) return String(data.StatusDescription);
-      } catch (e) {}
+      } catch (e) { }
     }
     return null;
   }, [isDoRecord, isItemRecord, rowStatusMap]);
@@ -800,6 +901,14 @@ export default function MawmDispatchPage({
       } catch (jsonErr) {
         throw new Error('Invalid JSON format: ' + jsonErr.message);
       }
+      if (parsed && typeof parsed === 'object') {
+        if (String(parsed.PurchaseOrderStatus || '').trim().toLowerCase() === 'open') {
+          delete parsed.PurchaseOrderStatus;
+        }
+        if (String(parsed.purchaseOrderStatus || '').trim().toLowerCase() === 'open') {
+          delete parsed.purchaseOrderStatus;
+        }
+      }
       const res = await integrationApi.savePoDirect(parsed, searchUsername);
       setDirectPoResult(res);
       await loadData(true);
@@ -911,7 +1020,7 @@ export default function MawmDispatchPage({
     setSavingDoDirect(true);
     try {
       let parsed = {};
-      try { parsed = JSON.parse(directDoJson); } catch (e) {}
+      try { parsed = JSON.parse(directDoJson); } catch (e) { }
       const orderId = parsed.OrderId || parsed.orderId || 'DO-2026-0001';
       const fac = parsed.OriginFacilityId || parsed.DestinationFacilityId || searchFacility;
       const res = await integrationApi.checkDoExists(orderId, fac, searchUsername);
@@ -932,7 +1041,7 @@ export default function MawmDispatchPage({
     setSavingDoDirect(true);
     try {
       let parsed = {};
-      try { parsed = JSON.parse(directDoJson); } catch (e) {}
+      try { parsed = JSON.parse(directDoJson); } catch (e) { }
       const orderId = parsed.OrderId || parsed.orderId || 'DO-2026-0001';
       const fac = parsed.OriginFacilityId || parsed.DestinationFacilityId || searchFacility;
       const res = await integrationApi.searchDoStatus(orderId, fac, searchUsername);
@@ -953,7 +1062,7 @@ export default function MawmDispatchPage({
     setSavingDoDirect(true);
     try {
       let parsed = {};
-      try { parsed = JSON.parse(directDoJson); } catch (e) {}
+      try { parsed = JSON.parse(directDoJson); } catch (e) { }
       const orderId = parsed.OrderId || parsed.orderId || 'DO-2026-0001';
       const fac = parsed.OriginFacilityId || parsed.DestinationFacilityId || searchFacility;
       const res = await integrationApi.searchDoLines(orderId, fac, searchUsername);
@@ -983,6 +1092,31 @@ export default function MawmDispatchPage({
       alert(`Failed to clean Distribution Order records: ${err.message}`);
     } finally {
       setCleaningDo(false);
+    }
+  };
+
+  // Direct Save Batch Master Action
+  const handleDirectBatchSave = async () => {
+    setSavingBatchDirect(true);
+    setDirectBatchResult(null);
+    try {
+      let parsed;
+      try {
+        parsed = JSON.parse(directBatchJson);
+      } catch (jsonErr) {
+        throw new Error('Invalid JSON format: ' + jsonErr.message);
+      }
+      const res = await integrationApi.saveBatchDirect(parsed, searchUsername);
+      setDirectBatchResult(res);
+      await loadData(true);
+    } catch (err) {
+      setDirectBatchResult({
+        success: false,
+        statusCode: 500,
+        cleanError: err.message || 'Direct Batch Master save failed'
+      });
+    } finally {
+      setSavingBatchDirect(false);
     }
   };
 
@@ -1026,6 +1160,8 @@ export default function MawmDispatchPage({
           res = await integrationApi.queryDoDynamic(parsed, searchFacility, searchUsername, storeQueryAudit);
         } else if (selectedQueryApi === 'DO_LINE') {
           res = await integrationApi.queryDoLineDynamic(parsed, searchFacility, searchUsername, storeQueryAudit);
+        } else if (selectedQueryApi === 'BATCH') {
+          res = await integrationApi.queryBatchDynamic(parsed, searchFacility, searchUsername, storeQueryAudit);
         }
       }
       setDynamicQueryResult(res);
@@ -1080,6 +1216,10 @@ export default function MawmDispatchPage({
       if (type === 'DO') {
         const res = await integrationApi.searchDoStatus(id, fac, searchUsername);
         const actualStatus = res.statusDescription || res.minimumStatusDescription || (res.success ? 'ALLOCATED' : 'ERROR');
+        setRowStatusMap(prev => ({ ...prev, [jobId]: actualStatus }));
+      } else if (type === 'BATCH') {
+        const res = await integrationApi.searchBatchStatus(id, fac, searchUsername);
+        const actualStatus = res.statusDescription || res.batchStatus || (res.success ? 'HELD / SAVED' : 'ERROR');
         setRowStatusMap(prev => ({ ...prev, [jobId]: actualStatus }));
       } else if (type === 'ITEM') {
         const res = await integrationApi.verifyJob(jobId);
@@ -1145,19 +1285,25 @@ export default function MawmDispatchPage({
     if (type === 'DO' && id) {
       integrationApi.searchDoLines(id, fac, searchUsername)
         .then(linesRes => setInspectingDetails(prev => ({ ...prev, doLines: linesRes })))
-        .catch(() => {});
+        .catch(() => { });
       integrationApi.searchDoStatus(id, fac, searchUsername)
         .then(statusRes => setInspectingDetails(prev => ({ ...prev, doStatus: statusRes })))
+        .catch(() => { });
+    }
+
+    if (type === 'BATCH' && id && !id.startsWith('BATCH-RECORD')) {
+      integrationApi.searchBatchStatus(id, fac, searchUsername)
+        .then(statusRes => setInspectingDetails(prev => ({ ...prev, batchStatus: statusRes })))
         .catch(() => {});
     }
 
     if (type === 'PO' && id && !id.startsWith('PO-RECORD')) {
       integrationApi.searchPoLines(id, fac, searchUsername)
         .then(linesRes => setInspectingDetails(prev => ({ ...prev, lines: linesRes })))
-        .catch(() => {});
+        .catch(() => { });
       integrationApi.searchPoAsnLines(id, fac, searchUsername)
         .then(asnRes => setInspectingDetails(prev => ({ ...prev, asns: asnRes })))
-        .catch(() => {});
+        .catch(() => { });
     }
   };
 
@@ -1168,8 +1314,9 @@ export default function MawmDispatchPage({
       const isAsn = isAsnRecord(r);
       const isPo = isPoRecord(r);
       const isItem = isItemRecord(r);
+      const isBatch = isBatchRecord(r);
 
-      // 1. DocType filter (Purchase Orders, ASN Deliveries, Item Master, or Distribution Orders)
+      // 1. DocType filter (Purchase Orders, ASN Deliveries, Item Master, Distribution Orders, or Batch Master)
       if (selectedDocTypeFilter === 'DO') {
         if (!isDo) return false;
       } else if (selectedDocTypeFilter === 'PO') {
@@ -1178,8 +1325,10 @@ export default function MawmDispatchPage({
         if (!isAsn) return false;
       } else if (selectedDocTypeFilter === 'ITEM') {
         if (!isItem) return false;
+      } else if (selectedDocTypeFilter === 'BATCH') {
+        if (!isBatch) return false;
       } else {
-        if (!isPo && !isAsn && !isItem && !isDo) return false;
+        if (!isPo && !isAsn && !isItem && !isDo && !isBatch) return false;
       }
 
       // 2. ERP Source Filter (Dropdown selection: OPTI, SAP, HM, OTHER)
@@ -1209,7 +1358,7 @@ export default function MawmDispatchPage({
 
       return true;
     });
-  }, [trackers, selectedErp, selectedDocTypeFilter, searchQuery, isDoRecord, isAsnRecord, isPoRecord, isItemRecord, extractDocId, extractFacility]);
+  }, [trackers, selectedErp, selectedDocTypeFilter, searchQuery, isDoRecord, isAsnRecord, isPoRecord, isItemRecord, isBatchRecord, extractDocId, extractFacility]);
 
   // Available real PO and ASN IDs extracted dynamically from actual trackers
   const availablePoIds = useMemo(() => {
@@ -1460,7 +1609,7 @@ export default function MawmDispatchPage({
           3. Proper Document Console: Clean Category Selection (PO vs ASN)
          ========================================================================= */}
       <div id="mawm-search-console" className="card" style={{ padding: '1.25rem 1.5rem', borderRadius: '10px', border: '1px solid rgba(56, 189, 248, 0.3)', backgroundColor: 'rgba(15, 23, 42, 0.65)', marginBottom: '1.25rem' }}>
-        
+
         {/* Top-Level Document Category Selector: Purchase Order vs ASN */}
         <div style={{
           display: 'flex',
@@ -1559,6 +1708,27 @@ export default function MawmDispatchPage({
 
             <button
               onClick={() => {
+                setSelectedDocCategory('BATCH');
+                setSelectedDocTypeFilter('BATCH');
+                setCurrentPage(1);
+              }}
+              className={`filter-pill ${selectedDocCategory === 'BATCH' ? 'active' : ''}`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                padding: '0.4rem 0.95rem',
+                borderRadius: '6px'
+              }}
+            >
+              <Database size={15} />
+              <span>Batch Master (BATCH)</span>
+            </button>
+
+            <button
+              onClick={() => {
                 setSelectedDocCategory('QUERY');
               }}
               className={`filter-pill ${selectedDocCategory === 'QUERY' ? 'active' : ''}`}
@@ -1613,7 +1783,7 @@ export default function MawmDispatchPage({
                   try {
                     const p = JSON.parse(directPoJson);
                     if (p.PurchaseOrderId) poId = p.PurchaseOrderId;
-                  } catch (_) {}
+                  } catch (_) { }
                   setSelectedDocCategory('QUERY');
                   setSelectedQueryApi('ASN_LINE');
                   setDynamicQueryJson(JSON.stringify({
@@ -1629,10 +1799,10 @@ export default function MawmDispatchPage({
                 }}
                 className="btn-secondary"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.42rem 0.85rem', fontSize: '0.78rem', color: '#f59e0b', borderColor: 'rgba(245, 158, 11, 0.4)' }}
-                title="Jump directly to 5.3.4 Query ASN Details Associated with PO for this PurchaseOrderId"
+                title="Jump directly to Query ASN Details Associated with PO for this PurchaseOrderId"
               >
                 <Search size={13} />
-                <span>5.3.4 Query ASN Details Associated with PO</span>
+                <span>Query ASN Details Associated with PO</span>
               </button>
 
               <button
@@ -1795,9 +1965,9 @@ export default function MawmDispatchPage({
                   disabled={savingDoDirect}
                   className="btn-secondary"
                   style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem', color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.4)' }}
-                  title="5.5.1 Check if DO Exists in MAWM"
+                  title="Check if DO Exists in MAWM"
                 >
-                  <span>5.5.1 Check If Exists</span>
+                  <span>Check If Exists</span>
                 </button>
                 <button
                   type="button"
@@ -1805,9 +1975,9 @@ export default function MawmDispatchPage({
                   disabled={savingDoDirect}
                   className="btn-secondary"
                   style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)' }}
-                  title="5.5.4 Search Distribution Order Status"
+                  title="Search Distribution Order Status"
                 >
-                  <span>5.5.4 Search Status</span>
+                  <span>Search Status</span>
                 </button>
                 <button
                   type="button"
@@ -1815,9 +1985,9 @@ export default function MawmDispatchPage({
                   disabled={savingDoDirect}
                   className="btn-secondary"
                   style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem', color: '#c084fc', borderColor: 'rgba(168, 85, 247, 0.4)' }}
-                  title="5.5.5 Search Order Line Progress"
+                  title="Search Order Line Progress"
                 >
-                  <span>5.5.5 Check Line Progress</span>
+                  <span>Check Line Progress</span>
                 </button>
               </div>
 
@@ -1828,7 +1998,7 @@ export default function MawmDispatchPage({
                 style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1.1rem', fontSize: '0.82rem', backgroundColor: '#d97706', borderColor: '#d97706' }}
               >
                 <Send size={14} className={savingDoDirect ? 'spin-icon' : ''} />
-                <span>{savingDoDirect ? 'Dispatching DO to MAWM...' : 'Dispatch / Save DO to MAWM Cloud (5.5.2)'}</span>
+                <span>{savingDoDirect ? 'Dispatching DO to MAWM...' : 'Dispatch / Save DO to MAWM Cloud'}</span>
               </button>
             </div>
 
@@ -1840,6 +2010,57 @@ export default function MawmDispatchPage({
                 {directDoResult.rawResponse && (
                   <pre style={{ marginTop: '0.4rem', padding: '0.5rem', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '4px', maxHeight: '160px', overflow: 'auto', fontSize: '0.72rem', color: '#34d399', whiteSpace: 'pre-wrap' }}>
                     {formatPayload(directDoResult.rawResponse)}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* --- Batch Master Payload & Direct Dispatch --- */}
+        {selectedDocCategory === 'BATCH' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                Batch Master Payload (POST /dcinventory/api/dcinventory/batchMaster/save):
+              </span>
+              <button
+                type="button"
+                onClick={() => setDirectBatchJson(JSON.stringify(DEFAULT_BATCH_SAMPLE, null, 2))}
+                style={{ background: 'none', border: 'none', color: '#14b8a6', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Reset Specification Default
+              </button>
+            </div>
+
+            <textarea
+              rows={10}
+              value={directBatchJson}
+              onChange={(e) => setDirectBatchJson(e.target.value)}
+              className="input-field"
+              style={{ width: '100%', fontFamily: 'var(--font-mono, monospace)', fontSize: '0.78rem', boxSizing: 'border-box' }}
+            />
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.6rem' }}>
+              <button
+                onClick={handleDirectBatchSave}
+                disabled={savingBatchDirect}
+                className="btn-primary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 1.1rem', fontSize: '0.82rem', backgroundColor: '#0d9488', borderColor: '#0d9488' }}
+              >
+                <Send size={14} className={savingBatchDirect ? 'spin-icon' : ''} />
+                <span>{savingBatchDirect ? 'Saving Batch to MAWM...' : 'Dispatch / Save Batch to MAWM (200 OK)'}</span>
+              </button>
+            </div>
+
+            {directBatchResult && (
+              <div style={{ marginTop: '0.85rem', padding: '0.75rem 1rem', borderRadius: '6px', backgroundColor: directBatchResult.success ? 'rgba(20, 184, 166, 0.1)' : 'rgba(239, 68, 68, 0.1)', border: `1px solid ${directBatchResult.success ? '#14b8a6' : '#ef4444'}` }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: directBatchResult.success ? '#14b8a6' : '#ef4444' }}>
+                  {directBatchResult.success ? (directBatchResult.message || '200 OK - Batch Master Saved Successfully') : (directBatchResult.cleanError || directBatchResult.error)}
+                </div>
+                {directBatchResult.rawResponse && (
+                  <pre style={{ marginTop: '0.4rem', padding: '0.5rem', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '4px', maxHeight: '160px', overflow: 'auto', fontSize: '0.72rem', color: '#2dd4bf', whiteSpace: 'pre-wrap' }}>
+                    {formatPayload(directBatchResult.rawResponse)}
                   </pre>
                 )}
               </div>
@@ -1870,7 +2091,7 @@ export default function MawmDispatchPage({
                     backgroundColor: selectedQueryApi === 'ASN_LINE' ? 'rgba(245, 158, 11, 0.15)' : 'transparent'
                   }}
                 >
-                  ⚡ 5.3.4 Query ASN Details Associated with PO
+                  Query ASN Details Associated with PO
                 </button>
                 <button
                   type="button"
@@ -1885,7 +2106,7 @@ export default function MawmDispatchPage({
                     backgroundColor: selectedQueryApi === 'ASN' ? 'rgba(56, 189, 248, 0.15)' : 'transparent'
                   }}
                 >
-                  5.4.2 Check ASN 8000 Verified
+                  Check ASN 8000 Verified
                 </button>
                 <button
                   type="button"
@@ -1900,7 +2121,7 @@ export default function MawmDispatchPage({
                     backgroundColor: selectedQueryApi === 'PO' ? 'rgba(16, 185, 129, 0.15)' : 'transparent'
                   }}
                 >
-                  5.3.2 Search PO Status
+                  Search PO Status
                 </button>
                 <button
                   type="button"
@@ -1915,7 +2136,7 @@ export default function MawmDispatchPage({
                     backgroundColor: selectedQueryApi === 'PO_LINE' ? 'rgba(168, 85, 247, 0.15)' : 'transparent'
                   }}
                 >
-                  5.3.3 Search PO Lines
+                  Search PO Lines
                 </button>
                 <button
                   type="button"
@@ -1930,7 +2151,7 @@ export default function MawmDispatchPage({
                     backgroundColor: selectedQueryApi === 'ITEM_SYNC' ? 'rgba(236, 72, 153, 0.15)' : 'transparent'
                   }}
                 >
-                  5.2.2 Fetch Items (Inbound Sync)
+                  Fetch Items (Inbound Sync)
                 </button>
                 <button
                   type="button"
@@ -1945,7 +2166,7 @@ export default function MawmDispatchPage({
                     backgroundColor: selectedQueryApi === 'DO' ? 'rgba(245, 158, 11, 0.15)' : 'transparent'
                   }}
                 >
-                  5.5.4 Search DO Status
+                  Search DO Status
                 </button>
                 <button
                   type="button"
@@ -1960,7 +2181,22 @@ export default function MawmDispatchPage({
                     backgroundColor: selectedQueryApi === 'DO_LINE' ? 'rgba(251, 146, 60, 0.15)' : 'transparent'
                   }}
                 >
-                  5.5.5 Search DO Line Progress
+                  Search DO Line Progress
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('BATCH_STATUS')}
+                  className="btn-secondary"
+                  style={{
+                    fontSize: '0.72rem',
+                    padding: '0.25rem 0.65rem',
+                    borderColor: 'rgba(20, 184, 166, 0.35)',
+                    color: '#14b8a6',
+                    fontWeight: selectedQueryApi === 'BATCH' ? 700 : 500,
+                    backgroundColor: selectedQueryApi === 'BATCH' ? 'rgba(20, 184, 166, 0.15)' : 'transparent'
+                  }}
+                >
+                  Search Batch Status
                 </button>
               </div>
             </div>
@@ -1989,18 +2225,21 @@ export default function MawmDispatchPage({
                       setDynamicQueryJson(JSON.stringify(PRESET_QUERIES.DO_STATUS.payload, null, 2));
                     } else if (newApi === 'DO_LINE') {
                       setDynamicQueryJson(JSON.stringify(PRESET_QUERIES.DO_LINES.payload, null, 2));
+                    } else if (newApi === 'BATCH') {
+                      setDynamicQueryJson(JSON.stringify(PRESET_QUERIES.BATCH_STATUS.payload, null, 2));
                     }
                   }}
                   className="input-field"
-                  style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem', borderRadius: '6px', fontWeight: 600, minWidth: '360px' }}
+                  style={{ fontSize: '0.78rem', padding: '0.35rem 0.65rem', borderRadius: '6px', fontWeight: 600, minWidth: '220px' }}
                 >
-                  <option value="ASN_LINE">POST /receiving/api/receiving/asnLine/search (5.3.4 Query ASN Details Associated with PO)</option>
-                  <option value="ASN">POST /receiving/api/receiving/asn/search (5.4.2 Check ASN Verification Status)</option>
-                  <option value="PO">POST /receiving/api/receiving/purchaseOrder/search (5.3.2 Query PO Status)</option>
-                  <option value="PO_LINE">POST /receiving/api/receiving/purchaseOrderLine/search (5.3.3 Query PO Lines)</option>
-                  <option value="ITEM_SYNC">GET /item-master/api/item-master/item (5.2.2 Fetch Items from MAWM / Inbound Sync)</option>
-                  <option value="DO">POST /dcorder/api/dcorder/order/search (5.5.4 Search Distribution Order Status)</option>
-                  <option value="DO_LINE">POST /dcorder/api/dcorder/orderLine/search (5.5.5 Search Distribution Order Line Progress)</option>
+                  <option value="ASN_LINE">asnLineSearch</option>
+                  <option value="ASN">asnSearch</option>
+                  <option value="PO">purchaseOrderSearch</option>
+                  <option value="PO_LINE">purchaseOrderLineSearch</option>
+                  <option value="ITEM_SYNC">itemSearch</option>
+                  <option value="DO">orderSearch</option>
+                  <option value="DO_LINE">orderLineSearch</option>
+                  <option value="BATCH">batchMasterSearch</option>
                 </select>
               </div>
 
@@ -2288,6 +2527,14 @@ export default function MawmDispatchPage({
                   <span>{cleaningDo ? 'Cleaning...' : 'Clean DO Records'}</span>
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => { setSelectedDocTypeFilter('BATCH'); setSelectedDocCategory('BATCH'); setSelectedJobIds([]); setCurrentPage(1); }}
+                className={`filter-pill ${selectedDocTypeFilter === 'BATCH' ? 'active' : ''}`}
+                style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
+              >
+                Batch Master (BATCH)
+              </button>
             </div>
           </div>
 
@@ -2433,7 +2680,7 @@ export default function MawmDispatchPage({
         ) : filteredTrackers.length === 0 ? (
           <div style={{ padding: '3rem 1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
             <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
-              No dispatch records found for {selectedErp} ERP ({selectedDocTypeFilter === 'PO' ? 'Purchase Orders' : selectedDocTypeFilter === 'ASN' ? 'ASN Deliveries' : selectedDocTypeFilter === 'DO' ? 'Distribution Orders' : 'Item Master'})
+              No dispatch records found for {selectedErp} ERP ({selectedDocTypeFilter === 'PO' ? 'Purchase Orders' : selectedDocTypeFilter === 'ASN' ? 'ASN Deliveries' : selectedDocTypeFilter === 'DO' ? 'Distribution Orders' : selectedDocTypeFilter === 'BATCH' ? 'Batch Master' : 'Item Master'})
             </div>
             <div style={{ fontSize: '0.78rem' }}>
               Select "Opti ERP" to view active dispatch logs, or send a new PO/ASN payload via Files API.
@@ -2519,7 +2766,7 @@ export default function MawmDispatchPage({
                             padding: 0,
                             fontFamily: 'var(--font-mono, monospace)',
                             fontWeight: 600,
-                            color: docType === 'PO' ? '#38bdf8' : docType === 'ITEM' ? '#c084fc' : docType === 'DO' ? '#f59e0b' : '#34d399',
+                            color: docType === 'PO' ? '#38bdf8' : docType === 'ITEM' ? '#c084fc' : docType === 'DO' ? '#f59e0b' : docType === 'BATCH' ? '#14b8a6' : '#34d399',
                             cursor: 'pointer',
                             textDecoration: 'underline',
                             fontSize: '0.78rem'
@@ -2537,9 +2784,9 @@ export default function MawmDispatchPage({
                           fontWeight: 700,
                           padding: '0.12rem 0.45rem',
                           borderRadius: '4px',
-                          backgroundColor: docType === 'PO' ? 'rgba(56, 189, 248, 0.15)' : docType === 'ITEM' ? 'rgba(168, 85, 247, 0.15)' : docType === 'DO' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                          color: docType === 'PO' ? '#38bdf8' : docType === 'ITEM' ? '#c084fc' : docType === 'DO' ? '#f59e0b' : '#10b981',
-                          border: `1px solid ${docType === 'PO' ? 'rgba(56, 189, 248, 0.3)' : docType === 'ITEM' ? 'rgba(168, 85, 247, 0.3)' : docType === 'DO' ? 'rgba(245, 158, 11, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
+                          backgroundColor: docType === 'PO' ? 'rgba(56, 189, 248, 0.15)' : docType === 'ITEM' ? 'rgba(168, 85, 247, 0.15)' : docType === 'DO' ? 'rgba(245, 158, 11, 0.15)' : docType === 'BATCH' ? 'rgba(20, 184, 166, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                          color: docType === 'PO' ? '#38bdf8' : docType === 'ITEM' ? '#c084fc' : docType === 'DO' ? '#f59e0b' : docType === 'BATCH' ? '#14b8a6' : '#10b981',
+                          border: `1px solid ${docType === 'PO' ? 'rgba(56, 189, 248, 0.3)' : docType === 'ITEM' ? 'rgba(168, 85, 247, 0.3)' : docType === 'DO' ? 'rgba(245, 158, 11, 0.3)' : docType === 'BATCH' ? 'rgba(20, 184, 166, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
                         }}>
                           {docType}
                         </span>
@@ -2868,14 +3115,14 @@ export default function MawmDispatchPage({
                       className={`filter-pill ${inspectPayloadTab === 'lines' ? 'active' : ''}`}
                       style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
                     >
-                      5.3.3 PO Lines
+                      PO Lines
                     </button>
                     <button
                       onClick={() => setInspectPayloadTab('asns')}
                       className={`filter-pill ${inspectPayloadTab === 'asns' ? 'active' : ''}`}
                       style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
                     >
-                      5.3.4 Associated ASNs
+                      Associated ASNs
                     </button>
                   </>
                 )}
@@ -2886,14 +3133,14 @@ export default function MawmDispatchPage({
                       className={`filter-pill ${inspectPayloadTab === 'doLines' ? 'active' : ''}`}
                       style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
                     >
-                      5.5.5 DO Line Progress
+                      DO Line Progress
                     </button>
                     <button
                       onClick={() => setInspectPayloadTab('doStatus')}
                       className={`filter-pill ${inspectPayloadTab === 'doStatus' ? 'active' : ''}`}
                       style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
                     >
-                      5.5.4 DO Status
+                      DO Status
                     </button>
                   </>
                 )}
@@ -2924,11 +3171,11 @@ export default function MawmDispatchPage({
                   ? formatPayload(inspectingJob.mawmResponse || 'No direct response captured yet')
                   : inspectPayloadTab === 'status'
                     ? formatPayload({
-                        documentId: extractDocId(inspectingJob).id,
-                        documentType: extractDocId(inspectingJob).type,
-                        facility: extractFacility(inspectingJob),
-                        liveStatus: extractLiveStatus(inspectingJob) || 'Not queried yet'
-                      })
+                      documentId: extractDocId(inspectingJob).id,
+                      documentType: extractDocId(inspectingJob).type,
+                      facility: extractFacility(inspectingJob),
+                      liveStatus: extractLiveStatus(inspectingJob) || 'Not queried yet'
+                    })
                     : inspectPayloadTab === 'lines'
                       ? formatPayload(inspectingDetails.lines?.rawResponse || inspectingDetails.lines?.data || inspectingDetails.lines || 'Loading or no lines returned')
                       : inspectPayloadTab === 'asns'
@@ -3003,7 +3250,7 @@ export default function MawmDispatchPage({
           recordName={`${selectedJobIds.length} ${selectedDocTypeFilter} Records Selected`}
           recordId={`${selectedJobIds.length} items`}
           details={[
-            { label: 'Document Category', value: selectedDocTypeFilter === 'PO' ? 'Purchase Orders' : selectedDocTypeFilter === 'ASN' ? 'ASN Deliveries' : 'Item Master' },
+            { label: 'Document Category', value: selectedDocTypeFilter === 'PO' ? 'Purchase Orders' : selectedDocTypeFilter === 'ASN' ? 'ASN Deliveries' : selectedDocTypeFilter === 'DO' ? 'Distribution Orders' : selectedDocTypeFilter === 'BATCH' ? 'Batch Master' : 'Item Master' },
             { label: 'Selected Count', value: `${selectedJobIds.length} record(s)` },
             { label: 'Active ERP', value: selectedErp }
           ]}

@@ -45,19 +45,16 @@ public class ErpIngestionController {
     private final ObjectMapper objectMapper;
     private final com.platform.erp.mawm.MawmDispatcherService mawmDispatcherService;
 
-    public ErpIngestionController(ErpFileProducerService producerService,
-                                  MultipartResolver multipartResolver,
-                                  FileToJsonTransformer transformer,
-                                  TransactionStore transactionStore,
-                                  ObjectMapper objectMapper,
-                                  com.platform.erp.mawm.MawmDispatcherService mawmDispatcherService) {
-        this.producerService = producerService;
-        this.multipartResolver = multipartResolver;
-        this.transformer = transformer;
-        this.transactionStore = transactionStore;
-        this.objectMapper = objectMapper;
-        this.mawmDispatcherService = mawmDispatcherService;
-    }
+	public ErpIngestionController(ErpFileProducerService producerService, MultipartResolver multipartResolver,
+			FileToJsonTransformer transformer, TransactionStore transactionStore, ObjectMapper objectMapper,
+			com.platform.erp.mawm.MawmDispatcherService mawmDispatcherService) {
+		this.producerService = producerService;
+		this.multipartResolver = multipartResolver;
+		this.transformer = transformer;
+		this.transactionStore = transactionStore;
+		this.objectMapper = objectMapper;
+		this.mawmDispatcherService = mawmDispatcherService;
+	}
 
     /**
      * Synchronous Interactive Transformation Testing Endpoint.
@@ -110,326 +107,192 @@ public class ErpIngestionController {
      * Supports multipart form-data file uploads and raw request bodies (JSON, XML, CSV, EDI).
      * Strictly restricted to OPTI host system.
      */
-    @PostMapping(value = { 
-            "/{erpSource}/files", "/{erpSource}/ingest", "/{erpSource}", "/{erpSource}/raw", 
-            "/files", "/ingest", "/raw",
-            "/intake/{erpSource}/files", "/intake/{erpSource}/ingest", "/intake/{erpSource}",
-            "/intake/files", "/intake/ingest", "/intake"
-    }, consumes = MediaType.ALL_VALUE)
+    /**
+     * Unified ERP Ingestion Gateway.
+     * Accepts data either via:
+     * 1. File Upload (multipart/form-data: file)
+     * 2. Direct JSON Body (application/json)
+     */
+    @PostMapping(value = { "/{erpSource}/files", "/files" }, consumes = MediaType.ALL_VALUE)
     public ResponseEntity<?> ingestPayload(
             @PathVariable(value = "erpSource", required = false) String erpSourcePath,
             @RequestParam(value = "erpSource", required = false) String erpSourceParam,
-            @RequestHeader(value = "X-ERP-Source", required = false) String erpSourceHeader,
             @RequestParam(value = "docType", required = false) String docTypeParam,
-            @RequestParam(value = "type", required = false) String typeParam,
-            @RequestParam(value = "topic", required = false) String customTopic,
-            @RequestParam(value = "filename", required = false) String queryFilename,
-            @RequestParam(value = "createdBy", required = false) String paramCreatedBy,
-            @RequestHeader(value = "X-Created-By", required = false) String headerCreatedBy,
-            @RequestHeader(value = "X-Filename", required = false) String headerFilename,
-            @RequestHeader(value = "X-Document-Type", required = false) String headerDocType,
-            @RequestHeader(value = "X-Kafka-Topic", required = false) String headerTopic,
-            @RequestHeader(value = "Content-Disposition", required = false) String contentDisposition,
+            @RequestParam(value = "facility", required = false) String facilityParam,
+            @RequestParam(value = "facilityId", required = false) String facilityIdParam,
+            @RequestParam(value = "filename", required = false) String filenameParam,
+            @RequestParam(value = "file", required = false) MultipartFile file,
+            @RequestBody(required = false) byte[] rawBody,
             HttpServletRequest request) {
 
-        // 0. Enforce Mandatory ERP Source Validation - Restricted strictly to OPTI
-        String erpSource = (erpSourceParam != null && !erpSourceParam.isBlank())
-                ? erpSourceParam.trim()
-                : (erpSourceHeader != null && !erpSourceHeader.isBlank())
-                ? erpSourceHeader.trim()
-                : erpSourcePath;
-
-        if (erpSource == null || erpSource.isBlank()
-                || "files".equalsIgnoreCase(erpSource)
-                || "ingest".equalsIgnoreCase(erpSource)
-                || "intake".equalsIgnoreCase(erpSource)
-                || "raw".equalsIgnoreCase(erpSource)) {
-            String uri = request != null ? request.getRequestURI() : null;
-            if (uri != null) {
-                if (uri.toLowerCase().contains("/opti")) {
-                    erpSource = "Opti";
-                }
-            }
-        }
-
-        if (erpSource == null || erpSource.isBlank()
-                || "files".equalsIgnoreCase(erpSource)
-                || "ingest".equalsIgnoreCase(erpSource)
-                || "intake".equalsIgnoreCase(erpSource)
-                || "raw".equalsIgnoreCase(erpSource)) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "MISSING_HOST_SOURCE", "message", "Host Source is mandatory. Please specify a valid host source system"));
-        }
+        // 1. Resolve ERP Source (defaults to Opti)
+        String erpSource = (erpSourcePath != null && !erpSourcePath.isBlank() && !"files".equalsIgnoreCase(erpSourcePath))
+                ? erpSourcePath.trim()
+                : (erpSourceParam != null && !erpSourceParam.isBlank()) ? erpSourceParam.trim() : "Opti";
 
         if ("OPTI".equalsIgnoreCase(erpSource)) {
             erpSource = "Opti";
         }
 
         try {
+            // 2. Extract Data: File Upload or JSON Body
             byte[] payload = null;
-            String resolvedFilename = null;
+            String resolvedFilename = (filenameParam != null && !filenameParam.isBlank()) ? filenameParam.trim() : null;
 
-            // 1. Check if request is Multipart (Standard or wrapped)
-            MultipartHttpServletRequest multipartRequest = null;
-            if (request instanceof MultipartHttpServletRequest mr) {
-                multipartRequest = mr;
-            } else if (multipartResolver != null && multipartResolver.isMultipart(request)) {
-                try {
-                    multipartRequest = multipartResolver.resolveMultipart(request);
-                } catch (Exception e) {
-                    log.debug("Multipart resolution fallback: {}", e.getMessage());
-                }
-            }
-
-            if (multipartRequest != null) {
-                Map<String, MultipartFile> fileMap = multipartRequest.getFileMap();
-                if (!fileMap.isEmpty()) {
-                    MultipartFile file = fileMap.values().iterator().next();
-                    payload = file.getBytes();
+            if (file != null && !file.isEmpty()) {
+                payload = file.getBytes();
+                if (resolvedFilename == null || resolvedFilename.isBlank()) {
                     resolvedFilename = file.getOriginalFilename();
-                    log.info("Extracted payload from multipart part: '{}', filename: '{}', size: {} bytes",
-                            file.getName(), resolvedFilename, payload.length);
                 }
-            }
-
-            // 2. If not multipart or multipart had no files, read raw bytes from InputStream
-            if (payload == null || payload.length == 0) {
+            } else if (rawBody != null && rawBody.length > 0) {
+                payload = rawBody;
+            } else if (request != null) {
                 payload = request.getInputStream().readAllBytes();
             }
 
-            // 3. Validate non-empty payload
             if (payload == null || payload.length == 0) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "EMPTY_PAYLOAD", "message",
-                        "Payload cannot be empty. Please provide a file via multipart form-data or raw request body."));
-            }
-
-            // 4. Resolve Filename (Priority: Query Param > X-Filename Header > Content-Disposition > Multipart)
-            if (queryFilename != null && !queryFilename.isBlank()) {
-                resolvedFilename = queryFilename.trim();
-            } else if (headerFilename != null && !headerFilename.isBlank()) {
-                resolvedFilename = headerFilename.trim();
-            } else if (resolvedFilename == null || resolvedFilename.isBlank()) {
-                resolvedFilename = extractFilenameFromContentDisposition(contentDisposition);
-            }
-
-            // 5. Document Type Resolution (Reads from params, headers, or auto-detects from filename and dynamic payload)
-            String requestedDocType = (docTypeParam != null && !docTypeParam.isBlank()) ? docTypeParam
-                    : (typeParam != null && !typeParam.isBlank()) ? typeParam
-                    : (headerDocType != null && !headerDocType.isBlank()) ? headerDocType
-                    : (customTopic != null && !customTopic.isBlank()) ? customTopic
-                    : headerTopic;
-            String docType = resolveDocType(requestedDocType, resolvedFilename, payload);
-
-            if (docType == null) {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
-                        "error", "INVALID_DOCUMENT_TYPE",
-                        "message", "Document type could not be determined. Must be 'DO', 'PO', 'ASN', or 'ITEM', or contain distribution/order/asn/item payload fields."
+                        "error", "EMPTY_PAYLOAD",
+                        "message", "Please provide data via file upload ('file') or direct JSON request body."
                 ));
             }
 
-            String destination = (customTopic != null && !customTopic.isBlank()) ? customTopic.trim()
-                    : ((headerTopic != null && !headerTopic.isBlank()) ? headerTopic.trim() : docType);
+            // 3. Resolve Document Type (PO, ASN, DO, ITEM)
+            String docType = resolveDocType(docTypeParam, resolvedFilename, request);
+            if (docType == null || docType.isBlank()) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                        "error", "MISSING_DOCUMENT_TYPE",
+                        "message", "Document type (docType) is mandatory. Specify ?docType=PO|ASN|DO|ITEM or provide a filename identifying the document."
+                ));
+            }
 
-            log.info("[Universal Ingestion] Accepted from ERP: '{}', Target: '{}', Filename: '{}', Size: {} bytes",
-                    erpSource, destination, resolvedFilename, payload.length);
+            String explicitFacility = (facilityParam != null && !facilityParam.isBlank()) ? facilityParam.trim()
+                    : ((facilityIdParam != null && !facilityIdParam.isBlank()) ? facilityIdParam.trim()
+                    : (request != null && request.getHeader("X-Facility-Id") != null ? request.getHeader("X-Facility-Id").trim() : null));
 
-            // 6. Publish to Kafka & Register in PostgreSQL Tracker
-            IngestionAckResponse ack = producerService.publishFile(erpSource, destination, resolvedFilename, payload);
+            if (resolvedFilename == null || resolvedFilename.isBlank()) {
+                String prefix = (explicitFacility != null && !explicitFacility.isBlank()) ? explicitFacility + "_" : "";
+                resolvedFilename = prefix + docType + "_PAYLOAD_" + System.currentTimeMillis() + ".json";
+            }
 
-            boolean isOpti = "Opti".equalsIgnoreCase(erpSource)
-                    || "OPTI".equalsIgnoreCase(erpSource);
+            log.info("[ERP Ingestion] Accepted from ERP: '{}', Target: '{}', Filename: '{}', Size: {} bytes",
+                    erpSource, docType, resolvedFilename, payload.length);
 
-            // 7. Wait for asynchronous Kafka conversion (Opti waits for MAWM cloud dispatch; non-Opti finishes quickly)
+            // 4. Publish to Kafka & Register in PostgreSQL Tracker
+            IngestionAckResponse ack = producerService.publishFile(erpSource, docType, resolvedFilename, payload);
+
+            boolean isOpti = "Opti".equalsIgnoreCase(erpSource) || "OPTI".equalsIgnoreCase(erpSource);
+
+            // 5. Wait for asynchronous Kafka conversion (Opti waits for MAWM cloud dispatch; non-Opti finishes quickly)
             var optTracker = transactionStore.waitForCompletion(ack.getTrackingId(), isOpti ? 4500 : 800);
 
-            // If Kafka consumer took longer or hasn't finished yet, run immediate conversion & dispatch fallback
-            if (optTracker.isEmpty() || optTracker.get().getOutputFiles() == null || optTracker.get().getOutputFiles().isBlank()
-                    || "PENDING".equalsIgnoreCase(optTracker.get().getDispatchStatus())) {
-                try {
-                    CanonicalEnvelope env = transformer.transform(payload, erpSource, docType, ack.getTrackingId(), resolvedFilename);
-                    if (env.getCreatedBy() == null || env.getCreatedBy().isBlank()) {
-                        String userFromReq = (paramCreatedBy != null && !paramCreatedBy.isBlank()) ? paramCreatedBy.trim()
-                                : (headerCreatedBy != null && !headerCreatedBy.isBlank()) ? headerCreatedBy.trim() : null;
-                        if (userFromReq != null) env.setCreatedBy(userFromReq);
-                    }
-                    transactionStore.recordConverted(ack.getTrackingId(), erpSource, docType, resolvedFilename, env);
-                    if (isOpti) {
-                        mawmDispatcherService.dispatch(env);
-                    } else {
-                        transactionStore.recordMawmStatus(ack.getTrackingId(), "CONVERTED (Opti Exclusive)", env.getTotalRecords(), 0,
-                                "{\"status\":\"CONVERTED\",\"hotDispatch\":false,\"erpSource\":\"" + erpSource + "\",\"message\":\"Payload converted to MAWM Canonical JSON. Hot dispatch is exclusive to Opti.\"}");
-                    }
-                    optTracker = transactionStore.getTracker(ack.getTrackingId());
-                } catch (Exception e) {
-                    log.warn("[Universal Ingestion] Direct conversion fallback error: {}", e.getMessage());
-                }
-            }
+			// If Kafka consumer took longer or hasn't finished yet, run immediate
+			// conversion & dispatch fallback
+			if (optTracker.isEmpty() || optTracker.get().getOutputFiles() == null
+					|| optTracker.get().getOutputFiles().isBlank()
+					|| "PENDING".equalsIgnoreCase(optTracker.get().getDispatchStatus())) {
+				try {
+					CanonicalEnvelope env = transformer.transform(payload, erpSource, docType, ack.getTrackingId(),
+							resolvedFilename);
+					if (env.getCreatedBy() == null || env.getCreatedBy().isBlank()) {
+						env.setCreatedBy(mawmDispatcherService.getMawmProperties().getUsername());
+					}
+					transactionStore.recordConverted(ack.getTrackingId(), erpSource, docType, resolvedFilename, env);
+					if (isOpti) {
+						mawmDispatcherService.dispatch(env);
+					} else {
+						transactionStore.recordMawmStatus(ack.getTrackingId(), "CONVERTED (Opti Exclusive)",
+								env.getTotalRecords(), 0,
+								"{\"status\":\"CONVERTED\",\"hotDispatch\":false,\"erpSource\":\"" + erpSource
+										+ "\",\"message\":\"Payload converted to MAWM Canonical JSON. Hot dispatch is exclusive to Opti.\"}");
+					}
+					optTracker = transactionStore.getTracker(ack.getTrackingId());
+				} catch (Exception e) {
+					log.warn("[Universal Ingestion] Direct conversion fallback error: {}", e.getMessage());
+				}
+			}
 
-            if (optTracker.isPresent()) {
-                var tracker = optTracker.get();
-                String dispatchStatus = tracker.getDispatchStatus();
-                String intakeStatus = tracker.getIntakeStatus();
+			if (optTracker.isPresent()) {
+				var tracker = optTracker.get();
+				String dispatchStatus = tracker.getDispatchStatus();
+				String intakeStatus = tracker.getIntakeStatus();
 
-                // If Kafka finished converting but MAWM dispatch hasn't run yet, dispatch immediately ONLY if Opti
-                if (isOpti && tracker.getOutputFiles() != null && !tracker.getOutputFiles().isBlank() &&
-                        (dispatchStatus == null || (!dispatchStatus.startsWith("DELIVERED") && !dispatchStatus.startsWith("DISPATCH_FAILED")))) {
-                    try {
-                        mawmDispatcherService.dispatchJob(ack.getTrackingId());
-                        tracker = transactionStore.getTracker(ack.getTrackingId()).orElse(tracker);
-                        dispatchStatus = tracker.getDispatchStatus();
-                        intakeStatus = tracker.getIntakeStatus();
-                    } catch (Exception e) {
-                        log.warn("[Universal Ingestion] Fast dispatch fallback: {}", e.getMessage());
-                    }
-                }
+				// If Kafka finished converting but MAWM dispatch hasn't run yet, dispatch
+				// immediately ONLY if Opti
+				if (isOpti && tracker.getOutputFiles() != null && !tracker.getOutputFiles().isBlank()
+						&& (dispatchStatus == null || (!dispatchStatus.startsWith("DELIVERED")
+								&& !dispatchStatus.startsWith("DISPATCH_FAILED")))) {
+					try {
+						mawmDispatcherService.dispatchJob(ack.getTrackingId());
+						tracker = transactionStore.getTracker(ack.getTrackingId()).orElse(tracker);
+						dispatchStatus = tracker.getDispatchStatus();
+						intakeStatus = tracker.getIntakeStatus();
+					} catch (Exception e) {
+						log.warn("[Universal Ingestion] Fast dispatch fallback: {}", e.getMessage());
+					}
+				}
 
-                if (dispatchStatus != null && (dispatchStatus.startsWith("DELIVERED") || dispatchStatus.startsWith("DISPATCH_FAILED") || dispatchStatus.contains("Opti Exclusive"))) {
-                    Object parsedMawmResp = null;
-                    if (tracker.getMawmResponse() != null && !tracker.getMawmResponse().isBlank()) {
-                        try {
-                            parsedMawmResp = objectMapper.readTree(tracker.getMawmResponse());
-                        } catch (Exception ignored) {
-                            parsedMawmResp = tracker.getMawmResponse();
-                        }
-                    }
-                    return ResponseEntity.ok(IngestionAckResponse.builder()
-                            .trackingId(ack.getTrackingId())
-                            .erpSource(erpSource)
-                            .documentType(docType)
-                            .filename(resolvedFilename)
-                            .sizeBytes(payload.length)
-                            .status(intakeStatus != null ? intakeStatus : "CONVERTED")
-                            .dispatchStatus(dispatchStatus)
-                            .mawmResponse(parsedMawmResp)
-                            .message(isOpti ? "File successfully accepted and processed for MAWM Cloud delivery."
-                                            : "File successfully converted to MAWM Canonical JSON (Hot dispatch is exclusive to Opti).")
-                            .timestamp(ack.getTimestamp())
-                            .build());
-                }
-            }
+				if (dispatchStatus != null && (dispatchStatus.startsWith("DELIVERED")
+						|| dispatchStatus.startsWith("DISPATCH_FAILED") || dispatchStatus.contains("Opti Exclusive"))) {
+					Object parsedMawmResp = null;
+					if (tracker.getMawmResponse() != null && !tracker.getMawmResponse().isBlank()) {
+						try {
+							parsedMawmResp = objectMapper.readTree(tracker.getMawmResponse());
+						} catch (Exception ignored) {
+							parsedMawmResp = tracker.getMawmResponse();
+						}
+					}
+					return ResponseEntity.ok(IngestionAckResponse.builder().trackingId(ack.getTrackingId())
+							.erpSource(erpSource).documentType(docType).filename(resolvedFilename)
+							.sizeBytes(payload.length).status(intakeStatus != null ? intakeStatus : "CONVERTED")
+							.dispatchStatus(dispatchStatus).mawmResponse(parsedMawmResp)
+							.message(isOpti ? "File successfully accepted and processed for MAWM Cloud delivery."
+									: "File successfully converted to MAWM Canonical JSON (Hot dispatch is exclusive to Opti).")
+							.timestamp(ack.getTimestamp()).build());
+				}
+			}
 
-            return ResponseEntity.status(HttpStatus.ACCEPTED).body(ack);
+			return ResponseEntity.status(HttpStatus.ACCEPTED).body(ack);
 
-        } catch (Exception e) {
-            log.error("Failed to process universal ingestion for ERP: {}", erpSource, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-                    Map.of("error", "INGESTION_FAILED", "message", "Internal processing error: " + e.getMessage()));
-        }
-    }
+		} catch (Exception e) {
+			log.error("Failed to process universal ingestion for ERP: {}", erpSource, e);
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+					Map.of("error", "INGESTION_FAILED", "message", "Internal processing error: " + e.getMessage()));
+		}
+	}
 
-    private String resolveDocType(String requestedDocType, String filename, byte[] payload) {
+    private String resolveDocType(String requestedDocType, String filename, HttpServletRequest request) {
+        // 1. Explicit parameter or header (e.g. docType=DO, type=PO, docType=BATCH)
         if (requestedDocType != null && !requestedDocType.isBlank()) {
             String upper = requestedDocType.trim().toUpperCase();
-            if (upper.equals("DO") || upper.contains("DISTRIBUTION") || upper.contains("DCORDER") || upper.contains("DC_ORDER") || upper.startsWith("DO_") || upper.startsWith("DO-")) {
-                return "DO";
-            }
-            if (upper.contains("ASN") || upper.contains("DESADV") || upper.contains("SHIP")) {
-                return "ASN";
-            }
-            if (upper.contains("ITEM") || upper.contains("PART") || upper.contains("SKU") || upper.contains("PRODUCT")) {
-                return "ITEM";
-            }
-            if (upper.contains("PURCHASE") || upper.startsWith("PO_") || upper.startsWith("PO-") || upper.equals("PO")) {
-                return "PO";
-            }
-            if (upper.contains("ORDER")) {
-                if (isDistributionOrder(filename, payload)) {
-                    return "DO";
-                }
-                return "PO";
-            }
+            if (upper.contains("BATCH")) return "BATCH";
+            if (upper.contains("DO") || upper.contains("DISTRIBUTION")) return "DO";
+            if (upper.contains("PO") || upper.contains("PURCHASE")) return "PO";
+            if (upper.contains("ASN") || upper.contains("SHIP") || upper.contains("DESADV")) return "ASN";
+            if (upper.contains("ITEM") || upper.contains("SKU") || upper.contains("PRODUCT")) return "ITEM";
+            return upper;
         }
 
-        // Automatic content-based detection: check filename first
+        // 2. URI route context (/do, /distribution, /po, /asn, /items, /batch, /orders)
+        if (request != null && request.getRequestURI() != null) {
+            String uri = request.getRequestURI().toLowerCase();
+            if (uri.contains("/batch")) return "BATCH";
+            if (uri.contains("/do") || uri.contains("/distribution")) return "DO";
+            if (uri.contains("/po") || uri.contains("/purchase")) return "PO";
+            if (uri.contains("/asn") || uri.contains("/deliver")) return "ASN";
+            if (uri.contains("/item")) return "ITEM";
+        }
+
+        // 3. Filename convention (e.g. DO-2026.json, PO-001.json, ASN-101.json, BATCH-01.json)
         if (filename != null && !filename.isBlank()) {
             String upperFn = filename.toUpperCase();
-            if (upperFn.contains("DISTRIBUTION") || upperFn.contains("DCORDER") || upperFn.startsWith("DO_") || upperFn.startsWith("DO-") || upperFn.contains("_DO_") || upperFn.contains("-DO-")) {
-                return "DO";
-            }
-            if (upperFn.contains("ASN") || upperFn.contains("DESADV") || upperFn.contains("SHIP")) {
-                return "ASN";
-            }
-            if (upperFn.contains("ITEM") || upperFn.contains("SKU") || upperFn.contains("PART")) {
-                return "ITEM";
-            }
-            if (upperFn.contains("PURCHASE") || upperFn.startsWith("PO_") || upperFn.startsWith("PO-")) {
-                return "PO";
-            }
+            if (upperFn.contains("BATCH")) return "BATCH";
+            if (upperFn.contains("DO") || upperFn.contains("DISTRIBUTION")) return "DO";
+            if (upperFn.contains("PO") || upperFn.contains("PURCHASE")) return "PO";
+            if (upperFn.contains("ASN") || upperFn.contains("DESADV") || upperFn.contains("SHIP")) return "ASN";
+            if (upperFn.contains("ITEM") || upperFn.contains("SKU")) return "ITEM";
         }
 
-        // Automatic content-based detection: check payload JSON
-        if (payload != null && payload.length > 0) {
-            try {
-                String str = new String(payload, StandardCharsets.UTF_8).trim();
-                if (str.startsWith("{") || str.startsWith("[")) {
-                    JsonNode node = objectMapper.readTree(str);
-                    if (node.isArray() && node.size() > 0) node = node.get(0);
-                    if (node.has("data") && node.get("data").isObject()) node = node.get("data");
-                    if (node.has("Data") && node.get("Data").isArray() && node.get("Data").size() > 0) node = node.get("Data").get(0);
-
-                    if (isDistributionOrderNode(node)) {
-                        return "DO";
-                    }
-                    if (node.has("AsnId") || node.has("asnId") || node.has("inboundDelivery") || node.has("AsnLine")) {
-                        return "ASN";
-                    }
-                    if (node.has("PurchaseOrderId") || node.has("purchaseOrderId") || node.has("PurchaseOrderLine")) {
-                        return "PO";
-                    }
-                    if (node.has("ItemId") || node.has("itemId") || node.has("PrimaryBarCode")) {
-                        return "ITEM";
-                    }
-                }
-            } catch (Exception ignored) {}
-        }
-
-        return null;
-    }
-
-    private boolean isDistributionOrder(String filename, byte[] payload) {
-        if (filename != null) {
-            String upper = filename.toUpperCase();
-            if (upper.contains("DISTRIBUTION") || upper.contains("DCORDER") || upper.startsWith("DO_") || upper.startsWith("DO-")) {
-                return true;
-            }
-        }
-        if (payload != null && payload.length > 0) {
-            try {
-                JsonNode node = objectMapper.readTree(payload);
-                if (node.isArray() && node.size() > 0) node = node.get(0);
-                return isDistributionOrderNode(node);
-            } catch (Exception ignored) {}
-        }
-        return false;
-    }
-
-    private boolean isDistributionOrderNode(JsonNode node) {
-        if (node == null || !node.isObject()) return false;
-        if (node.has("DistributionOrderId") || node.has("distributionOrderId")) return true;
-        if (node.has("dcorder") || node.has("dcOrder")) return true;
-        if (node.has("OriginFacilityId") || node.has("originFacilityId")) return true;
-        if (node.has("OrderLine") || node.has("orderLine")) {
-            return !node.has("PurchaseOrderId") && !node.has("purchaseOrderId") && !node.has("PurchaseOrderLine");
-        }
-        if (node.has("OrderId") || node.has("orderId")) {
-            return !node.has("PurchaseOrderId") && !node.has("purchaseOrderId") && !node.has("AsnId") && !node.has("asnId");
-        }
-        return false;
-    }
-
-    private String extractFilenameFromContentDisposition(String contentDisposition) {
-        if (contentDisposition == null || contentDisposition.isBlank()) {
-            return null;
-        }
-        for (String part : contentDisposition.split(";")) {
-            String trimmed = part.trim();
-            if (trimmed.toLowerCase().startsWith("filename=")) {
-                String name = trimmed.substring("filename=".length()).trim();
-                if (name.startsWith("\"") && name.endsWith("\"") && name.length() > 1) {
-                    name = name.substring(1, name.length() - 1);
-                }
-                return name;
-            }
-        }
         return null;
     }
 }

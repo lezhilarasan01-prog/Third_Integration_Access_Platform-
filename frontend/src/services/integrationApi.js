@@ -760,6 +760,36 @@ export const integrationApi = {
     return res.json();
   },
 
+  async saveBatchDirect(payload, username) {
+    const url = username
+      ? `${BASE_URL}/api/v1/erp/mawm/save-batch?username=${encodeURIComponent(username)}`
+      : `${BASE_URL}/api/v1/erp/mawm/save-batch`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || err.message || `Failed to save Batch Master (${res.status})`);
+    }
+    return res.json();
+  },
+
+  async searchBatchStatus(batchNumberId, facilityId = 'Food_Cbe', username) {
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/search-batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ batchNumberId, facilityId, username })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to query Batch status in MAWM');
+    }
+    return res.json();
+  },
+
   async cleanItemRecords() {
     const res = await fetch(`${BASE_URL}/api/v1/erp/transactions/items`, {
       method: 'DELETE'
@@ -1070,6 +1100,25 @@ export const integrationApi = {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.cleanError || err.error || 'Failed to fetch Items from MAWM');
+    }
+    return res.json();
+  },
+
+  async queryBatchDynamic(payload, facilityId = 'Food_Cbe', username, storeTracker = false) {
+    const params = new URLSearchParams();
+    if (facilityId) params.append('facilityId', facilityId);
+    if (username) params.append('username', username);
+    if (storeTracker) params.append('storeTracker', 'true');
+
+    const res = await fetch(`${BASE_URL}/api/v1/erp/mawm/query/batch?${params.toString()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (storeTracker) this.invalidateCaches();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.cleanError || err.error || 'Failed to query MAWM Batch Master');
     }
     return res.json();
   }
