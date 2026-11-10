@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { BarChart3, Info, CheckCircle2, AlertTriangle, Layers, Clock, Zap, Calendar } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { BarChart3, Info, Clock, Calendar } from 'lucide-react';
 
 function formatNumber(num) {
   if (num === null || num === undefined) return '0';
@@ -19,9 +19,8 @@ export default function ThroughputVelocityChart({ throughputData = [], throughpu
     const d = String(today.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   });
-  // viewType: 'batches' (Every individual trigger) | 'hourly' (Hourly pickup rollup)
-  const [viewType, setViewType] = useState('batches');
   const [hoveredIndex, setHoveredIndex] = useState(null);
+  const scrollContainerRef = useRef(null);
 
   // 1. Filter individual triggers by timeRange (24h rolling, specific date, or all time)
   const activeBatches = useMemo(() => {
@@ -45,13 +44,19 @@ export default function ThroughputVelocityChart({ throughputData = [], throughpu
     });
   }, [throughputBatches, timeRange, selectedDate]);
 
-  // 2. Compute dynamic Hourly Pickup Rollup for the selected time window
+  // 2. Compute dynamic Hourly Pickup Rollup for the selected time window (Continuous throughput velocity)
   const activeHourly = useMemo(() => {
-    if (timeRange === 'all') return throughputData;
+    if (timeRange === 'all' && throughputData.length > 0) return throughputData;
     const slots = {};
+    let minDate = null;
+    let maxDate = null;
+
     activeBatches.forEach((t) => {
       const d = t.dateObj || new Date(t.time);
       if (!d || isNaN(d.getTime())) return;
+      if (!minDate || d < minDate) minDate = d;
+      if (!maxDate || d > maxDate) maxDate = d;
+
       const month = String(d.getMonth() + 1).padStart(2, '0');
       const day = String(d.getDate()).padStart(2, '0');
       const hour = String(d.getHours()).padStart(2, '0');
@@ -77,19 +82,48 @@ export default function ThroughputVelocityChart({ throughputData = [], throughpu
       slots[key].total += (t.total || (valid + errors));
       slots[key].batchCount += 1;
     });
+
+    // Generate a continuous hourly timeline for the day to avoid awkward gaps
+    if (minDate && maxDate && minDate < maxDate) {
+      const curr = new Date(minDate);
+      curr.setMinutes(0, 0, 0);
+      const end = new Date(maxDate);
+      end.setMinutes(0, 0, 0);
+
+      let safety = 0;
+      while (curr <= end && safety < 48) {
+        const month = String(curr.getMonth() + 1).padStart(2, '0');
+        const day = String(curr.getDate()).padStart(2, '0');
+        const hour = String(curr.getHours()).padStart(2, '0');
+        const key = `${month}/${day} ${hour}:00`;
+
+        if (!slots[key]) {
+          slots[key] = {
+            time: key,
+            valid: 0,
+            errors: 0,
+            skipped: 0,
+            total: 0,
+            dateObj: new Date(curr),
+            batchCount: 0,
+            isEmptyHour: true,
+          };
+        }
+        curr.setHours(curr.getHours() + 1);
+        safety++;
+      }
+    }
+
     return Object.values(slots).sort((a, b) => a.dateObj - b.dateObj);
   }, [activeBatches, throughputData, timeRange]);
 
-  // Pick dataset based on viewType
-  const isBatchMode = viewType === 'batches';
-  const rawData = isBatchMode ? activeBatches : activeHourly;
-  const data = Array.isArray(rawData) ? rawData : [];
+  // Exclusively focus on continuous Hourly Pickup data
+  const data = Array.isArray(activeHourly) ? activeHourly : [];
 
   // Totals
   const totalValid = data.reduce((sum, item) => sum + (item.valid || 0), 0);
   const totalErrors = data.reduce((sum, item) => sum + (item.errors || 0), 0);
   const totalSkipped = data.reduce((sum, item) => sum + (item.skipped || (item.isDuplicate ? item.total : 0) || 0), 0);
-  const totalRecords = totalValid + totalErrors + totalSkipped;
 
   // Max value calculation
   const maxVal = Math.max(
@@ -97,17 +131,25 @@ export default function ThroughputVelocityChart({ throughputData = [], throughpu
     10
   );
 
-  const chartHeight = 200; // px
+  const chartHeight = 220; // px
+  const maxBarHeight = chartHeight - 65; // 155px max height leaves 65px headroom for badges and tooltips
+  const isScrollMode = data.length > 9;
 
-  // Calculate adaptive bar height so small batches (e.g. 4 records) are clearly visible alongside 100k batches
-  const calculateBarHeight = (value) => {
-    if (!value || value <= 0) return 0;
-    // Logarithmic scaling ensures 4 records gets ~25% height and 100k gets 100% height
-    const minHeight = 26; // px
+  // Auto-scroll to the right (latest hour) when data changes in scroll mode
+  useEffect(() => {
+    if (scrollContainerRef.current && isScrollMode) {
+      scrollContainerRef.current.scrollLeft = scrollContainerRef.current.scrollWidth;
+    }
+  }, [data.length, timeRange, selectedDate, isScrollMode]);
+
+  // Calculate adaptive bar height with guaranteed headroom to prevent cutting off badges
+  const calculateBarHeight = (value, isEmpty) => {
+    if (isEmpty || !value || value <= 0) return 3; // 3px subtle baseline for 0-record hours
+    const minHeight = 24; // px
     const logVal = Math.log10(value + 1);
     const logMax = Math.log10(maxVal + 1);
     const ratio = logMax > 0 ? logVal / logMax : 0.5;
-    return Math.max(minHeight, Math.round(ratio * (chartHeight - 40)));
+    return Math.max(minHeight, Math.round(ratio * maxBarHeight));
   };
 
   const formatTimeLabel = (timeStr) => {
@@ -141,6 +183,8 @@ export default function ThroughputVelocityChart({ throughputData = [], throughpu
     };
   };
 
+  const hoveredItem = hoveredIndex !== null && data[hoveredIndex] ? data[hoveredIndex] : null;
+
   return (
     <div className="dashboard-panel" style={{ display: 'flex', flexDirection: 'column' }}>
       {/* Panel Header */}
@@ -152,16 +196,14 @@ export default function ThroughputVelocityChart({ throughputData = [], throughpu
           </h3>
           <div className="panel-header-subtitle">
             {timeRange === 'date'
-              ? `Selected Date (${selectedDate}): ${isBatchMode ? 'Individual file triggers on this day' : 'Hourly pickup volume on this day'}`
-              : (isBatchMode
-                  ? 'Last 24 Hours: Individual file triggers from current time with facility & deduplication telemetry'
-                  : 'Last 24 Hours: Continuous hourly pickup volume from current time (normalized vs. DLQ errors)')}
+              ? `Selected Date (${selectedDate}): Continuous hourly pickup volume (normalized vs. DLQ errors)`
+              : 'Last 24 Hours: Continuous hourly pickup volume from current time (normalized vs. DLQ errors)'}
           </div>
         </div>
 
-        {/* Controls: Time Range & Date Selection + View Mode (Batches vs Hourly) */}
+        {/* Controls: Time Range & Date Selection + Quick Stats */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
-          {/* 1. Time Range & Date Selector */}
+          {/* Time Range & Date Selector */}
           <div
             style={{
               display: 'inline-flex',
@@ -242,62 +284,6 @@ export default function ThroughputVelocityChart({ throughputData = [], throughpu
             </div>
           </div>
 
-          {/* 2. View Switcher: Per Trigger vs Hourly Pickup */}
-          <div
-            style={{
-              display: 'inline-flex',
-              backgroundColor: 'var(--bg-subtle)',
-              borderRadius: 6,
-              padding: 2,
-              border: '1px solid var(--border-default)',
-            }}
-          >
-            <button
-              onClick={() => setViewType('batches')}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                fontSize: '0.72rem',
-                fontWeight: 600,
-                padding: '0.35rem 0.65rem',
-                borderRadius: 4,
-                border: 'none',
-                cursor: 'pointer',
-                backgroundColor: isBatchMode ? 'var(--bg-surface)' : 'transparent',
-                color: isBatchMode ? '#10b981' : 'var(--text-dim)',
-                boxShadow: isBatchMode ? '0 1px 3px rgba(0,0,0,0.2)' : 'none',
-                transition: 'all 0.15s ease',
-              }}
-              title="View each file upload trigger individually"
-            >
-              <Zap size={13} />
-              <span>Per Trigger ({activeBatches.length})</span>
-            </button>
-            <button
-              onClick={() => setViewType('hourly')}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                fontSize: '0.72rem',
-                fontWeight: 600,
-                padding: '0.35rem 0.65rem',
-                borderRadius: 4,
-                border: 'none',
-                cursor: 'pointer',
-                backgroundColor: !isBatchMode ? 'var(--bg-surface)' : 'transparent',
-                color: !isBatchMode ? '#0284c7' : 'var(--text-dim)',
-                boxShadow: !isBatchMode ? '0 1px 3px rgba(0,0,0,0.2)' : 'none',
-                transition: 'all 0.15s ease',
-              }}
-              title="View hourly pickup rollups"
-            >
-              <Clock size={13} />
-              <span>Hourly Pickup ({activeHourly.length})</span>
-            </button>
-          </div>
-
           {/* Quick Stats Pill */}
           <div
             style={{
@@ -329,272 +315,324 @@ export default function ThroughputVelocityChart({ throughputData = [], throughpu
         </div>
       </div>
 
+      {/* Interactive Telemetry HUD Banner (NEVER gets clipped by chart bounds) */}
+      {hoveredItem ? (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '0.85rem',
+            padding: '0.5rem 0.9rem',
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            border: '1px solid rgba(16, 185, 129, 0.35)',
+            borderRadius: 6,
+            fontSize: '0.75rem',
+            color: 'var(--text-main)',
+            marginTop: '0.5rem',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontWeight: 700, color: '#38bdf8' }}>
+            <Clock size={14} />
+            <span>Hourly Pickup: {formatTimeLabel(hoveredItem.time).time} ({formatTimeLabel(hoveredItem.time).date})</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+            <span>Valid Records: <strong style={{ color: '#10b981' }}>{formatNumber(hoveredItem.valid || 0)}</strong></span>
+            {hoveredItem.skipped > 0 && <span>Skipped: <strong style={{ color: '#f59e0b' }}>{formatNumber(hoveredItem.skipped)}</strong></span>}
+            {hoveredItem.errors > 0 && <span>Errors: <strong style={{ color: '#ef4444' }}>{formatNumber(hoveredItem.errors)}</strong></span>}
+            <span>Files Ingested: <strong style={{ color: 'var(--text-main)' }}>{hoveredItem.batchCount || (hoveredItem.isEmptyHour ? 0 : 1)} file(s)</strong></span>
+          </div>
+        </div>
+      ) : (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.45rem 0.85rem',
+            backgroundColor: 'var(--bg-subtle)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 6,
+            fontSize: '0.73rem',
+            color: 'var(--text-dim)',
+            marginTop: '0.5rem',
+          }}
+        >
+          <Info size={13} color="#10b981" />
+          <span>
+            Hover over any hour column to inspect detailed intake volume, file count, and DLQ errors.
+          </span>
+        </div>
+      )}
+
       {data.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
           <BarChart3 size={32} color="var(--border-strong)" style={{ margin: '0 auto 0.75rem', opacity: 0.6 }} />
-          <div>No transaction throughput recorded yet.</div>
+          <div>No transaction throughput recorded in this period.</div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginTop: 4 }}>
             Realtime processing pipeline is online and awaiting new inbound ERP files.
           </div>
         </div>
       ) : (
         <>
-          {/* Main Chart Area */}
+          {/* Main Responsive Chart Canvas */}
           <div
             style={{
               position: 'relative',
               display: 'flex',
-              marginTop: '0.75rem',
+              marginTop: '0.65rem',
               marginBottom: '0.5rem',
               userSelect: 'none',
+              backgroundColor: 'rgba(0, 0, 0, 0.16)',
+              borderRadius: '8px',
+              border: '1px solid var(--border-subtle)',
+              overflow: 'hidden',
             }}
           >
-            {/* Y-Axis Column */}
+            {/* Fixed Y-Axis Column (permanently pinned on the left) */}
             <div
               style={{
+                flexShrink: 0,
+                width: 48,
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'space-between',
                 height: chartHeight,
-                paddingRight: '0.75rem',
+                padding: '0.75rem 0.5rem 0.65rem 0.2rem',
                 textAlign: 'right',
                 fontSize: '0.7rem',
                 fontFamily: 'var(--font-mono)',
                 color: 'var(--text-dim)',
-                width: 44,
                 borderRight: '1px solid var(--border-default)',
+                backgroundColor: 'var(--bg-surface)',
+                zIndex: 10,
               }}
             >
               <span style={{ lineHeight: 1 }}>{formatNumber(maxVal)}</span>
+              <span style={{ lineHeight: 1 }}>{formatNumber(Math.round(maxVal * 0.75))}</span>
               <span style={{ lineHeight: 1 }}>{formatNumber(Math.round(maxVal * 0.5))}</span>
-              <span style={{ lineHeight: 1 }}>10k</span>
-              <span style={{ lineHeight: 1 }}>100</span>
+              <span style={{ lineHeight: 1 }}>{formatNumber(Math.round(maxVal * 0.25))}</span>
               <span style={{ lineHeight: 1 }}>0</span>
             </div>
 
-            {/* Chart Body with Horizontal Grid Lines & Bars */}
-            <div style={{ position: 'relative', flex: 1, height: chartHeight, marginLeft: '0.5rem' }}>
-              {/* Horizontal Gridlines */}
+            {/* Responsive Scrollable Canvas Container */}
+            <div
+              ref={scrollContainerRef}
+              className="custom-chart-scrollbar"
+              style={{
+                flex: 1,
+                overflowX: 'auto',
+                overflowY: 'hidden',
+                position: 'relative',
+                width: '100%',
+              }}
+            >
               <div
                 style={{
-                  position: 'absolute',
-                  inset: 0,
+                  minWidth: '100%',
+                  width: isScrollMode ? `${data.length * 74}px` : '100%',
                   display: 'flex',
                   flexDirection: 'column',
-                  justifyContent: 'space-between',
-                  pointerEvents: 'none',
                 }}
               >
-                {[1, 2, 3, 4, 5].map((val) => (
+                {/* 1. Bars Canvas Area */}
+                <div style={{ position: 'relative', height: chartHeight, width: '100%' }}>
+                  {/* Horizontal Gridlines spanning full width */}
                   <div
-                    key={val}
                     style={{
-                      width: '100%',
-                      borderBottom: val === 5 ? '1px solid var(--border-default)' : '1px dashed var(--border-subtle)',
+                      position: 'absolute',
+                      inset: 0,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      pointerEvents: 'none',
+                      paddingTop: '0.75rem',
+                      paddingBottom: '0.65rem',
                     }}
-                  />
-                ))}
-              </div>
-
-              {/* Bar Columns Container */}
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  display: 'flex',
-                  alignItems: 'flex-end',
-                  justifyContent: 'space-around',
-                  paddingLeft: '0.5rem',
-                  paddingRight: '0.5rem',
-                }}
-              >
-                {data.map((item, index) => {
-                  const isHovered = hoveredIndex === index;
-                  const formatted = formatTimeLabel(item.time);
-
-                  const validCount = item.valid || 0;
-                  const errorCount = item.errors || 0;
-                  const isDuplicate = item.isDuplicate || item.status === 'DUPLICATE_SKIPPED';
-                  const displayCount = isDuplicate ? (item.total || 4) : (validCount > 0 ? validCount : errorCount);
-
-                  const barHeight = calculateBarHeight(displayCount);
-
-                  // Colors: Emerald for valid, Amber for duplicate skipped, Red for errors
-                  const barColor = errorCount > 0 ? '#ef4444' : isDuplicate ? '#f59e0b' : '#10b981';
-                  const barGlow = errorCount > 0 ? 'rgba(239, 68, 68, 0.35)' : isDuplicate ? 'rgba(245, 158, 11, 0.35)' : 'rgba(16, 185, 129, 0.35)';
-
-                  return (
-                    <div
-                      key={index}
-                      onMouseEnter={() => setHoveredIndex(index)}
-                      onMouseLeave={() => setHoveredIndex(null)}
-                      style={{
-                        position: 'relative',
-                        height: '100%',
-                        display: 'flex',
-                        alignItems: 'flex-end',
-                        justifyContent: 'center',
-                        flex: 1,
-                        cursor: 'pointer',
-                        maxWidth: isBatchMode ? 52 : 72,
-                      }}
-                    >
-                      {/* Floating Badge above Bar */}
+                  >
+                    {[1, 2, 3, 4, 5].map((val) => (
                       <div
+                        key={val}
                         style={{
-                          position: 'absolute',
-                          bottom: barHeight + 6,
-                          fontSize: '0.68rem',
-                          fontFamily: 'var(--font-mono)',
-                          fontWeight: 700,
-                          color: barColor,
-                          whiteSpace: 'nowrap',
-                          pointerEvents: 'none',
-                          backgroundColor: isHovered ? 'var(--bg-surface)' : 'transparent',
-                          padding: '1px 4px',
-                          borderRadius: 3,
-                          border: isHovered ? `1px solid ${barColor}` : 'none',
-                          zIndex: 2,
-                        }}
-                      >
-                        {formatNumber(displayCount)}
-                      </div>
-
-                      {/* Main Bar with Hover Glow */}
-                      <div
-                        style={{
-                          width: isBatchMode ? 18 : 26,
-                          height: barHeight,
-                          backgroundColor: barColor,
-                          borderRadius: '4px 4px 0 0',
-                          boxShadow: isHovered ? `0 0 12px ${barGlow}` : `0 0 4px ${barGlow}`,
-                          transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                          transform: isHovered ? 'scaleY(1.04)' : 'scaleY(1)',
-                          transformOrigin: 'bottom',
-                          opacity: isHovered ? 1 : 0.88,
+                          width: '100%',
+                          borderBottom: val === 5 ? '1px solid var(--border-default)' : '1px dashed var(--border-subtle)',
                         }}
                       />
+                    ))}
+                  </div>
 
-                      {/* Rich Interactive Tooltip on Hover */}
-                      {isHovered && (
+                  {/* Bars Container: evenly spaced when few items, horizontally scrollable when many */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      display: 'flex',
+                      alignItems: 'flex-end',
+                      justifyContent: isScrollMode ? 'flex-start' : 'space-evenly',
+                      paddingLeft: '0.5rem',
+                      paddingRight: '0.5rem',
+                    }}
+                  >
+                    {data.map((item, index) => {
+                      const isHovered = hoveredIndex === index;
+                      const formatted = formatTimeLabel(item.time);
+
+                      const validCount = item.valid || 0;
+                      const errorCount = item.errors || 0;
+                      const isDuplicate = item.isDuplicate || item.status === 'DUPLICATE_SKIPPED';
+                      const displayCount = isDuplicate ? (item.total || 4) : (validCount > 0 ? validCount : errorCount);
+                      const isEmpty = item.isEmptyHour || displayCount <= 0;
+
+                      const barHeight = calculateBarHeight(displayCount, isEmpty);
+
+                      // Colors: Emerald for valid, Amber for duplicate skipped, Red for errors, subtle for empty
+                      const barColor = isEmpty ? 'rgba(255,255,255,0.1)' : errorCount > 0 ? '#ef4444' : isDuplicate ? '#f59e0b' : '#10b981';
+                      const barGlow = isEmpty ? 'none' : errorCount > 0 ? 'rgba(239, 68, 68, 0.4)' : isDuplicate ? 'rgba(245, 158, 11, 0.4)' : 'rgba(16, 185, 129, 0.4)';
+
+                      return (
                         <div
+                          key={index}
+                          onMouseEnter={() => setHoveredIndex(index)}
+                          onMouseLeave={() => setHoveredIndex(null)}
                           style={{
-                            position: 'absolute',
-                            bottom: barHeight + 30,
-                            left: '50%',
-                            transform: 'translateX(-50%)',
-                            backgroundColor: 'var(--bg-surface)',
-                            border: `1px solid ${barColor}`,
-                            borderRadius: 8,
-                            padding: '0.6rem 0.8rem',
-                            minWidth: 190,
-                            zIndex: 30,
-                            boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                            pointerEvents: 'none',
+                            position: 'relative',
+                            height: '100%',
+                            display: 'flex',
+                            alignItems: 'flex-end',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                            width: isScrollMode ? 74 : 'auto',
+                            minWidth: isScrollMode ? 74 : 64,
+                            maxWidth: isScrollMode ? 74 : 110,
+                            flex: isScrollMode ? 'none' : 1,
+                            cursor: 'pointer',
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
-                            <span
+                          {/* Floating Count Badge above Bar (with safe ceiling headroom) */}
+                          {!isEmpty && (
+                            <div
                               style={{
-                                width: 8,
-                                height: 8,
-                                borderRadius: '50%',
-                                backgroundColor: barColor,
-                                display: 'inline-block',
+                                position: 'absolute',
+                                bottom: barHeight + 6,
+                                fontSize: '0.7rem',
+                                fontFamily: 'var(--font-mono)',
+                                fontWeight: 700,
+                                color: barColor,
+                                whiteSpace: 'nowrap',
+                                pointerEvents: 'none',
+                                backgroundColor: isHovered ? 'var(--bg-surface)' : 'transparent',
+                                padding: '1px 5px',
+                                borderRadius: 3,
+                                border: isHovered ? `1px solid ${barColor}` : 'none',
+                                zIndex: 2,
                               }}
-                            />
-                            <strong style={{ fontSize: '0.78rem', color: 'var(--text-main)' }}>
-                              {isBatchMode ? (item.filename || 'Inbound Batch') : `Hourly Pickup (${formatted.time})`}
-                            </strong>
-                          </div>
-
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginBottom: '0.25rem' }}>
-                            Time: <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>{formatted.time} ({formatted.date})</span>
-                          </div>
-
-                          {isBatchMode ? (
-                            <>
-                              <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginBottom: '0.25rem' }}>
-                                Status:{' '}
-                                <span style={{ color: barColor, fontWeight: 700 }}>
-                                  {item.status || (errorCount > 0 ? 'FAILED' : isDuplicate ? 'DUPLICATE_SKIPPED' : 'CONVERTED')}
-                                </span>
-                              </div>
-                              <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginBottom: '0.25rem' }}>
-                                Records: <strong style={{ color: 'var(--text-main)' }}>{displayCount.toLocaleString()}</strong>
-                              </div>
-                              {item.facility && (
-                                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
-                                  Facility: <span style={{ color: '#0284c7', fontWeight: 600 }}>{item.facility}</span>
-                                </div>
-                              )}
-                              {item.source && (
-                                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: 2 }}>
-                                  Source: <span style={{ color: 'var(--text-main)' }}>{item.source}</span>
-                                </div>
-                              )}
-                            </>
-                          ) : (
-                            <>
-                              <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginBottom: '0.25rem' }}>
-                                Files Picked Up: <strong style={{ color: 'var(--text-main)' }}>{item.batchCount || 1} file(s)</strong>
-                              </div>
-                              <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginBottom: '0.25rem' }}>
-                                Valid Records: <strong style={{ color: '#10b981' }}>{(item.valid || 0).toLocaleString()}</strong>
-                              </div>
-                              {(item.skipped || 0) > 0 && (
-                                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginBottom: '0.25rem' }}>
-                                  Duplicate Skipped: <strong style={{ color: '#f59e0b' }}>{item.skipped.toLocaleString()}</strong>
-                                </div>
-                              )}
-                              {(item.errors || 0) > 0 && (
-                                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginBottom: '0.25rem' }}>
-                                  DLQ Exceptions: <strong style={{ color: '#ef4444' }}>{item.errors.toLocaleString()}</strong>
-                                </div>
-                              )}
-                            </>
+                            >
+                              {formatNumber(displayCount)}
+                            </div>
                           )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
 
-          {/* X-Axis Labels */}
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-around',
-              marginLeft: 48,
-              paddingLeft: '0.5rem',
-              paddingRight: '0.5rem',
-              borderTop: '1px solid var(--border-default)',
-              paddingTop: '0.4rem',
-            }}
-          >
-            {data.map((item, index) => {
-              const formatted = formatTimeLabel(item.time);
-              return (
+                          {/* Main Bar with Hover Glow */}
+                          <div
+                            style={{
+                              width: isEmpty ? 8 : 28,
+                              height: barHeight,
+                              backgroundColor: barColor,
+                              borderRadius: isEmpty ? '2px' : '4px 4px 0 0',
+                              boxShadow: isHovered && !isEmpty ? `0 0 12px ${barGlow}` : `0 0 3px ${barGlow}`,
+                              transition: 'all 0.18s cubic-bezier(0.4, 0, 0.2, 1)',
+                              transform: isHovered && !isEmpty ? 'scaleY(1.03)' : 'scaleY(1)',
+                              transformOrigin: 'bottom',
+                              opacity: isEmpty ? 0.4 : isHovered ? 1 : 0.9,
+                            }}
+                          />
+
+                          {/* Smart In-Bounds Tooltip (Adapts vertically & horizontally to guarantee ZERO clipped text) */}
+                          {isHovered && !isEmpty && (() => {
+                            const isFirst = index === 0;
+                            const isLast = index === data.length - 1;
+                            const isTallBar = barHeight > chartHeight * 0.52;
+                            return (
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  ...(isTallBar ? { top: 8 } : { bottom: barHeight + 28 }),
+                                  ...(isFirst
+                                    ? { left: 0, transform: 'none' }
+                                    : isLast
+                                    ? { right: 0, left: 'auto', transform: 'none' }
+                                    : { left: '50%', transform: 'translateX(-50%)' }),
+                                  backgroundColor: 'rgba(15, 23, 42, 0.96)',
+                                  border: `1px solid ${barColor}`,
+                                  borderRadius: 6,
+                                  padding: '0.45rem 0.75rem',
+                                  fontSize: '0.72rem',
+                                  whiteSpace: 'nowrap',
+                                  zIndex: 35,
+                                  boxShadow: '0 8px 20px rgba(0,0,0,0.7)',
+                                  pointerEvents: 'none',
+                                }}
+                              >
+                                <div style={{ color: barColor, fontWeight: 700, fontSize: '0.74rem' }}>
+                                  {displayCount.toLocaleString()} {errorCount > 0 ? 'Errors' : 'Valid Records'}
+                                </div>
+                                <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)', marginTop: 2 }}>
+                                  {item.batchCount || 1} file(s) ingested
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. Synchronized X-Axis Labels row */}
                 <div
-                  key={index}
                   style={{
-                    flex: 1,
-                    textAlign: 'center',
-                    fontSize: '0.68rem',
-                    color: hoveredIndex === index ? '#10b981' : 'var(--text-dim)',
-                    fontFamily: 'var(--font-mono)',
-                    maxWidth: isBatchMode ? 52 : 72,
-                    fontWeight: hoveredIndex === index ? 700 : 500,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: isScrollMode ? 'flex-start' : 'space-evenly',
+                    borderTop: '1px solid var(--border-default)',
+                    paddingTop: '0.5rem',
+                    paddingBottom: '0.5rem',
+                    paddingLeft: '0.5rem',
+                    paddingRight: '0.5rem',
+                    backgroundColor: 'rgba(0, 0, 0, 0.08)',
                   }}
                 >
-                  <div>{formatted.time}</div>
-                  <div style={{ fontSize: '0.6rem', opacity: 0.75 }}>{formatted.date}</div>
+                  {data.map((item, index) => {
+                    const formatted = formatTimeLabel(item.time);
+                    return (
+                      <div
+                        key={index}
+                        style={{
+                          flexShrink: 0,
+                          width: isScrollMode ? 74 : 'auto',
+                          minWidth: isScrollMode ? 74 : 64,
+                          maxWidth: isScrollMode ? 74 : 110,
+                          flex: isScrollMode ? 'none' : 1,
+                          textAlign: 'center',
+                          fontSize: '0.68rem',
+                          color: hoveredIndex === index ? '#10b981' : item.isEmptyHour ? 'var(--text-muted)' : 'var(--text-dim)',
+                          fontFamily: 'var(--font-mono)',
+                          fontWeight: hoveredIndex === index ? 700 : 500,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          opacity: item.isEmptyHour ? 0.6 : 1,
+                        }}
+                      >
+                        <div>{formatted.time}</div>
+                        <div style={{ fontSize: '0.6rem', opacity: 0.75 }}>{formatted.date}</div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            </div>
           </div>
 
           {/* Chart Footer Info */}
@@ -614,10 +652,10 @@ export default function ThroughputVelocityChart({ throughputData = [], throughpu
               <Info size={13} color="#10b981" />
               <span>
                 {timeRange === 'date'
-                  ? `Selected Date (${selectedDate}): Tracking ${activeBatches.length} file trigger(s) across ${activeHourly.length} hourly pickup bucket(s).`
+                  ? `Selected Date (${selectedDate}): Tracking ${data.filter(d => !d.isEmptyHour).length} active pickup hour(s).`
                   : timeRange === '24h'
-                  ? `Last 24 Hours: Telemetry from current time (${activeBatches.length} file triggers across ${activeHourly.length} hourly pickup buckets).`
-                  : `All-Time: Telemetry across entire platform history (${throughputBatches.length} file triggers).`}
+                  ? `Last 24 Hours: Continuous hourly telemetry across ${data.filter(d => !d.isEmptyHour).length} active pickup hour(s).`
+                  : `All-Time: Telemetry across entire platform history.`}
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
