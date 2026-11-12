@@ -6,6 +6,38 @@
 const BASE_URL = ''; // Proxied through Vite to http://localhost:8080
 import { KAFKA_CONFIG } from '../config/kafkaConfig';
 
+// Automatically attach ERB Authorization headers (Basic Auth / Session Token) to internal API calls
+if (typeof window !== 'undefined' && !window._erbFetchIntercepted) {
+  window._erbFetchIntercepted = true;
+  const originalFetch = window.fetch;
+  window.fetch = async (input, init = {}) => {
+    try {
+      const urlStr = typeof input === 'string' ? input : (input?.url || '');
+      const isInternalApi = urlStr.startsWith('/api/') ||
+                            urlStr.startsWith('/receiving/') ||
+                            urlStr.startsWith('/dcorder/') ||
+                            urlStr.startsWith('/item-master/') ||
+                            urlStr.startsWith('/dcinventory/') ||
+                            urlStr.includes(':8080/');
+      if (isInternalApi) {
+        const authHeader = sessionStorage.getItem('erb_auth_header');
+        const token = sessionStorage.getItem('erp_user_token');
+        if (authHeader || token) {
+          init = init || {};
+          init.headers = {
+            ...(init.headers || {}),
+            ...(authHeader ? { 'Authorization': authHeader } : {}),
+            ...(token ? { 'X-Session-Token': token } : {})
+          };
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    return originalFetch(input, init);
+  };
+}
+
 // Lightweight in-memory cache & in-flight request deduplication for instant page transitions
 let trackerCache = null;
 let trackerCacheTime = 0;
@@ -65,7 +97,17 @@ export const integrationApi = {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.message || 'Authentication failed. Please verify credentials.');
     }
-    return res.json();
+    const data = await res.json();
+    if (data.token) {
+      sessionStorage.setItem('erp_user_token', data.token);
+    }
+    sessionStorage.setItem('erb_auth_user', username);
+    try {
+      sessionStorage.setItem('erb_auth_header', 'Basic ' + btoa(username + ':' + password));
+    } catch (e) {
+      // ignore
+    }
+    return data;
   },
 
   async logout() {
@@ -74,6 +116,9 @@ export const integrationApi = {
     } catch (e) {
       // ignore
     }
+    sessionStorage.removeItem('erp_user_token');
+    sessionStorage.removeItem('erb_auth_user');
+    sessionStorage.removeItem('erb_auth_header');
     localStorage.removeItem('erp_user_token');
     localStorage.removeItem('erp_user_profile');
   },

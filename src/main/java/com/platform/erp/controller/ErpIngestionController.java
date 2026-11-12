@@ -175,8 +175,12 @@ public class ErpIngestionController {
                 resolvedFilename = prefix + docType + "_PAYLOAD_" + System.currentTimeMillis() + ".json";
             }
 
-            log.info("[ERP Ingestion] Accepted from ERP: '{}', Target: '{}', Filename: '{}', Size: {} bytes",
-                    erpSource, docType, resolvedFilename, payload.length);
+            String authUser = (request != null && request.getAttribute("authenticatedUser") != null)
+                    ? (String) request.getAttribute("authenticatedUser")
+                    : null;
+
+            log.info("[ERP Ingestion] Accepted from ERP: '{}', Target: '{}', Authenticated As: '{}', Filename: '{}', Size: {} bytes",
+                    erpSource, docType, authUser != null ? authUser : "anonymous", resolvedFilename, payload.length);
 
             // 4. Publish to Kafka & Register in PostgreSQL Tracker
             IngestionAckResponse ack = producerService.publishFile(erpSource, docType, resolvedFilename, payload);
@@ -195,7 +199,7 @@ public class ErpIngestionController {
 					CanonicalEnvelope env = transformer.transform(payload, erpSource, docType, ack.getTrackingId(),
 							resolvedFilename);
 					if (env.getCreatedBy() == null || env.getCreatedBy().isBlank()) {
-						env.setCreatedBy(mawmDispatcherService.getMawmProperties().getUsername());
+						env.setCreatedBy(authUser != null ? authUser : mawmDispatcherService.getMawmProperties().getUsername());
 					}
 					transactionStore.recordConverted(ack.getTrackingId(), erpSource, docType, resolvedFilename, env);
 					if (isOpti) {

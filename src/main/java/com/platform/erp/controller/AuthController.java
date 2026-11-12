@@ -22,9 +22,11 @@ public class AuthController {
 
     private static final Logger log = LoggerFactory.getLogger(AuthController.class);
     private final UserAccountRepository userRepository;
+    private final com.platform.erp.security.ErbSecurityService securityService;
 
-    public AuthController(UserAccountRepository userRepository) {
+    public AuthController(UserAccountRepository userRepository, com.platform.erp.security.ErbSecurityService securityService) {
         this.userRepository = userRepository;
+        this.securityService = securityService;
     }
 
     @PostMapping("/login")
@@ -438,16 +440,6 @@ public class AuthController {
     }
 
     private String hashPassword(String rawPassword) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] hash = md.digest(("ERP_SALT_2026_" + rawPassword).getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : hash) {
-                sb.append(String.format("%02x", b));
-            }
-            return sb.toString();
-        } catch (Exception e) {
-            return rawPassword;
-        }
+        return securityService.hashPassword(rawPassword);
     }
 }
