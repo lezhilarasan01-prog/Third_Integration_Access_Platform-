@@ -21,22 +21,8 @@ class ErbSecurityServiceTest {
     @BeforeEach
     void setUp() {
         userRepository = Mockito.mock(UserAccountRepository.class);
-        securityService = new ErbSecurityService(userRepository, true, "admin", "ErpAdmin2026!");
-    }
-
-    @Test
-    @DisplayName("Should successfully authenticate with default platform credentials")
-    void testAuthenticate_DefaultCredentials_Success() {
-        Optional<String> auth = securityService.authenticate("admin", "ErpAdmin2026!");
-        assertTrue(auth.isPresent());
-        assertEquals("admin", auth.get());
-    }
-
-    @Test
-    @DisplayName("Should reject authentication with invalid password for default platform credentials")
-    void testAuthenticate_DefaultCredentials_WrongPassword() {
-        Optional<String> auth = securityService.authenticate("admin", "WrongPassword!");
-        assertFalse(auth.isPresent());
+        // Default constructor: No hardcoded service account credentials
+        securityService = new ErbSecurityService(userRepository, true, "ERP_SALT_2026_", "", "");
     }
 
     @Test
@@ -80,6 +66,31 @@ class ErbSecurityServiceTest {
     }
 
     @Test
+    @DisplayName("Should successfully authenticate via configured external service account when provided")
+    void testAuthenticate_ConfiguredServiceAccount_Success() {
+        ErbSecurityService svcWithAccount = new ErbSecurityService(
+                userRepository, true, "ERP_SALT_2026_", "svc_partner_erp", "PartnerTokenSecure2026!");
+
+        when(userRepository.findByIdentifier(anyString())).thenReturn(Optional.empty());
+
+        Optional<String> auth = svcWithAccount.authenticate("svc_partner_erp", "PartnerTokenSecure2026!");
+        assertTrue(auth.isPresent());
+        assertEquals("svc_partner_erp", auth.get());
+    }
+
+    @Test
+    @DisplayName("Should reject authentication with invalid password for configured service account")
+    void testAuthenticate_ConfiguredServiceAccount_WrongPassword() {
+        ErbSecurityService svcWithAccount = new ErbSecurityService(
+                userRepository, true, "ERP_SALT_2026_", "svc_partner_erp", "PartnerTokenSecure2026!");
+
+        when(userRepository.findByIdentifier(anyString())).thenReturn(Optional.empty());
+
+        Optional<String> auth = svcWithAccount.authenticate("svc_partner_erp", "WrongPassword!");
+        assertFalse(auth.isPresent());
+    }
+
+    @Test
     @DisplayName("Should reject authentication when credentials are empty or null")
     void testAuthenticate_EmptyOrNull() {
         assertFalse(securityService.authenticate(null, "pass").isPresent());
@@ -99,7 +110,7 @@ class ErbSecurityServiceTest {
     @Test
     @DisplayName("Should bypass authentication when disabled")
     void testAuthDisabled_Bypass() {
-        ErbSecurityService disabledService = new ErbSecurityService(userRepository, false, "admin", "ErpAdmin2026!");
+        ErbSecurityService disabledService = new ErbSecurityService(userRepository, false, "ERP_SALT_2026_", "", "");
         Optional<String> auth = disabledService.authenticate("any_caller", "any_pass");
         assertTrue(auth.isPresent());
         assertEquals("any_caller", auth.get());

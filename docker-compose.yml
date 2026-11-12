@@ -13,8 +13,8 @@ services:
     environment:
       - SERVER_PORT=8080
       - ERB_AUTH_ENABLED=${ERB_AUTH_ENABLED:-true}
-      - ERB_AUTH_USER=${ERB_AUTH_USER:-admin}
-      - ERB_AUTH_PASSWORD=${ERB_AUTH_PASSWORD:-ErpAdmin2026!}
+      - ERB_SERVICE_USER=${ERB_SERVICE_USER:-}
+      - ERB_SERVICE_PASSWORD=${ERB_SERVICE_PASSWORD:-}
       - DB_URL=jdbc:postgresql://${EC2_HOST:-15.207.237.212}:5432/erp_db
       - DB_USER=${DB_USER:-erp_admin}
       - DB_PASSWORD=${DB_PASSWORD:-ErpPostgres2026!}

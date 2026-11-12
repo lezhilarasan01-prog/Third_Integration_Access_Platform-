@@ -140,3 +140,4 @@ class ErbAuthenticationFilterTest {
         assertFalse(filter.shouldNotFilter(erpReq));
     }
 }
+
